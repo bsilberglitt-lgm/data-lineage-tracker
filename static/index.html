@@ -108,6 +108,15 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+.login-screen { display: flex; align-items: center; justify-content: center; height: 100vh; background: #f0f4f8; }
+.login-box { background: #fff; border-radius: 12px; padding: 40px; width: 380px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); text-align: center; }
+.login-box h1 { font-size: 20px; color: #1B3A5C; margin-bottom: 6px; }
+.login-box p { font-size: 13px; color: #888; margin-bottom: 24px; }
+.login-box input { width: 100%; padding: 10px 14px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; font-family: inherit; margin-bottom: 12px; }
+.login-box input:focus { outline: none; border-color: #2E75B6; box-shadow: 0 0 0 3px rgba(46,117,182,0.15); }
+.login-box .login-btn { width: 100%; padding: 10px; background: #1B3A5C; color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.login-box .login-btn:hover { background: #244d75; }
+.login-error { color: #c0392b; font-size: 12px; margin-bottom: 12px; }
 </style>
 </head>
 <body>
@@ -558,6 +567,40 @@ function ElementsTable({ elements, onSelect }) {
   </table></div>);
 }
 
+// ===== Login Screen =====
+function LoginScreen({ onLogin }) {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (password === 'MaineLineage') {
+      sessionStorage.setItem('dlt_auth', 'true');
+      onLogin();
+    } else {
+      setError('Incorrect password. Please try again.');
+      setPassword('');
+    }
+  };
+  return (
+    <div className="login-screen">
+      <form className="login-box" onSubmit={handleSubmit}>
+        <h1>Data Lineage Tracker</h1>
+        <p>Enter password to continue</p>
+        {error && <div className="login-error">{error}</div>}
+        <input type="password" placeholder="Password" value={password} onChange={e => { setPassword(e.target.value); setError(''); }} autoFocus />
+        <button type="submit" className="login-btn">Sign In</button>
+      </form>
+    </div>
+  );
+}
+
+// ===== Main App Wrapper =====
+function AppWrapper() {
+  const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem('dlt_auth') === 'true');
+  if (!authenticated) return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+  return <App />;
+}
+
 // ===== Main App =====
 function App() {
   const [view, setView] = useState('diagram');
@@ -680,7 +723,7 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(<AppWrapper />);
 </script>
 </body>
 </html>
