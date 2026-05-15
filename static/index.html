@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Lineage Tracker</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #1a2332; height: 100vh; overflow: hidden; }
+.app { display: flex; height: 100vh; }
+.sidebar { width: 260px; background: #1B3A5C; color: #fff; display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.sidebar-header h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; cursor: pointer; border-radius: 4px; padding: 2px 4px; margin: -2px -4px; }
+.sidebar-header h1:hover { background: rgba(255,255,255,0.1); }
+.sidebar-header p { font-size: 11px; opacity: 0.6; margin-top: 4px; cursor: pointer; border-radius: 4px; padding: 2px 4px; margin-left: -4px; }
+.sidebar-header p:hover { background: rgba(255,255,255,0.1); }
+.sidebar-header input { width: 100%; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; color: #fff; font-family: inherit; padding: 2px 4px; margin: -2px -4px; outline: none; }
+.sidebar-header input.header-title { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
+.sidebar-header input.header-subtitle { font-size: 11px; margin-top: 4px; opacity: 0.8; }
+.sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+.nav-item { padding: 10px 20px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: background 0.15s; }
+.nav-item:hover { background: rgba(255,255,255,0.08); }
+.nav-item.active { background: rgba(255,255,255,0.15); border-left: 3px solid #5BA4E6; }
+.nav-icon { width: 18px; text-align: center; opacity: 0.7; }
+.nav-section { padding: 16px 20px 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.4; }
+.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.toolbar { height: 48px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0; }
+.toolbar-title { font-size: 15px; font-weight: 600; color: #1B3A5C; }
+.toolbar-spacer { flex: 1; }
+.btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #ccc; background: #fff; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+.btn:hover { background: #f5f5f5; }
+.btn-primary { background: #2E75B6; color: #fff; border-color: #2E75B6; }
+.btn-primary:hover { background: #245f96; }
+.btn-edit { background: #fff; color: #2E75B6; border-color: #2E75B6; }
+.btn-edit:hover { background: #e8f0fa; }
+.btn-save { background: #27ae60; color: #fff; border-color: #27ae60; }
+.btn-save:hover { background: #1e8c4c; }
+.content-area { flex: 1; display: flex; overflow: hidden; }
+.canvas-container { flex: 1; min-width: 0; position: relative; overflow: hidden; background: #f5f8fb; transition: all 0.25s ease; }
+.canvas-container svg { display: block; width: 100%; height: 100%; }
+.detail-panel { width: 440px; background: #fff; border-left: 1px solid #dde3ea; overflow-y: auto; overflow-x: hidden; flex-shrink: 0; transition: width 0.3s ease, border 0.3s ease; }
+.detail-panel.closed { width: 0; min-width: 0; border-left: none; overflow: hidden; padding: 0; }
+.panel-header { padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; }
+.panel-header h2 { font-size: 15px; font-weight: 600; color: #1B3A5C; flex: 1; }
+.panel-close { width: 28px; height: 28px; border-radius: 50%; border: none; background: #f0f0f0; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+.panel-close:hover { background: #e0e0e0; }
+.panel-body { padding: 16px 20px; }
+.panel-section { margin-bottom: 20px; }
+.panel-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 8px; font-weight: 600; }
+.field-row { display: flex; margin-bottom: 6px; font-size: 13px; line-height: 1.5; }
+.field-label { width: 130px; flex-shrink: 0; color: #666; font-weight: 500; }
+.field-value { flex: 1; color: #1a2332; word-break: break-word; }
+.field-value.multiline { white-space: pre-line; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.badge-active { background: #e6f4ea; color: #1e7e34; }
+.badge-deprecated { background: #fde8e8; color: #c0392b; }
+.badge-planned { background: #fff3cd; color: #856404; }
+.badge-broken { background: #fde8e8; color: #c0392b; }
+.badge-pii { background: #ffeaa7; color: #6c5300; }
+.badge-ferpa { background: #dfe6ff; color: #2c3e8c; }
+.badge-source { background: #d5f5e3; color: #1a6b3c; }
+.badge-destination { background: #fadbd8; color: #922b21; }
+.badge-internal, .badge-etlprocess, .badge-datastore, .badge-manualprocess { background: #d6eaf8; color: #1a5276; }
+.system-node { cursor: grab; }
+.system-node:active { cursor: grabbing; }
+.system-node rect { rx: 10; ry: 10; transition: filter 0.15s; }
+.system-node:hover rect { filter: drop-shadow(0 4px 12px rgba(0,0,0,0.15)); }
+.system-node text { pointer-events: none; }
+.flow-line { cursor: pointer; }
+.flow-line:hover line { stroke-width: 4; }
+.flow-label { pointer-events: none; font-size: 10px; fill: #666; }
+.flow-line.selected line { stroke: #D4772C; stroke-width: 4; }
+.system-node.selected rect { stroke: #D4772C; stroke-width: 3; }
+.table-view { padding: 20px; overflow-y: auto; flex: 1; }
+.data-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.data-table th { background: #1B3A5C; color: #fff; padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: 0.3px; }
+.data-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #eee; }
+.data-table tr:hover td { background: #f8fafc; }
+.data-table tr.clickable { cursor: pointer; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: #fff; border-radius: 12px; width: 560px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal-header { padding: 20px 24px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; color: #1B3A5C; display: flex; justify-content: space-between; align-items: center; }
+.modal-body { padding: 20px 24px; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; font-family: inherit; }
+.form-group textarea { min-height: 70px; resize: vertical; }
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 8px; }
+.checkbox-row { display: flex; gap: 20px; margin-bottom: 14px; }
+.checkbox-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+/* Inline edit styles in detail panel */
+.edit-input { width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; }
+.edit-textarea { width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; min-height: 60px; resize: vertical; }
+.edit-select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; }
+.edit-field-row { display: flex; margin-bottom: 10px; font-size: 13px; align-items: flex-start; }
+.edit-field-row .field-label { padding-top: 6px; }
+.panel-actions { display: flex; gap: 8px; padding: 12px 20px; border-bottom: 1px solid #eee; background: #fafbfc; }
+.stats-bar { display: flex; gap: 24px; padding: 10px 20px; background: #fff; border-bottom: 1px solid #eee; }
+.stat { text-align: center; }
+.stat-value { font-size: 22px; font-weight: 700; color: #1B3A5C; }
+.stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.legend { position: absolute; bottom: 16px; left: 16px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); font-size: 11px; z-index: 5; }
+.legend-title { font-weight: 600; margin-bottom: 6px; color: #555; }
+.legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+.legend-color { width: 14px; height: 14px; border-radius: 3px; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+const api = {
+  get: (url) => fetch(url).then(r => r.json()),
+  post: (url, data) => fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) }).then(r => r.json()),
+  put: (url, data) => fetch(url, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) }).then(r => r.json()),
+};
+
+const TYPE_COLORS = {
+  'Source': { fill: '#d5f5e3', stroke: '#27ae60', text: '#1a6b3c' },
+  'ETL Process': { fill: '#d6eaf8', stroke: '#2E75B6', text: '#1a5276' },
+  'Data Store': { fill: '#e8daef', stroke: '#8e44ad', text: '#6c3483' },
+  'Internal': { fill: '#d6eaf8', stroke: '#2E75B6', text: '#1a5276' },
+  'Destination': { fill: '#fadbd8', stroke: '#e74c3c', text: '#922b21' },
+  'Manual Process': { fill: '#fdebd0', stroke: '#e67e22', text: '#935116' },
+};
+const getColor = (type) => TYPE_COLORS[type] || TYPE_COLORS['Internal'];
+const STATUS_BADGE = { Active: 'active', Deprecated: 'deprecated', Planned: 'planned', Broken: 'broken', 'Under Review': 'planned' };
+
+// ===== SVG Diagram =====
+function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition }) {
+  const svgRef = useRef(null);
+  const dragRef = useRef(null);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0 });
+  const NODE_W = 200, NODE_H = 70;
+
+  const handleMouseDown = useCallback((e, sys) => {
+    if (sys) {
+      e.stopPropagation();
+      const svg = svgRef.current;
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX; pt.y = e.clientY;
+      const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+      dragRef.current = { id: sys.system_id, offsetX: svgP.x / zoom - panOffset.x / zoom - sys.x_pos, offsetY: svgP.y / zoom - panOffset.y / zoom - sys.y_pos };
+    } else {
+      isPanning.current = true;
+      panStart.current = { x: e.clientX - panOffset.x, y: e.clientY - panOffset.y };
+    }
+  }, [panOffset, zoom]);
+
+  const handleMouseMove = useCallback((e) => {
+    if (dragRef.current) {
+      const svg = svgRef.current;
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX; pt.y = e.clientY;
+      const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+      const newX = svgP.x / zoom - panOffset.x / zoom - dragRef.current.offsetX;
+      const newY = svgP.y / zoom - panOffset.y / zoom - dragRef.current.offsetY;
+      onUpdatePosition(dragRef.current.id, newX, newY);
+    } else if (isPanning.current) {
+      setPanOffset({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
+    }
+  }, [onUpdatePosition, panOffset, zoom]);
+
+  const handleMouseUp = useCallback(() => {
+    if (dragRef.current) {
+      const sys = systems.find(s => s.system_id === dragRef.current.id);
+      if (sys) api.put(`/api/systems/${sys.system_id}/position`, { x_pos: sys.x_pos, y_pos: sys.y_pos });
+      dragRef.current = null;
+    }
+    isPanning.current = false;
+  }, [systems]);
+
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    setZoom(z => Math.max(0.3, Math.min(3, z * (e.deltaY > 0 ? 0.9 : 1.1))));
+  }, []);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (svg) svg.addEventListener('wheel', handleWheel, { passive: false });
+    return () => { if (svg) svg.removeEventListener('wheel', handleWheel); };
+  }, [handleWheel]);
+
+  const sysMap = {};
+  systems.forEach(s => { sysMap[s.system_id] = s; });
+
+  return (
+    <div className="canvas-container">
+      <svg ref={svgRef} onMouseDown={(e) => handleMouseDown(e, null)} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#888"><polygon points="0 0, 10 3.5, 0 7" /></marker>
+          <marker id="arrowhead-sel" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#D4772C"><polygon points="0 0, 10 3.5, 0 7" /></marker>
+        </defs>
+        <g transform={`translate(${panOffset.x},${panOffset.y}) scale(${zoom})`}>
+          {flows.map(flow => {
+            const src = sysMap[flow.source_system_id], dst = sysMap[flow.destination_system_id];
+            if (!src || !dst) return null;
+            const isSel = selected && selected.type === 'flow' && selected.id === flow.flow_id;
+            const x1 = src.x_pos + NODE_W/2, y1 = src.y_pos + NODE_H/2, x2 = dst.x_pos + NODE_W/2, y2 = dst.y_pos + NODE_H/2;
+            const angle = Math.atan2(y2-y1, x2-x1);
+            const sx = x1+Math.cos(angle)*(NODE_W/2+5), sy = y1+Math.sin(angle)*(NODE_H/2+5);
+            const ex = x2-Math.cos(angle)*(NODE_W/2+12), ey = y2-Math.sin(angle)*(NODE_H/2+12);
+            return (
+              <g key={flow.flow_id} className={`flow-line ${isSel?'selected':''}`} onClick={(e)=>{e.stopPropagation();onSelectFlow(flow.flow_id);}}>
+                <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={isSel?'#D4772C':'#999'} strokeWidth={isSel?3:2} markerEnd={isSel?'url(#arrowhead-sel)':'url(#arrowhead)'} />
+                <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="transparent" strokeWidth="16" />
+                <text className="flow-label" x={(sx+ex)/2} y={(sy+ey)/2-12} textAnchor="middle" fontSize="10">{flow.flow_id}</text>
+              </g>
+            );
+          })}
+          {systems.map(sys => {
+            const c = getColor(sys.system_type);
+            const isSel = selected && selected.type === 'system' && selected.id === sys.system_id;
+            return (
+              <g key={sys.system_id} className={`system-node ${isSel?'selected':''}`}
+                 onMouseDown={(e)=>{handleMouseDown(e,sys);onSelectSystem(sys.system_id);}}
+                 transform={`translate(${sys.x_pos},${sys.y_pos})`}>
+                <rect width={NODE_W} height={NODE_H} fill={c.fill} stroke={isSel?'#D4772C':c.stroke} strokeWidth={isSel?3:2} />
+                {sys.contains_pii ? <rect x={NODE_W-30} y={4} width={26} height={14} rx="7" fill="#f39c12" /> : null}
+                {sys.contains_pii ? <text x={NODE_W-17} y={14} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">PII</text> : null}
+                <text x={NODE_W/2} y={24} textAnchor="middle" fontSize="11" fontWeight="700" fill={c.text}>{sys.name.length>28?sys.name.substring(0,26)+'...':sys.name}</text>
+                <text x={NODE_W/2} y={40} textAnchor="middle" fontSize="9" fill="#888">{sys.system_type}</text>
+                <text x={NODE_W/2} y={56} textAnchor="middle" fontSize="9" fill="#aaa">{sys.system_id}</text>
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+      <div className="legend">
+        <div className="legend-title">System Types</div>
+        {Object.entries(TYPE_COLORS).map(([type, c]) => (
+          <div key={type} className="legend-item"><div className="legend-color" style={{background:c.fill,border:`2px solid ${c.stroke}`}}></div>{type}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ===== Inline Edit Helpers =====
+function EditField({ label, value, onChange, type, options }) {
+  if (type === 'textarea') return (
+    <div className="edit-field-row"><span className="field-label">{label}</span><textarea className="edit-textarea" value={value||''} onChange={e=>onChange(e.target.value)} /></div>
+  );
+  if (type === 'select') return (
+    <div className="edit-field-row"><span className="field-label">{label}</span><select className="edit-select" value={value||''} onChange={e=>onChange(e.target.value)}>{options.map(o=><option key={o} value={o}>{o}</option>)}</select></div>
+  );
+  if (type === 'checkbox') return (
+    <div className="edit-field-row"><span className="field-label">{label}</span><label style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}><input type="checkbox" checked={!!value} onChange={e=>onChange(e.target.checked?1:0)} /> {value ? 'Yes' : 'No'}</label></div>
+  );
+  return (
+    <div className="edit-field-row"><span className="field-label">{label}</span><input className="edit-input" value={value||''} onChange={e=>onChange(e.target.value)} /></div>
+  );
+}
+
+function ReadField({ label, value, multiline }) {
+  return <div className="field-row"><span className="field-label">{label}</span><span className={`field-value${multiline?' multiline':''}`}>{value || '\u2014'}</span></div>;
+}
+
+// ===== Detail Panel with Edit =====
+function DetailPanel({ data, type, onClose, onSave, systems }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({});
+  const isOpen = !!data;
+
+  useEffect(() => { setEditing(false); }, [data, type]);
+
+  const startEdit = () => { setForm({...data}); setEditing(true); };
+  const cancelEdit = () => { setEditing(false); };
+  const saveEdit = async () => {
+    let url, saveData;
+    if (type === 'system') {
+      url = `/api/systems/${data.system_id}`;
+      saveData = { name: form.name, description: form.description, system_type: form.system_type, vendor: form.vendor, technology: form.technology, environment: form.environment, managed_by: form.managed_by, organization: form.organization, contains_pii: form.contains_pii, ferpa_protected: form.ferpa_protected, status: form.status, notes: form.notes };
+    } else if (type === 'flow') {
+      url = `/api/flows/${data.flow_id}`;
+      saveData = { name: form.name, description: form.description, source_system_id: form.source_system_id, destination_system_id: form.destination_system_id, direction: form.direction, frequency: form.frequency, transfer_method: form.transfer_method, format: form.format, transformation_steps: form.transformation_steps, business_rules: form.business_rules, validations: form.validations, error_handling: form.error_handling, contains_pii: form.contains_pii, ferpa_protected: form.ferpa_protected, regulatory_driver: form.regulatory_driver, status: form.status, known_issues: form.known_issues };
+    } else if (type === 'element') {
+      url = `/api/elements/${data.element_id}`;
+      saveData = { name: form.name, aliases: form.aliases, definition: form.definition, data_type: form.data_type, valid_values: form.valid_values, is_pii: form.is_pii, ferpa_protected: form.ferpa_protected, notes: form.notes };
+    }
+    const result = await api.put(url, saveData);
+    setEditing(false);
+    onSave(type, result);
+  };
+  const set = (k, v) => setForm(f => ({...f, [k]: v}));
+
+  return (
+    <div className={`detail-panel ${isOpen ? '' : 'closed'}`}>
+      {isOpen && <>
+        <div className="panel-header">
+          <h2>{editing ? `Edit: ${data.name||''}` : (data.name||'')}</h2>
+          <button className="panel-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="panel-actions">
+          {!editing && <button className="btn btn-edit" onClick={startEdit}>Edit</button>}
+          {editing && <button className="btn btn-save" onClick={saveEdit}>Save Changes</button>}
+          {editing && <button className="btn" onClick={cancelEdit}>Cancel</button>}
+        </div>
+        <div className="panel-body">
+          {type === 'system' && !editing && <SystemReadView data={data} />}
+          {type === 'system' && editing && <SystemEditView form={form} set={set} />}
+          {type === 'flow' && !editing && <FlowReadView data={data} />}
+          {type === 'flow' && editing && <FlowEditView form={form} set={set} systems={systems} />}
+          {type === 'element' && !editing && <ElementReadView data={data} />}
+          {type === 'element' && editing && <ElementEditView form={form} set={set} />}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+// ===== System Views =====
+function SystemReadView({ data }) {
+  return (<>
+    <div className="panel-section">
+      <div className="panel-section-title">Overview</div>
+      <ReadField label="ID" value={data.system_id} />
+      <div className="field-row"><span className="field-label">Type</span><span className="field-value"><span className={`badge badge-${data.system_type?.toLowerCase().replace(/\s/g,'')}`}>{data.system_type}</span></span></div>
+      <div className="field-row"><span className="field-label">Status</span><span className="field-value"><span className={`badge badge-${STATUS_BADGE[data.status]}`}>{data.status}</span></span></div>
+      <ReadField label="Organization" value={data.organization} />
+      <ReadField label="Managed By" value={data.managed_by} />
+      <ReadField label="Vendor" value={data.vendor} />
+      <ReadField label="Technology" value={data.technology} />
+      <ReadField label="Environment" value={data.environment} />
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Data Sensitivity</div>
+      <div className="field-row"><span className="field-label">Contains PII</span><span className="field-value">{data.contains_pii ? <span className="badge badge-pii">Yes</span> : 'No'}</span></div>
+      <div className="field-row"><span className="field-label">FERPA</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
+    </div>
+    {data.description && <div className="panel-section"><div className="panel-section-title">Description</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.description}</div></div>}
+    {data.notes && <div className="panel-section"><div className="panel-section-title">Notes</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.notes}</div></div>}
+  </>);
+}
+
+function SystemEditView({ form, set }) {
+  return (<>
+    <div className="panel-section">
+      <div className="panel-section-title">Overview</div>
+      <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
+      <EditField label="Type" value={form.system_type} onChange={v=>set('system_type',v)} type="select" options={['Source','Internal','Destination','ETL Process','Manual Process','Data Store']} />
+      <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Deprecated','Under Review']} />
+      <EditField label="Organization" value={form.organization} onChange={v=>set('organization',v)} />
+      <EditField label="Managed By" value={form.managed_by} onChange={v=>set('managed_by',v)} />
+      <EditField label="Vendor" value={form.vendor} onChange={v=>set('vendor',v)} />
+      <EditField label="Technology" value={form.technology} onChange={v=>set('technology',v)} />
+      <EditField label="Environment" value={form.environment} onChange={v=>set('environment',v)} type="select" options={['Production','Staging','Development','Archive']} />
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Data Sensitivity</div>
+      <EditField label="Contains PII" value={form.contains_pii} onChange={v=>set('contains_pii',v)} type="checkbox" />
+      <EditField label="FERPA" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Description</div>
+      <EditField label="" value={form.description} onChange={v=>set('description',v)} type="textarea" />
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Notes</div>
+      <EditField label="" value={form.notes} onChange={v=>set('notes',v)} type="textarea" />
+    </div>
+  </>);
+}
+
+// ===== Flow Views =====
+function FlowReadView({ data }) {
+  return (<>
+    <div className="panel-section">
+      <div className="panel-section-title">Flow Overview</div>
+      <ReadField label="ID" value={data.flow_id} />
+      <ReadField label="Source" value={data.source_name} />
+      <ReadField label="Destination" value={data.dest_name} />
+      <ReadField label="Direction" value={data.direction} />
+      <div className="field-row"><span className="field-label">Status</span><span className="field-value"><span className={`badge badge-${STATUS_BADGE[data.status]}`}>{data.status}</span></span></div>
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Transfer Details</div>
+      <ReadField label="Frequency" value={data.frequency} />
+      <ReadField label="Method" value={data.transfer_method} />
+      <ReadField label="Format" value={data.format} />
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Data Sensitivity</div>
+      <div className="field-row"><span className="field-label">Contains PII</span><span className="field-value">{data.contains_pii ? <span className="badge badge-pii">Yes</span> : 'No'}</span></div>
+      <div className="field-row"><span className="field-label">FERPA</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
+      {data.regulatory_driver && <ReadField label="Regulatory" value={data.regulatory_driver} />}
+    </div>
+    {data.description && <div className="panel-section"><div className="panel-section-title">Description</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.description}</div></div>}
+    {data.transformation_steps && <div className="panel-section"><div className="panel-section-title">Transformation Steps</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.transformation_steps}</div></div>}
+    {data.business_rules && <div className="panel-section"><div className="panel-section-title">Business Rules</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.business_rules}</div></div>}
+    {data.validations && <div className="panel-section"><div className="panel-section-title">Validations</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.validations}</div></div>}
+    {data.error_handling && <div className="panel-section"><div className="panel-section-title">Error Handling</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.error_handling}</div></div>}
+    {data.known_issues && <div className="panel-section"><div className="panel-section-title">Known Issues</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.known_issues}</div></div>}
+    {data.elements && data.elements.length > 0 && <div className="panel-section">
+      <div className="panel-section-title">Data Elements ({data.elements.length})</div>
+      <table className="data-table" style={{fontSize:'12px'}}>
+        <thead><tr><th>Element</th><th>PII</th><th>Transformed</th></tr></thead>
+        <tbody>{data.elements.map(el => (
+          <tr key={el.element_id}><td><strong>{el.element_id}</strong> {el.name}</td><td>{el.is_pii?<span className="badge badge-pii">PII</span>:'\u2014'}</td><td>{el.is_transformed?'Yes':'\u2014'}{el.transformation_note?<div style={{fontSize:'11px',color:'#888',marginTop:2}}>{el.transformation_note}</div>:null}</td></tr>
+        ))}</tbody>
+      </table>
+    </div>}
+  </>);
+}
+
+function FlowEditView({ form, set, systems }) {
+  return (<>
+    <div className="panel-section">
+      <div className="panel-section-title">Flow Overview</div>
+      <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
+      <EditField label="Source" value={form.source_system_id} onChange={v=>set('source_system_id',v)} type="select" options={systems.map(s=>s.system_id)} />
+      <EditField label="Destination" value={form.destination_system_id} onChange={v=>set('destination_system_id',v)} type="select" options={systems.map(s=>s.system_id)} />
+      <EditField label="Direction" value={form.direction} onChange={v=>set('direction',v)} type="select" options={['Inbound','Outbound','Bidirectional']} />
+      <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Deprecated','Under Review','Broken']} />
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Transfer Details</div>
+      <EditField label="Frequency" value={form.frequency} onChange={v=>set('frequency',v)} type="select" options={['Real-time','Daily','Weekly','Monthly','Annually','Ad Hoc','Event-triggered']} />
+      <EditField label="Method" value={form.transfer_method} onChange={v=>set('transfer_method',v)} />
+      <EditField label="Format" value={form.format} onChange={v=>set('format',v)} />
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Data Sensitivity</div>
+      <EditField label="Contains PII" value={form.contains_pii} onChange={v=>set('contains_pii',v)} type="checkbox" />
+      <EditField label="FERPA" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
+      <EditField label="Regulatory" value={form.regulatory_driver} onChange={v=>set('regulatory_driver',v)} />
+    </div>
+    <div className="panel-section"><div className="panel-section-title">Description</div><EditField label="" value={form.description} onChange={v=>set('description',v)} type="textarea" /></div>
+    <div className="panel-section"><div className="panel-section-title">Transformation Steps</div><EditField label="" value={form.transformation_steps} onChange={v=>set('transformation_steps',v)} type="textarea" /></div>
+    <div className="panel-section"><div className="panel-section-title">Business Rules</div><EditField label="" value={form.business_rules} onChange={v=>set('business_rules',v)} type="textarea" /></div>
+    <div className="panel-section"><div className="panel-section-title">Validations</div><EditField label="" value={form.validations} onChange={v=>set('validations',v)} type="textarea" /></div>
+    <div className="panel-section"><div className="panel-section-title">Error Handling</div><EditField label="" value={form.error_handling} onChange={v=>set('error_handling',v)} type="textarea" /></div>
+    <div className="panel-section"><div className="panel-section-title">Known Issues</div><EditField label="" value={form.known_issues} onChange={v=>set('known_issues',v)} type="textarea" /></div>
+  </>);
+}
+
+// ===== Element Views =====
+function ElementReadView({ data }) {
+  return (<>
+    <div className="panel-section">
+      <div className="panel-section-title">Element Overview</div>
+      <ReadField label="ID" value={data.element_id} />
+      <ReadField label="Name" value={data.name} />
+      {data.aliases && <ReadField label="Aliases" value={data.aliases} />}
+      <ReadField label="Data Type" value={data.data_type} />
+      {data.valid_values && <ReadField label="Valid Values" value={data.valid_values} />}
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Classification</div>
+      <div className="field-row"><span className="field-label">PII</span><span className="field-value">{data.is_pii ? <span className="badge badge-pii">Yes</span> : 'No'}</span></div>
+      <div className="field-row"><span className="field-label">FERPA</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
+    </div>
+    {data.definition && <div className="panel-section"><div className="panel-section-title">Definition</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.definition}</div></div>}
+    {data.notes && <div className="panel-section"><div className="panel-section-title">Notes</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.notes}</div></div>}
+    {data.flows && data.flows.length > 0 && <div className="panel-section">
+      <div className="panel-section-title">Appears in Flows ({data.flows.length})</div>
+      <table className="data-table" style={{fontSize:'12px'}}>
+        <thead><tr><th>Flow</th><th>Transformed</th></tr></thead>
+        <tbody>{data.flows.map(f => (
+          <tr key={f.flow_id}><td><strong>{f.flow_id}</strong> {f.name}</td><td>{f.is_transformed?'Yes':'\u2014'}</td></tr>
+        ))}</tbody>
+      </table>
+    </div>}
+  </>);
+}
+
+function ElementEditView({ form, set }) {
+  return (<>
+    <div className="panel-section">
+      <div className="panel-section-title">Element Overview</div>
+      <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
+      <EditField label="Aliases" value={form.aliases} onChange={v=>set('aliases',v)} />
+      <EditField label="Data Type" value={form.data_type} onChange={v=>set('data_type',v)} />
+      <EditField label="Valid Values" value={form.valid_values} onChange={v=>set('valid_values',v)} />
+    </div>
+    <div className="panel-section">
+      <div className="panel-section-title">Classification</div>
+      <EditField label="PII" value={form.is_pii} onChange={v=>set('is_pii',v)} type="checkbox" />
+      <EditField label="FERPA" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
+    </div>
+    <div className="panel-section"><div className="panel-section-title">Definition</div><EditField label="" value={form.definition} onChange={v=>set('definition',v)} type="textarea" /></div>
+    <div className="panel-section"><div className="panel-section-title">Notes</div><EditField label="" value={form.notes} onChange={v=>set('notes',v)} type="textarea" /></div>
+  </>);
+}
+
+// ===== Add Modals (unchanged) =====
+function AddSystemModal({ onClose, onSave }) {
+  const [form, setForm] = useState({ name:'', description:'', system_type:'Source', vendor:'', technology:'', environment:'Production', managed_by:'', organization:'', contains_pii:false, ferpa_protected:false, status:'Active', notes:'' });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  return (
+    <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-header">Add System <button className="panel-close" onClick={onClose}>&times;</button></div>
+      <div className="modal-body">
+        <div className="form-group"><label>Name *</label><input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="e.g., PowerSchool SIS" /></div>
+        <div className="form-row"><div className="form-group"><label>Type *</label><select value={form.system_type} onChange={e=>set('system_type',e.target.value)}><option>Source</option><option>Internal</option><option>Destination</option><option>ETL Process</option><option>Manual Process</option><option>Data Store</option></select></div><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>set('status',e.target.value)}><option>Active</option><option>Planned</option><option>Deprecated</option><option>Under Review</option></select></div></div>
+        <div className="form-row"><div className="form-group"><label>Vendor</label><input value={form.vendor} onChange={e=>set('vendor',e.target.value)} /></div><div className="form-group"><label>Technology</label><input value={form.technology} onChange={e=>set('technology',e.target.value)} /></div></div>
+        <div className="form-group"><label>Managed By *</label><input value={form.managed_by} onChange={e=>set('managed_by',e.target.value)} /></div>
+        <div className="form-group"><label>Organization</label><input value={form.organization} onChange={e=>set('organization',e.target.value)} /></div>
+        <div className="form-group"><label>Description</label><textarea value={form.description} onChange={e=>set('description',e.target.value)} /></div>
+        <div className="checkbox-row"><label><input type="checkbox" checked={form.contains_pii} onChange={e=>set('contains_pii',e.target.checked)} /> Contains PII</label><label><input type="checkbox" checked={form.ferpa_protected} onChange={e=>set('ferpa_protected',e.target.checked)} /> FERPA Protected</label></div>
+        <div className="form-group"><label>Notes</label><textarea value={form.notes} onChange={e=>set('notes',e.target.value)} /></div>
+      </div>
+      <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={()=>{if(form.name&&form.managed_by)onSave({...form,contains_pii:form.contains_pii?1:0,ferpa_protected:form.ferpa_protected?1:0});}}>Add System</button></div>
+    </div></div>
+  );
+}
+
+function AddFlowModal({ systems, onClose, onSave }) {
+  const [form, setForm] = useState({ name:'', description:'', source_system_id:'', destination_system_id:'', frequency:'Daily', transfer_method:'', format:'', contains_pii:false, ferpa_protected:false });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  return (
+    <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-header">Add Data Flow <button className="panel-close" onClick={onClose}>&times;</button></div>
+      <div className="modal-body">
+        <div className="form-group"><label>Name *</label><input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="e.g., District Enrollment to Staging" /></div>
+        <div className="form-row"><div className="form-group"><label>Source System *</label><select value={form.source_system_id} onChange={e=>set('source_system_id',e.target.value)}><option value="">Select...</option>{systems.map(s=><option key={s.system_id} value={s.system_id}>{s.name}</option>)}</select></div><div className="form-group"><label>Destination System *</label><select value={form.destination_system_id} onChange={e=>set('destination_system_id',e.target.value)}><option value="">Select...</option>{systems.map(s=><option key={s.system_id} value={s.system_id}>{s.name}</option>)}</select></div></div>
+        <div className="form-row"><div className="form-group"><label>Frequency</label><select value={form.frequency} onChange={e=>set('frequency',e.target.value)}><option>Real-time</option><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Annually</option><option>Ad Hoc</option></select></div><div className="form-group"><label>Format</label><input value={form.format} onChange={e=>set('format',e.target.value)} placeholder="e.g., CSV, XML, JSON" /></div></div>
+        <div className="form-group"><label>Transfer Method</label><input value={form.transfer_method} onChange={e=>set('transfer_method',e.target.value)} placeholder="e.g., SFTP, API, Manual Upload" /></div>
+        <div className="form-group"><label>Description</label><textarea value={form.description} onChange={e=>set('description',e.target.value)} /></div>
+        <div className="checkbox-row"><label><input type="checkbox" checked={form.contains_pii} onChange={e=>set('contains_pii',e.target.checked)} /> Contains PII</label><label><input type="checkbox" checked={form.ferpa_protected} onChange={e=>set('ferpa_protected',e.target.checked)} /> FERPA Protected</label></div>
+      </div>
+      <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={()=>{if(form.name&&form.source_system_id&&form.destination_system_id)onSave({...form,direction:'Inbound',contains_pii:form.contains_pii?1:0,ferpa_protected:form.ferpa_protected?1:0});}}>Add Flow</button></div>
+    </div></div>
+  );
+}
+
+// ===== Table Views =====
+function SystemsTable({ systems, onSelect }) {
+  return (<div className="table-view"><table className="data-table">
+    <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Organization</th><th>Technology</th><th>Status</th><th>PII</th></tr></thead>
+    <tbody>{systems.map(s=>(<tr key={s.system_id} className="clickable" onClick={()=>onSelect(s.system_id)}><td>{s.system_id}</td><td><strong>{s.name}</strong></td><td><span className={`badge badge-${s.system_type?.toLowerCase().replace(/\s/g,'')}`}>{s.system_type}</span></td><td>{s.organization}</td><td>{s.technology}</td><td><span className={`badge badge-${STATUS_BADGE[s.status]}`}>{s.status}</span></td><td>{s.contains_pii?<span className="badge badge-pii">PII</span>:'\u2014'}</td></tr>))}</tbody>
+  </table></div>);
+}
+
+function FlowsTable({ flows, onSelect }) {
+  return (<div className="table-view"><table className="data-table">
+    <thead><tr><th>ID</th><th>Name</th><th>Source</th><th>Destination</th><th>Frequency</th><th>Method</th><th>Status</th></tr></thead>
+    <tbody>{flows.map(f=>(<tr key={f.flow_id} className="clickable" onClick={()=>onSelect(f.flow_id)}><td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.frequency}</td><td>{f.transfer_method}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td></tr>))}</tbody>
+  </table></div>);
+}
+
+function ElementsTable({ elements, onSelect }) {
+  return (<div className="table-view"><table className="data-table">
+    <thead><tr><th>ID</th><th>Name</th><th>Data Type</th><th>PII</th><th>FERPA</th></tr></thead>
+    <tbody>{elements.map(e=>(<tr key={e.element_id} className="clickable" onClick={()=>onSelect(e.element_id)}><td>{e.element_id}</td><td><strong>{e.name}</strong><br/><span style={{fontSize:'11px',color:'#888'}}>{e.aliases}</span></td><td>{e.data_type||'\u2014'}</td><td>{e.is_pii?<span className="badge badge-pii">PII</span>:'\u2014'}</td><td>{e.ferpa_protected?<span className="badge badge-ferpa">FERPA</span>:'\u2014'}</td></tr>))}</tbody>
+  </table></div>);
+}
+
+// ===== Main App =====
+function App() {
+  const [view, setView] = useState('diagram');
+  const [appTitle, setAppTitle] = useState(() => localStorage.getItem('dlt_title') || 'DATA LINEAGE TRACKER');
+  const [appSubtitle, setAppSubtitle] = useState(() => localStorage.getItem('dlt_subtitle') || 'Dept. of Education');
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingSubtitle, setEditingSubtitle] = useState(false);
+  const titleRef = useRef(null);
+  const subtitleRef = useRef(null);
+  const [systems, setSystems] = useState([]);
+  const [flows, setFlows] = useState([]);
+  const [elements, setElements] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [detailType, setDetailType] = useState(null);
+  const [showAddSystem, setShowAddSystem] = useState(false);
+  const [showAddFlow, setShowAddFlow] = useState(false);
+
+  const refresh = useCallback(() => {
+    api.get('/api/systems').then(setSystems);
+    api.get('/api/flows').then(setFlows);
+    api.get('/api/elements').then(setElements);
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const selectSystem = useCallback((id) => {
+    setSelected({ type: 'system', id });
+    api.get(`/api/systems/${id}`).then(d => { setDetailData(d); setDetailType('system'); });
+  }, []);
+
+  const selectFlow = useCallback((id) => {
+    setSelected({ type: 'flow', id });
+    api.get(`/api/flows/${id}`).then(d => { setDetailData(d); setDetailType('flow'); });
+  }, []);
+
+  const selectElement = useCallback((id) => {
+    setSelected({ type: 'element', id });
+    api.get(`/api/elements/${id}`).then(d => { setDetailData(d); setDetailType('element'); });
+  }, []);
+
+  useEffect(() => { if (editingTitle && titleRef.current) titleRef.current.focus(); }, [editingTitle]);
+  useEffect(() => { if (editingSubtitle && subtitleRef.current) subtitleRef.current.focus(); }, [editingSubtitle]);
+
+  const closeDetail = () => { setSelected(null); setDetailData(null); setDetailType(null); };
+
+  const updatePosition = useCallback((id, x, y) => {
+    setSystems(prev => prev.map(s => s.system_id === id ? { ...s, x_pos: x, y_pos: y } : s));
+  }, []);
+
+  const handleSave = useCallback((type, result) => {
+    if (type === 'system') {
+      refresh();
+      api.get(`/api/systems/${result.system_id}`).then(d => { setDetailData(d); });
+    } else if (type === 'flow') {
+      refresh();
+      const fid = result.flow_id || result.updated;
+      api.get(`/api/flows/${fid}`).then(d => { setDetailData(d); });
+    } else if (type === 'element') {
+      refresh();
+      setDetailData(result);
+    }
+  }, [refresh]);
+
+  const addSystem = async (data) => { await api.post('/api/systems', data); refresh(); setShowAddSystem(false); };
+  const addFlow = async (data) => { await api.post('/api/flows', data); refresh(); setShowAddFlow(false); };
+
+  const panelOpen = !!detailData;
+
+  return (
+    <div className="app">
+      <div className="sidebar">
+        <div className="sidebar-header">
+          {editingTitle
+            ? <input className="header-title" ref={titleRef} defaultValue={appTitle}
+                onBlur={e => { const v = e.target.value.trim() || appTitle; setAppTitle(v); localStorage.setItem('dlt_title', v); setEditingTitle(false); }}
+                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setEditingTitle(false); } }} />
+            : <h1 onClick={() => setEditingTitle(true)}>{appTitle}</h1>}
+          {editingSubtitle
+            ? <input className="header-subtitle" ref={subtitleRef} defaultValue={appSubtitle}
+                onBlur={e => { const v = e.target.value.trim() || appSubtitle; setAppSubtitle(v); localStorage.setItem('dlt_subtitle', v); setEditingSubtitle(false); }}
+                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setEditingSubtitle(false); } }} />
+            : <p onClick={() => setEditingSubtitle(true)}>{appSubtitle}</p>}
+        </div>
+        <div className="sidebar-nav">
+          <div className="nav-section">Views</div>
+          <div className={`nav-item ${view==='diagram'?'active':''}`} onClick={()=>setView('diagram')}><span className="nav-icon">&#9678;</span> Lineage Diagram</div>
+          <div className="nav-section">Catalog</div>
+          <div className={`nav-item ${view==='systems'?'active':''}`} onClick={()=>setView('systems')}><span className="nav-icon">&#9634;</span> Systems ({systems.length})</div>
+          <div className={`nav-item ${view==='flows'?'active':''}`} onClick={()=>setView('flows')}><span className="nav-icon">&#8594;</span> Data Flows ({flows.length})</div>
+          <div className={`nav-item ${view==='elements'?'active':''}`} onClick={()=>setView('elements')}><span className="nav-icon">&#9830;</span> Data Elements ({elements.length})</div>
+        </div>
+      </div>
+
+      <div className="main-area">
+        <div className="toolbar">
+          <span className="toolbar-title">{view==='diagram'?'Lineage Diagram':view==='systems'?'Systems Catalog':view==='flows'?'Data Flows Catalog':'Data Elements Glossary'}</span>
+          <div className="toolbar-spacer"></div>
+          {(view==='diagram'||view==='systems')&&<button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
+          {(view==='diagram'||view==='flows')&&<button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
+        </div>
+        <div className="stats-bar">
+          <div className="stat"><div className="stat-value">{systems.length}</div><div className="stat-label">Systems</div></div>
+          <div className="stat"><div className="stat-value">{flows.length}</div><div className="stat-label">Data Flows</div></div>
+          <div className="stat"><div className="stat-value">{elements.length}</div><div className="stat-label">Data Elements</div></div>
+          <div className="stat"><div className="stat-value">{elements.filter(e=>e.is_pii).length}</div><div className="stat-label">PII Elements</div></div>
+        </div>
+        <div className="content-area">
+          {view==='diagram' && <DiagramCanvas systems={systems} flows={flows} selected={selected} onSelectSystem={selectSystem} onSelectFlow={selectFlow} onUpdatePosition={updatePosition} />}
+          {view==='systems' && <SystemsTable systems={systems} onSelect={selectSystem} />}
+          {view==='flows' && <FlowsTable flows={flows} onSelect={selectFlow} />}
+          {view==='elements' && <ElementsTable elements={elements} onSelect={selectElement} />}
+          <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave} systems={systems} />
+        </div>
+      </div>
+
+      {showAddSystem && <AddSystemModal onClose={()=>setShowAddSystem(false)} onSave={addSystem} />}
+      {showAddFlow && <AddFlowModal systems={systems} onClose={()=>setShowAddFlow(false)} onSave={addFlow} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
