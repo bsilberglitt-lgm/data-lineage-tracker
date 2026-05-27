@@ -38,7 +38,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .content-area { flex: 1; display: flex; overflow: hidden; }
 .canvas-container { flex: 1; min-width: 0; position: relative; overflow: hidden; background: #f5f8fb; transition: all 0.25s ease; }
 .canvas-container svg { display: block; width: 100%; height: 100%; }
-.detail-panel { width: 440px; background: #fff; border-left: 1px solid #dde3ea; overflow-y: auto; overflow-x: hidden; flex-shrink: 0; transition: width 0.3s ease, border 0.3s ease; }
+.detail-panel { width: 480px; background: #fff; border-left: 1px solid #dde3ea; overflow-y: auto; overflow-x: hidden; flex-shrink: 0; transition: width 0.3s ease, border 0.3s ease; }
 .detail-panel.closed { width: 0; min-width: 0; border-left: none; overflow: hidden; padding: 0; }
 .panel-header { padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 8px; }
 .panel-header h2 { font-size: 15px; font-weight: 600; color: #1B3A5C; flex: 1; }
@@ -48,7 +48,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .panel-section { margin-bottom: 20px; }
 .panel-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 8px; font-weight: 600; }
 .field-row { display: flex; margin-bottom: 6px; font-size: 13px; line-height: 1.5; }
-.field-label { width: 130px; flex-shrink: 0; color: #666; font-weight: 500; }
+.field-label { width: 140px; flex-shrink: 0; color: #666; font-weight: 500; }
 .field-value { flex: 1; color: #1a2332; word-break: break-word; }
 .field-value.multiline { white-space: pre-line; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
@@ -61,6 +61,9 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .badge-source { background: #d5f5e3; color: #1a6b3c; }
 .badge-destination { background: #fadbd8; color: #922b21; }
 .badge-internal, .badge-etlprocess, .badge-datastore, .badge-manualprocess { background: #d6eaf8; color: #1a5276; }
+.badge-confidential { background: #f5b7b1; color: #78281f; }
+.badge-sensitive { background: #fdebd0; color: #7e5109; }
+.badge-public { background: #d5f5e3; color: #1a6b3c; }
 .system-node { cursor: grab; }
 .system-node:active { cursor: grabbing; }
 .system-node rect { rx: 10; ry: 10; transition: filter 0.15s; }
@@ -78,7 +81,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .data-table tr:hover td { background: #f8fafc; }
 .data-table tr.clickable { cursor: pointer; }
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 12px; width: 560px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { background: #fff; border-radius: 12px; width: 600px; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-header { padding: 20px 24px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; color: #1B3A5C; display: flex; justify-content: space-between; align-items: center; }
 .modal-body { padding: 20px 24px; }
 .form-group { margin-bottom: 14px; }
@@ -90,7 +93,6 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .modal-footer { padding: 16px 24px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 8px; }
 .checkbox-row { display: flex; gap: 20px; margin-bottom: 14px; }
 .checkbox-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
-/* Inline edit styles in detail panel */
 .edit-input { width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; }
 .edit-textarea { width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; min-height: 60px; resize: vertical; }
 .edit-select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; }
@@ -117,6 +119,20 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .login-box .login-btn { width: 100%; padding: 10px; background: #1B3A5C; color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .login-box .login-btn:hover { background: #244d75; }
 .login-error { color: #c0392b; font-size: 12px; margin-bottom: 12px; }
+/* Collapsible section styles */
+.collapsible-header { display: flex; align-items: center; cursor: pointer; padding: 8px 0; margin-bottom: 4px; user-select: none; gap: 6px; }
+.collapsible-header:hover .panel-section-title { color: #1B3A5C; }
+.collapsible-arrow { font-size: 10px; color: #888; transition: transform 0.2s; width: 14px; flex-shrink: 0; }
+.collapsible-arrow.open { transform: rotate(90deg); }
+.collapsible-content { overflow: hidden; transition: max-height 0.25s ease; }
+.collapsible-content.collapsed { max-height: 0 !important; overflow: hidden; }
+.domain-tag { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.5px; padding: 1px 6px; border-radius: 3px; margin-left: 8px; text-transform: uppercase; vertical-align: middle; }
+.domain-tag-security { background: #fce4ec; color: #c62828; }
+.domain-tag-management { background: #e3f2fd; color: #1565c0; }
+.domain-tag-use { background: #e8f5e9; color: #2e7d32; }
+.domain-tag-leadership { background: #f3e5f5; color: #6a1b9a; }
+.modal-section-title { font-size: 12px; font-weight: 700; color: #1B3A5C; margin: 18px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
+.modal-section-title:first-child { margin-top: 0; }
 </style>
 </head>
 <body>
@@ -143,6 +159,28 @@ const TYPE_COLORS = {
 };
 const getColor = (type) => TYPE_COLORS[type] || TYPE_COLORS['Internal'];
 const STATUS_BADGE = { Active: 'active', Deprecated: 'deprecated', Planned: 'planned', Broken: 'broken', 'Under Review': 'planned' };
+const CLASS_BADGE = { Confidential: 'confidential', Sensitive: 'sensitive', Internal: 'internal', Public: 'public' };
+
+// ===== Collapsible Section =====
+function CollapsibleSection({ title, domainTag, children, defaultOpen }) {
+  const [open, setOpen] = useState(defaultOpen !== false);
+  const contentRef = useRef(null);
+  return (
+    <div className="panel-section">
+      <div className="collapsible-header" onClick={() => setOpen(!open)}>
+        <span className={`collapsible-arrow ${open ? 'open' : ''}`}>&#9654;</span>
+        <span className="panel-section-title" style={{marginBottom:0}}>{title}</span>
+        {domainTag && <span className={`domain-tag domain-tag-${domainTag}`}>
+          {domainTag === 'security' ? '2.0 Security' : domainTag === 'management' ? '3.0 Mgmt' : domainTag === 'use' ? '4.0 Use' : '1.0 Leadership'}
+        </span>}
+      </div>
+      <div ref={contentRef} className={`collapsible-content ${open ? '' : 'collapsed'}`}
+           style={open ? {maxHeight: '2000px'} : {}}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 // ===== SVG Diagram =====
 function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition }) {
@@ -274,7 +312,12 @@ function EditField({ label, value, onChange, type, options }) {
 }
 
 function ReadField({ label, value, multiline }) {
-  return <div className="field-row"><span className="field-label">{label}</span><span className={`field-value${multiline?' multiline':''}`}>{value || '\u2014'}</span></div>;
+  return <div className="field-row"><span className="field-label">{label}</span><span className={`field-value${multiline?' multiline':''}`}>{value || '—'}</span></div>;
+}
+
+function ClassificationBadge({ value }) {
+  if (!value) return <span className="field-value">{'—'}</span>;
+  return <span className={`badge badge-${CLASS_BADGE[value] || 'internal'}`}>{value}</span>;
 }
 
 // ===== Detail Panel with Edit =====
@@ -291,13 +334,46 @@ function DetailPanel({ data, type, onClose, onSave, systems }) {
     let url, saveData;
     if (type === 'system') {
       url = `/api/systems/${data.system_id}`;
-      saveData = { name: form.name, description: form.description, system_type: form.system_type, vendor: form.vendor, technology: form.technology, environment: form.environment, managed_by: form.managed_by, organization: form.organization, contains_pii: form.contains_pii, ferpa_protected: form.ferpa_protected, status: form.status, notes: form.notes };
+      saveData = {
+        name: form.name, description: form.description, system_type: form.system_type,
+        vendor: form.vendor, technology: form.technology, environment: form.environment,
+        managed_by: form.managed_by, organization: form.organization,
+        contains_pii: form.contains_pii, ferpa_protected: form.ferpa_protected,
+        status: form.status, notes: form.notes,
+        data_classification: form.data_classification, access_method: form.access_method,
+        encryption_at_rest: form.encryption_at_rest, encryption_in_transit: form.encryption_in_transit,
+        last_security_review: form.last_security_review, has_audit_trail: form.has_audit_trail,
+        data_steward_id: form.data_steward_id, retention_schedule: form.retention_schedule,
+        destruction_method: form.destruction_method, backup_frequency: form.backup_frequency,
+        disaster_recovery: form.disaster_recovery, data_standards: form.data_standards,
+        authorized_users: form.authorized_users, data_sharing_restrictions: form.data_sharing_restrictions,
+      };
     } else if (type === 'flow') {
       url = `/api/flows/${data.flow_id}`;
-      saveData = { name: form.name, description: form.description, source_system_id: form.source_system_id, destination_system_id: form.destination_system_id, direction: form.direction, frequency: form.frequency, transfer_method: form.transfer_method, format: form.format, transformation_steps: form.transformation_steps, business_rules: form.business_rules, validations: form.validations, error_handling: form.error_handling, contains_pii: form.contains_pii, ferpa_protected: form.ferpa_protected, regulatory_driver: form.regulatory_driver, status: form.status, known_issues: form.known_issues };
+      saveData = {
+        name: form.name, description: form.description,
+        source_system_id: form.source_system_id, destination_system_id: form.destination_system_id,
+        direction: form.direction, frequency: form.frequency,
+        transfer_method: form.transfer_method, format: form.format,
+        transformation_steps: form.transformation_steps, business_rules: form.business_rules,
+        validations: form.validations, error_handling: form.error_handling,
+        contains_pii: form.contains_pii, ferpa_protected: form.ferpa_protected,
+        regulatory_driver: form.regulatory_driver, status: form.status, known_issues: form.known_issues,
+        data_classification: form.data_classification, encryption_method: form.encryption_method,
+        disclosure_avoidance: form.disclosure_avoidance,
+        data_quality_measures: form.data_quality_measures, data_standard: form.data_standard,
+        retention_at_destination: form.retention_at_destination, legal_authority: form.legal_authority,
+      };
     } else if (type === 'element') {
       url = `/api/elements/${data.element_id}`;
-      saveData = { name: form.name, aliases: form.aliases, definition: form.definition, data_type: form.data_type, valid_values: form.valid_values, is_pii: form.is_pii, ferpa_protected: form.ferpa_protected, notes: form.notes };
+      saveData = {
+        name: form.name, aliases: form.aliases, definition: form.definition,
+        data_type: form.data_type, valid_values: form.valid_values,
+        is_pii: form.is_pii, ferpa_protected: form.ferpa_protected, notes: form.notes,
+        data_classification: form.data_classification, data_standard: form.data_standard,
+        business_meaning: form.business_meaning,
+        data_owner_id: form.data_owner_id, data_steward_id: form.data_steward_id,
+      };
     }
     const result = await api.put(url, saveData);
     setEditing(false);
@@ -333,8 +409,7 @@ function DetailPanel({ data, type, onClose, onSave, systems }) {
 // ===== System Views =====
 function SystemReadView({ data }) {
   return (<>
-    <div className="panel-section">
-      <div className="panel-section-title">Overview</div>
+    <CollapsibleSection title="Overview">
       <ReadField label="ID" value={data.system_id} />
       <div className="field-row"><span className="field-label">Type</span><span className="field-value"><span className={`badge badge-${data.system_type?.toLowerCase().replace(/\s/g,'')}`}>{data.system_type}</span></span></div>
       <div className="field-row"><span className="field-label">Status</span><span className="field-value"><span className={`badge badge-${STATUS_BADGE[data.status]}`}>{data.status}</span></span></div>
@@ -343,21 +418,40 @@ function SystemReadView({ data }) {
       <ReadField label="Vendor" value={data.vendor} />
       <ReadField label="Technology" value={data.technology} />
       <ReadField label="Environment" value={data.environment} />
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Data Sensitivity</div>
+      {data.description && <ReadField label="Description" value={data.description} multiline />}
+      {data.notes && <ReadField label="Notes" value={data.notes} multiline />}
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Security & Privacy" domainTag="security">
+      <div className="field-row"><span className="field-label">Classification</span><span className="field-value"><ClassificationBadge value={data.data_classification} /></span></div>
       <div className="field-row"><span className="field-label">Contains PII</span><span className="field-value">{data.contains_pii ? <span className="badge badge-pii">Yes</span> : 'No'}</span></div>
-      <div className="field-row"><span className="field-label">FERPA</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
-    </div>
-    {data.description && <div className="panel-section"><div className="panel-section-title">Description</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.description}</div></div>}
-    {data.notes && <div className="panel-section"><div className="panel-section-title">Notes</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.notes}</div></div>}
+      <div className="field-row"><span className="field-label">FERPA Protected</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
+      <ReadField label="Access Method" value={data.access_method} />
+      <ReadField label="Encryption at Rest" value={data.encryption_at_rest} />
+      <ReadField label="Encryption in Transit" value={data.encryption_in_transit} />
+      <ReadField label="Last Security Review" value={data.last_security_review} />
+      <div className="field-row"><span className="field-label">Audit Trail</span><span className="field-value">{data.has_audit_trail ? 'Yes' : 'No'}</span></div>
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Data Management" domainTag="management">
+      <ReadField label="Data Steward" value={data.data_steward_id} />
+      <ReadField label="Retention Schedule" value={data.retention_schedule} />
+      <ReadField label="Destruction Method" value={data.destruction_method} />
+      <ReadField label="Backup Frequency" value={data.backup_frequency} />
+      <ReadField label="Disaster Recovery" value={data.disaster_recovery} />
+      <ReadField label="Data Standards" value={data.data_standards} />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Data Use & Sharing" domainTag="use">
+      <ReadField label="Authorized Users" value={data.authorized_users} multiline />
+      <ReadField label="Sharing Restrictions" value={data.data_sharing_restrictions} multiline />
+    </CollapsibleSection>
   </>);
 }
 
 function SystemEditView({ form, set }) {
   return (<>
-    <div className="panel-section">
-      <div className="panel-section-title">Overview</div>
+    <CollapsibleSection title="Overview">
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
       <EditField label="Type" value={form.system_type} onChange={v=>set('system_type',v)} type="select" options={['Source','Internal','Destination','ETL Process','Manual Process','Data Store']} />
       <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Deprecated','Under Review']} />
@@ -366,159 +460,240 @@ function SystemEditView({ form, set }) {
       <EditField label="Vendor" value={form.vendor} onChange={v=>set('vendor',v)} />
       <EditField label="Technology" value={form.technology} onChange={v=>set('technology',v)} />
       <EditField label="Environment" value={form.environment} onChange={v=>set('environment',v)} type="select" options={['Production','Staging','Development','Archive']} />
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Data Sensitivity</div>
+      <EditField label="Description" value={form.description} onChange={v=>set('description',v)} type="textarea" />
+      <EditField label="Notes" value={form.notes} onChange={v=>set('notes',v)} type="textarea" />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Security & Privacy" domainTag="security">
+      <EditField label="Classification" value={form.data_classification} onChange={v=>set('data_classification',v)} type="select" options={['','Confidential','Sensitive','Internal','Public']} />
       <EditField label="Contains PII" value={form.contains_pii} onChange={v=>set('contains_pii',v)} type="checkbox" />
-      <EditField label="FERPA" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Description</div>
-      <EditField label="" value={form.description} onChange={v=>set('description',v)} type="textarea" />
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Notes</div>
-      <EditField label="" value={form.notes} onChange={v=>set('notes',v)} type="textarea" />
-    </div>
+      <EditField label="FERPA Protected" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
+      <EditField label="Access Method" value={form.access_method} onChange={v=>set('access_method',v)} type="select" options={['','Role-based access','Role-based access with AD integration','SSO','Username/Password','Credential-based','API Key','Varies by district','Other']} />
+      <EditField label="Encrypt at Rest" value={form.encryption_at_rest} onChange={v=>set('encryption_at_rest',v)} type="select" options={['','AES-256','TDE (Transparent Data Encryption)','BitLocker','Federal standard','Varies by vendor','None','Unknown']} />
+      <EditField label="Encrypt in Transit" value={form.encryption_in_transit} onChange={v=>set('encryption_in_transit',v)} type="select" options={['','TLS 1.2','TLS 1.3','HTTPS/TLS','HTTPS/TLS 1.2','Internal network (encrypted)','VPN','None','Unknown']} />
+      <EditField label="Last Review" value={form.last_security_review} onChange={v=>set('last_security_review',v)} />
+      <EditField label="Audit Trail" value={form.has_audit_trail} onChange={v=>set('has_audit_trail',v)} type="checkbox" />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Data Management" domainTag="management">
+      <EditField label="Data Steward" value={form.data_steward_id} onChange={v=>set('data_steward_id',v)} />
+      <EditField label="Retention Schedule" value={form.retention_schedule} onChange={v=>set('retention_schedule',v)} type="select" options={['','1 year','3 years','5 years','7 years per state policy','10 years','Permanent retention','Per district policy','Per federal retention schedule','Other']} />
+      <EditField label="Destruction" value={form.destruction_method} onChange={v=>set('destruction_method',v)} type="select" options={['','Secure deletion','Secure deletion with verification','Physical destruction','Degaussing','N/A - permanent archive','Per district policy','Per federal policy','Other']} />
+      <EditField label="Backup Freq." value={form.backup_frequency} onChange={v=>set('backup_frequency',v)} type="select" options={['','Real-time replication','Daily incremental, weekly full','Daily','Weekly','Monthly','Varies','N/A','Other']} />
+      <EditField label="Disaster Recovery" value={form.disaster_recovery} onChange={v=>set('disaster_recovery',v)} />
+      <EditField label="Data Standards" value={form.data_standards} onChange={v=>set('data_standards',v)} />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Data Use & Sharing" domainTag="use">
+      <EditField label="Authorized Users" value={form.authorized_users} onChange={v=>set('authorized_users',v)} type="textarea" />
+      <EditField label="Sharing Restrictions" value={form.data_sharing_restrictions} onChange={v=>set('data_sharing_restrictions',v)} type="textarea" />
+    </CollapsibleSection>
   </>);
 }
 
 // ===== Flow Views =====
 function FlowReadView({ data }) {
   return (<>
-    <div className="panel-section">
-      <div className="panel-section-title">Flow Overview</div>
+    <CollapsibleSection title="Flow Overview">
       <ReadField label="ID" value={data.flow_id} />
       <ReadField label="Source" value={data.source_name} />
       <ReadField label="Destination" value={data.dest_name} />
       <ReadField label="Direction" value={data.direction} />
       <div className="field-row"><span className="field-label">Status</span><span className="field-value"><span className={`badge badge-${STATUS_BADGE[data.status]}`}>{data.status}</span></span></div>
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Transfer Details</div>
+      {data.description && <ReadField label="Description" value={data.description} multiline />}
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Transfer Details">
       <ReadField label="Frequency" value={data.frequency} />
       <ReadField label="Method" value={data.transfer_method} />
       <ReadField label="Format" value={data.format} />
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Data Sensitivity</div>
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Security & Privacy" domainTag="security">
+      <div className="field-row"><span className="field-label">Classification</span><span className="field-value"><ClassificationBadge value={data.data_classification} /></span></div>
       <div className="field-row"><span className="field-label">Contains PII</span><span className="field-value">{data.contains_pii ? <span className="badge badge-pii">Yes</span> : 'No'}</span></div>
-      <div className="field-row"><span className="field-label">FERPA</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
-      {data.regulatory_driver && <ReadField label="Regulatory" value={data.regulatory_driver} />}
-    </div>
-    {data.description && <div className="panel-section"><div className="panel-section-title">Description</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.description}</div></div>}
-    {data.transformation_steps && <div className="panel-section"><div className="panel-section-title">Transformation Steps</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.transformation_steps}</div></div>}
-    {data.business_rules && <div className="panel-section"><div className="panel-section-title">Business Rules</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.business_rules}</div></div>}
-    {data.validations && <div className="panel-section"><div className="panel-section-title">Validations</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.validations}</div></div>}
-    {data.error_handling && <div className="panel-section"><div className="panel-section-title">Error Handling</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.error_handling}</div></div>}
-    {data.known_issues && <div className="panel-section"><div className="panel-section-title">Known Issues</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.known_issues}</div></div>}
-    {data.elements && data.elements.length > 0 && <div className="panel-section">
-      <div className="panel-section-title">Data Elements ({data.elements.length})</div>
+      <div className="field-row"><span className="field-label">FERPA Protected</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
+      <ReadField label="Encryption" value={data.encryption_method} />
+      <ReadField label="Disclosure Avoidance" value={data.disclosure_avoidance} multiline />
+      {data.regulatory_driver && <ReadField label="Regulatory Driver" value={data.regulatory_driver} />}
+      {data.legal_authority && <ReadField label="Legal Authority" value={data.legal_authority} />}
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Data Management" domainTag="management">
+      <ReadField label="Data Standard" value={data.data_standard} />
+      <ReadField label="Quality Measures" value={data.data_quality_measures} multiline />
+      <ReadField label="Retention (Dest.)" value={data.retention_at_destination} />
+    </CollapsibleSection>
+
+    {(data.transformation_steps || data.business_rules || data.validations || data.error_handling) &&
+    <CollapsibleSection title="Processing Details" defaultOpen={false}>
+      {data.transformation_steps && <><div className="panel-section-title" style={{fontSize:10,marginTop:8}}>Transformation Steps</div><div className="field-value multiline" style={{fontSize:'13px',marginBottom:12}}>{data.transformation_steps}</div></>}
+      {data.business_rules && <><div className="panel-section-title" style={{fontSize:10,marginTop:8}}>Business Rules</div><div className="field-value multiline" style={{fontSize:'13px',marginBottom:12}}>{data.business_rules}</div></>}
+      {data.validations && <><div className="panel-section-title" style={{fontSize:10,marginTop:8}}>Validations</div><div className="field-value multiline" style={{fontSize:'13px',marginBottom:12}}>{data.validations}</div></>}
+      {data.error_handling && <><div className="panel-section-title" style={{fontSize:10,marginTop:8}}>Error Handling</div><div className="field-value multiline" style={{fontSize:'13px',marginBottom:12}}>{data.error_handling}</div></>}
+    </CollapsibleSection>}
+
+    {data.known_issues && <CollapsibleSection title="Known Issues" defaultOpen={false}><div className="field-value multiline" style={{fontSize:'13px'}}>{data.known_issues}</div></CollapsibleSection>}
+
+    {data.elements && data.elements.length > 0 && <CollapsibleSection title={`Data Elements (${data.elements.length})`} defaultOpen={false}>
       <table className="data-table" style={{fontSize:'12px'}}>
         <thead><tr><th>Element</th><th>PII</th><th>Transformed</th></tr></thead>
         <tbody>{data.elements.map(el => (
-          <tr key={el.element_id}><td><strong>{el.element_id}</strong> {el.name}</td><td>{el.is_pii?<span className="badge badge-pii">PII</span>:'\u2014'}</td><td>{el.is_transformed?'Yes':'\u2014'}{el.transformation_note?<div style={{fontSize:'11px',color:'#888',marginTop:2}}>{el.transformation_note}</div>:null}</td></tr>
+          <tr key={el.element_id}><td><strong>{el.element_id}</strong> {el.name}</td><td>{el.is_pii?<span className="badge badge-pii">PII</span>:'—'}</td><td>{el.is_transformed?'Yes':'—'}{el.transformation_note?<div style={{fontSize:'11px',color:'#888',marginTop:2}}>{el.transformation_note}</div>:null}</td></tr>
         ))}</tbody>
       </table>
-    </div>}
+    </CollapsibleSection>}
   </>);
 }
 
 function FlowEditView({ form, set, systems }) {
   return (<>
-    <div className="panel-section">
-      <div className="panel-section-title">Flow Overview</div>
+    <CollapsibleSection title="Flow Overview">
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
       <EditField label="Source" value={form.source_system_id} onChange={v=>set('source_system_id',v)} type="select" options={systems.map(s=>s.system_id)} />
       <EditField label="Destination" value={form.destination_system_id} onChange={v=>set('destination_system_id',v)} type="select" options={systems.map(s=>s.system_id)} />
       <EditField label="Direction" value={form.direction} onChange={v=>set('direction',v)} type="select" options={['Inbound','Outbound','Bidirectional']} />
       <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Deprecated','Under Review','Broken']} />
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Transfer Details</div>
+      <EditField label="Description" value={form.description} onChange={v=>set('description',v)} type="textarea" />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Transfer Details">
       <EditField label="Frequency" value={form.frequency} onChange={v=>set('frequency',v)} type="select" options={['Real-time','Daily','Weekly','Monthly','Annually','Ad Hoc','Event-triggered']} />
       <EditField label="Method" value={form.transfer_method} onChange={v=>set('transfer_method',v)} />
       <EditField label="Format" value={form.format} onChange={v=>set('format',v)} />
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Data Sensitivity</div>
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Security & Privacy" domainTag="security">
+      <EditField label="Classification" value={form.data_classification} onChange={v=>set('data_classification',v)} type="select" options={['','Confidential','Sensitive','Internal','Public']} />
       <EditField label="Contains PII" value={form.contains_pii} onChange={v=>set('contains_pii',v)} type="checkbox" />
-      <EditField label="FERPA" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
-      <EditField label="Regulatory" value={form.regulatory_driver} onChange={v=>set('regulatory_driver',v)} />
-    </div>
-    <div className="panel-section"><div className="panel-section-title">Description</div><EditField label="" value={form.description} onChange={v=>set('description',v)} type="textarea" /></div>
-    <div className="panel-section"><div className="panel-section-title">Transformation Steps</div><EditField label="" value={form.transformation_steps} onChange={v=>set('transformation_steps',v)} type="textarea" /></div>
-    <div className="panel-section"><div className="panel-section-title">Business Rules</div><EditField label="" value={form.business_rules} onChange={v=>set('business_rules',v)} type="textarea" /></div>
-    <div className="panel-section"><div className="panel-section-title">Validations</div><EditField label="" value={form.validations} onChange={v=>set('validations',v)} type="textarea" /></div>
-    <div className="panel-section"><div className="panel-section-title">Error Handling</div><EditField label="" value={form.error_handling} onChange={v=>set('error_handling',v)} type="textarea" /></div>
-    <div className="panel-section"><div className="panel-section-title">Known Issues</div><EditField label="" value={form.known_issues} onChange={v=>set('known_issues',v)} type="textarea" /></div>
+      <EditField label="FERPA Protected" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
+      <EditField label="Encryption" value={form.encryption_method} onChange={v=>set('encryption_method',v)} type="select" options={['','TLS 1.2 (HTTPS)','TLS 1.3','HTTPS/TLS','HTTPS/TLS (ESS upload)','Internal network (encrypted)','VPN','SFTP','None','Unknown']} />
+      <EditField label="Disclosure Avoidance" value={form.disclosure_avoidance} onChange={v=>set('disclosure_avoidance',v)} type="textarea" />
+      <EditField label="Regulatory Driver" value={form.regulatory_driver} onChange={v=>set('regulatory_driver',v)} />
+      <EditField label="Legal Authority" value={form.legal_authority} onChange={v=>set('legal_authority',v)} />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Data Management" domainTag="management">
+      <EditField label="Data Standard" value={form.data_standard} onChange={v=>set('data_standard',v)} />
+      <EditField label="Quality Measures" value={form.data_quality_measures} onChange={v=>set('data_quality_measures',v)} type="textarea" />
+      <EditField label="Retention (Dest.)" value={form.retention_at_destination} onChange={v=>set('retention_at_destination',v)} type="select" options={['','1 year','3 years','5 years','7 years per state policy','10 years','Permanent retention','Per federal retention schedule','Other']} />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Processing Details">
+      <EditField label="Transformations" value={form.transformation_steps} onChange={v=>set('transformation_steps',v)} type="textarea" />
+      <EditField label="Business Rules" value={form.business_rules} onChange={v=>set('business_rules',v)} type="textarea" />
+      <EditField label="Validations" value={form.validations} onChange={v=>set('validations',v)} type="textarea" />
+      <EditField label="Error Handling" value={form.error_handling} onChange={v=>set('error_handling',v)} type="textarea" />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Known Issues" defaultOpen={false}>
+      <EditField label="" value={form.known_issues} onChange={v=>set('known_issues',v)} type="textarea" />
+    </CollapsibleSection>
   </>);
 }
 
 // ===== Element Views =====
 function ElementReadView({ data }) {
   return (<>
-    <div className="panel-section">
-      <div className="panel-section-title">Element Overview</div>
+    <CollapsibleSection title="Element Overview">
       <ReadField label="ID" value={data.element_id} />
       <ReadField label="Name" value={data.name} />
       {data.aliases && <ReadField label="Aliases" value={data.aliases} />}
       <ReadField label="Data Type" value={data.data_type} />
       {data.valid_values && <ReadField label="Valid Values" value={data.valid_values} />}
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Classification</div>
+      {data.definition && <ReadField label="Definition" value={data.definition} multiline />}
+      {data.business_meaning && <ReadField label="Business Meaning" value={data.business_meaning} multiline />}
+      {data.notes && <ReadField label="Notes" value={data.notes} multiline />}
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Security & Privacy" domainTag="security">
+      <div className="field-row"><span className="field-label">Classification</span><span className="field-value"><ClassificationBadge value={data.data_classification} /></span></div>
       <div className="field-row"><span className="field-label">PII</span><span className="field-value">{data.is_pii ? <span className="badge badge-pii">Yes</span> : 'No'}</span></div>
-      <div className="field-row"><span className="field-label">FERPA</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
-    </div>
-    {data.definition && <div className="panel-section"><div className="panel-section-title">Definition</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.definition}</div></div>}
-    {data.notes && <div className="panel-section"><div className="panel-section-title">Notes</div><div className="field-value multiline" style={{fontSize:'13px'}}>{data.notes}</div></div>}
-    {data.flows && data.flows.length > 0 && <div className="panel-section">
-      <div className="panel-section-title">Appears in Flows ({data.flows.length})</div>
+      <div className="field-row"><span className="field-label">FERPA Protected</span><span className="field-value">{data.ferpa_protected ? <span className="badge badge-ferpa">Yes</span> : 'No'}</span></div>
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Data Management" domainTag="management">
+      <ReadField label="Data Standard" value={data.data_standard} />
+      <ReadField label="Source of Truth" value={data.source_of_truth} />
+      <ReadField label="Data Owner" value={data.data_owner_id} />
+      <ReadField label="Data Steward" value={data.data_steward_id} />
+    </CollapsibleSection>
+
+    {data.flows && data.flows.length > 0 && <CollapsibleSection title={`Appears in Flows (${data.flows.length})`} defaultOpen={false}>
       <table className="data-table" style={{fontSize:'12px'}}>
         <thead><tr><th>Flow</th><th>Transformed</th></tr></thead>
         <tbody>{data.flows.map(f => (
-          <tr key={f.flow_id}><td><strong>{f.flow_id}</strong> {f.name}</td><td>{f.is_transformed?'Yes':'\u2014'}</td></tr>
+          <tr key={f.flow_id}><td><strong>{f.flow_id}</strong> {f.name}</td><td>{f.is_transformed?'Yes':'—'}</td></tr>
         ))}</tbody>
       </table>
-    </div>}
+    </CollapsibleSection>}
   </>);
 }
 
 function ElementEditView({ form, set }) {
   return (<>
-    <div className="panel-section">
-      <div className="panel-section-title">Element Overview</div>
+    <CollapsibleSection title="Element Overview">
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
       <EditField label="Aliases" value={form.aliases} onChange={v=>set('aliases',v)} />
       <EditField label="Data Type" value={form.data_type} onChange={v=>set('data_type',v)} />
       <EditField label="Valid Values" value={form.valid_values} onChange={v=>set('valid_values',v)} />
-    </div>
-    <div className="panel-section">
-      <div className="panel-section-title">Classification</div>
+      <EditField label="Definition" value={form.definition} onChange={v=>set('definition',v)} type="textarea" />
+      <EditField label="Business Meaning" value={form.business_meaning} onChange={v=>set('business_meaning',v)} type="textarea" />
+      <EditField label="Notes" value={form.notes} onChange={v=>set('notes',v)} type="textarea" />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Security & Privacy" domainTag="security">
+      <EditField label="Classification" value={form.data_classification} onChange={v=>set('data_classification',v)} type="select" options={['','Confidential','Sensitive','Internal','Public']} />
       <EditField label="PII" value={form.is_pii} onChange={v=>set('is_pii',v)} type="checkbox" />
-      <EditField label="FERPA" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
-    </div>
-    <div className="panel-section"><div className="panel-section-title">Definition</div><EditField label="" value={form.definition} onChange={v=>set('definition',v)} type="textarea" /></div>
-    <div className="panel-section"><div className="panel-section-title">Notes</div><EditField label="" value={form.notes} onChange={v=>set('notes',v)} type="textarea" /></div>
+      <EditField label="FERPA Protected" value={form.ferpa_protected} onChange={v=>set('ferpa_protected',v)} type="checkbox" />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Data Management" domainTag="management">
+      <EditField label="Data Standard" value={form.data_standard} onChange={v=>set('data_standard',v)} />
+      <EditField label="Source of Truth" value={form.source_of_truth} onChange={v=>set('source_of_truth',v)} />
+      <EditField label="Data Owner" value={form.data_owner_id} onChange={v=>set('data_owner_id',v)} />
+      <EditField label="Data Steward" value={form.data_steward_id} onChange={v=>set('data_steward_id',v)} />
+    </CollapsibleSection>
   </>);
 }
 
-// ===== Add Modals (unchanged) =====
+// ===== Add Modals =====
 function AddSystemModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ name:'', description:'', system_type:'Source', vendor:'', technology:'', environment:'Production', managed_by:'', organization:'', contains_pii:false, ferpa_protected:false, status:'Active', notes:'' });
+  const [form, setForm] = useState({
+    name:'', description:'', system_type:'Source', vendor:'', technology:'', environment:'Production',
+    managed_by:'', organization:'', contains_pii:false, ferpa_protected:false, status:'Active', notes:'',
+    data_classification:'', access_method:'', encryption_at_rest:'', encryption_in_transit:'',
+    retention_schedule:'', data_standards:''
+  });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   return (
     <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
       <div className="modal-header">Add System <button className="panel-close" onClick={onClose}>&times;</button></div>
       <div className="modal-body">
+        <div className="modal-section-title">Overview</div>
         <div className="form-group"><label>Name *</label><input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="e.g., PowerSchool SIS" /></div>
         <div className="form-row"><div className="form-group"><label>Type *</label><select value={form.system_type} onChange={e=>set('system_type',e.target.value)}><option>Source</option><option>Internal</option><option>Destination</option><option>ETL Process</option><option>Manual Process</option><option>Data Store</option></select></div><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>set('status',e.target.value)}><option>Active</option><option>Planned</option><option>Deprecated</option><option>Under Review</option></select></div></div>
         <div className="form-row"><div className="form-group"><label>Vendor</label><input value={form.vendor} onChange={e=>set('vendor',e.target.value)} /></div><div className="form-group"><label>Technology</label><input value={form.technology} onChange={e=>set('technology',e.target.value)} /></div></div>
         <div className="form-group"><label>Managed By *</label><input value={form.managed_by} onChange={e=>set('managed_by',e.target.value)} /></div>
         <div className="form-group"><label>Organization</label><input value={form.organization} onChange={e=>set('organization',e.target.value)} /></div>
         <div className="form-group"><label>Description</label><textarea value={form.description} onChange={e=>set('description',e.target.value)} /></div>
+
+        <div className="modal-section-title">Security & Privacy</div>
+        <div className="form-row">
+          <div className="form-group"><label>Data Classification</label><select value={form.data_classification} onChange={e=>set('data_classification',e.target.value)}><option value="">Select...</option><option>Confidential</option><option>Sensitive</option><option>Internal</option><option>Public</option></select></div>
+          <div className="form-group"><label>Access Method</label><select value={form.access_method} onChange={e=>set('access_method',e.target.value)}><option value="">Select...</option><option>Role-based access</option><option>SSO</option><option>Username/Password</option><option>API Key</option><option>Other</option></select></div>
+        </div>
+        <div className="form-row">
+          <div className="form-group"><label>Encryption at Rest</label><select value={form.encryption_at_rest} onChange={e=>set('encryption_at_rest',e.target.value)}><option value="">Select...</option><option>AES-256</option><option>TDE (Transparent Data Encryption)</option><option>BitLocker</option><option>None</option><option>Unknown</option></select></div>
+          <div className="form-group"><label>Encryption in Transit</label><select value={form.encryption_in_transit} onChange={e=>set('encryption_in_transit',e.target.value)}><option value="">Select...</option><option>TLS 1.2</option><option>TLS 1.3</option><option>HTTPS/TLS</option><option>VPN</option><option>None</option><option>Unknown</option></select></div>
+        </div>
         <div className="checkbox-row"><label><input type="checkbox" checked={form.contains_pii} onChange={e=>set('contains_pii',e.target.checked)} /> Contains PII</label><label><input type="checkbox" checked={form.ferpa_protected} onChange={e=>set('ferpa_protected',e.target.checked)} /> FERPA Protected</label></div>
+
+        <div className="modal-section-title">Data Management</div>
+        <div className="form-row">
+          <div className="form-group"><label>Retention Schedule</label><select value={form.retention_schedule} onChange={e=>set('retention_schedule',e.target.value)}><option value="">Select...</option><option>1 year</option><option>3 years</option><option>5 years</option><option>7 years per state policy</option><option>10 years</option><option>Permanent retention</option><option>Other</option></select></div>
+          <div className="form-group"><label>Data Standards</label><input value={form.data_standards} onChange={e=>set('data_standards',e.target.value)} placeholder="e.g., SIF 3.x, CEDS, Ed-Fi" /></div>
+        </div>
         <div className="form-group"><label>Notes</label><textarea value={form.notes} onChange={e=>set('notes',e.target.value)} /></div>
       </div>
       <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={()=>{if(form.name&&form.managed_by)onSave({...form,contains_pii:form.contains_pii?1:0,ferpa_protected:form.ferpa_protected?1:0});}}>Add System</button></div>
@@ -527,18 +702,35 @@ function AddSystemModal({ onClose, onSave }) {
 }
 
 function AddFlowModal({ systems, onClose, onSave }) {
-  const [form, setForm] = useState({ name:'', description:'', source_system_id:'', destination_system_id:'', frequency:'Daily', transfer_method:'', format:'', contains_pii:false, ferpa_protected:false });
+  const [form, setForm] = useState({
+    name:'', description:'', source_system_id:'', destination_system_id:'', frequency:'Daily',
+    transfer_method:'', format:'', contains_pii:false, ferpa_protected:false,
+    data_classification:'', encryption_method:'', data_standard:'', legal_authority:''
+  });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   return (
     <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
       <div className="modal-header">Add Data Flow <button className="panel-close" onClick={onClose}>&times;</button></div>
       <div className="modal-body">
+        <div className="modal-section-title">Flow Overview</div>
         <div className="form-group"><label>Name *</label><input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="e.g., District Enrollment to Staging" /></div>
         <div className="form-row"><div className="form-group"><label>Source System *</label><select value={form.source_system_id} onChange={e=>set('source_system_id',e.target.value)}><option value="">Select...</option>{systems.map(s=><option key={s.system_id} value={s.system_id}>{s.name}</option>)}</select></div><div className="form-group"><label>Destination System *</label><select value={form.destination_system_id} onChange={e=>set('destination_system_id',e.target.value)}><option value="">Select...</option>{systems.map(s=><option key={s.system_id} value={s.system_id}>{s.name}</option>)}</select></div></div>
         <div className="form-row"><div className="form-group"><label>Frequency</label><select value={form.frequency} onChange={e=>set('frequency',e.target.value)}><option>Real-time</option><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Annually</option><option>Ad Hoc</option></select></div><div className="form-group"><label>Format</label><input value={form.format} onChange={e=>set('format',e.target.value)} placeholder="e.g., CSV, XML, JSON" /></div></div>
         <div className="form-group"><label>Transfer Method</label><input value={form.transfer_method} onChange={e=>set('transfer_method',e.target.value)} placeholder="e.g., SFTP, API, Manual Upload" /></div>
         <div className="form-group"><label>Description</label><textarea value={form.description} onChange={e=>set('description',e.target.value)} /></div>
+
+        <div className="modal-section-title">Security & Privacy</div>
+        <div className="form-row">
+          <div className="form-group"><label>Data Classification</label><select value={form.data_classification} onChange={e=>set('data_classification',e.target.value)}><option value="">Select...</option><option>Confidential</option><option>Sensitive</option><option>Internal</option><option>Public</option></select></div>
+          <div className="form-group"><label>Encryption</label><select value={form.encryption_method} onChange={e=>set('encryption_method',e.target.value)}><option value="">Select...</option><option>TLS 1.2 (HTTPS)</option><option>TLS 1.3</option><option>HTTPS/TLS</option><option>Internal network (encrypted)</option><option>SFTP</option><option>VPN</option><option>None</option></select></div>
+        </div>
         <div className="checkbox-row"><label><input type="checkbox" checked={form.contains_pii} onChange={e=>set('contains_pii',e.target.checked)} /> Contains PII</label><label><input type="checkbox" checked={form.ferpa_protected} onChange={e=>set('ferpa_protected',e.target.checked)} /> FERPA Protected</label></div>
+
+        <div className="modal-section-title">Data Management</div>
+        <div className="form-row">
+          <div className="form-group"><label>Data Standard</label><input value={form.data_standard} onChange={e=>set('data_standard',e.target.value)} placeholder="e.g., SIF 3.x, EDFacts" /></div>
+          <div className="form-group"><label>Legal Authority</label><input value={form.legal_authority} onChange={e=>set('legal_authority',e.target.value)} placeholder="e.g., FERPA, State statute" /></div>
+        </div>
       </div>
       <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={()=>{if(form.name&&form.source_system_id&&form.destination_system_id)onSave({...form,direction:'Inbound',contains_pii:form.contains_pii?1:0,ferpa_protected:form.ferpa_protected?1:0});}}>Add Flow</button></div>
     </div></div>
@@ -548,22 +740,22 @@ function AddFlowModal({ systems, onClose, onSave }) {
 // ===== Table Views =====
 function SystemsTable({ systems, onSelect }) {
   return (<div className="table-view"><table className="data-table">
-    <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Organization</th><th>Technology</th><th>Status</th><th>PII</th></tr></thead>
-    <tbody>{systems.map(s=>(<tr key={s.system_id} className="clickable" onClick={()=>onSelect(s.system_id)}><td>{s.system_id}</td><td><strong>{s.name}</strong></td><td><span className={`badge badge-${s.system_type?.toLowerCase().replace(/\s/g,'')}`}>{s.system_type}</span></td><td>{s.organization}</td><td>{s.technology}</td><td><span className={`badge badge-${STATUS_BADGE[s.status]}`}>{s.status}</span></td><td>{s.contains_pii?<span className="badge badge-pii">PII</span>:'\u2014'}</td></tr>))}</tbody>
+    <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Classification</th><th>Organization</th><th>Status</th><th>PII</th></tr></thead>
+    <tbody>{systems.map(s=>(<tr key={s.system_id} className="clickable" onClick={()=>onSelect(s.system_id)}><td>{s.system_id}</td><td><strong>{s.name}</strong></td><td><span className={`badge badge-${s.system_type?.toLowerCase().replace(/\s/g,'')}`}>{s.system_type}</span></td><td>{s.data_classification ? <span className={`badge badge-${CLASS_BADGE[s.data_classification]||'internal'}`}>{s.data_classification}</span> : '—'}</td><td>{s.organization}</td><td><span className={`badge badge-${STATUS_BADGE[s.status]}`}>{s.status}</span></td><td>{s.contains_pii?<span className="badge badge-pii">PII</span>:'—'}</td></tr>))}</tbody>
   </table></div>);
 }
 
 function FlowsTable({ flows, onSelect }) {
   return (<div className="table-view"><table className="data-table">
-    <thead><tr><th>ID</th><th>Name</th><th>Source</th><th>Destination</th><th>Frequency</th><th>Method</th><th>Status</th></tr></thead>
-    <tbody>{flows.map(f=>(<tr key={f.flow_id} className="clickable" onClick={()=>onSelect(f.flow_id)}><td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.frequency}</td><td>{f.transfer_method}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td></tr>))}</tbody>
+    <thead><tr><th>ID</th><th>Name</th><th>Source</th><th>Destination</th><th>Classification</th><th>Frequency</th><th>Status</th></tr></thead>
+    <tbody>{flows.map(f=>(<tr key={f.flow_id} className="clickable" onClick={()=>onSelect(f.flow_id)}><td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.data_classification ? <span className={`badge badge-${CLASS_BADGE[f.data_classification]||'internal'}`}>{f.data_classification}</span> : '—'}</td><td>{f.frequency}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td></tr>))}</tbody>
   </table></div>);
 }
 
 function ElementsTable({ elements, onSelect }) {
   return (<div className="table-view"><table className="data-table">
-    <thead><tr><th>ID</th><th>Name</th><th>Data Type</th><th>PII</th><th>FERPA</th></tr></thead>
-    <tbody>{elements.map(e=>(<tr key={e.element_id} className="clickable" onClick={()=>onSelect(e.element_id)}><td>{e.element_id}</td><td><strong>{e.name}</strong><br/><span style={{fontSize:'11px',color:'#888'}}>{e.aliases}</span></td><td>{e.data_type||'\u2014'}</td><td>{e.is_pii?<span className="badge badge-pii">PII</span>:'\u2014'}</td><td>{e.ferpa_protected?<span className="badge badge-ferpa">FERPA</span>:'\u2014'}</td></tr>))}</tbody>
+    <thead><tr><th>ID</th><th>Name</th><th>Data Type</th><th>Classification</th><th>PII</th><th>FERPA</th></tr></thead>
+    <tbody>{elements.map(e=>(<tr key={e.element_id} className="clickable" onClick={()=>onSelect(e.element_id)}><td>{e.element_id}</td><td><strong>{e.name}</strong><br/><span style={{fontSize:'11px',color:'#888'}}>{e.aliases}</span></td><td>{e.data_type||'—'}</td><td>{e.data_classification ? <span className={`badge badge-${CLASS_BADGE[e.data_classification]||'internal'}`}>{e.data_classification}</span> : '—'}</td><td>{e.is_pii?<span className="badge badge-pii">PII</span>:'—'}</td><td>{e.ferpa_protected?<span className="badge badge-ferpa">FERPA</span>:'—'}</td></tr>))}</tbody>
   </table></div>);
 }
 
