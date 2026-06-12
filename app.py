@@ -699,62 +699,70 @@ def seed_db():
 # Schema drill-down seeding (loads neo_schema.json into schema_table/column)
 # ---------------------------------------------------------------------------
 
-SCHEMA_SEED_PATH = Path(__file__).parent / "neo_schema.json"
-
 def seed_schema():
-    """Populate schema_table / schema_column from neo_schema.json.
+    """Populate schema_table / schema_column from any *_schema.json seed files.
 
-    Runs independently of seed_db() so that an existing (already-seeded)
-    deployed database still gains the NEO schema. Idempotent: only seeds when
-    schema_table is empty, and only if the parent system exists.
+    Each seed file declares the system_id it belongs to (e.g. neo_schema.json ->
+    SYS-003, fedreporting_schema.json -> SYS-005). Runs independently of
+    seed_db() so an already-seeded deployed database still gains schemas.
+
+    Idempotency is per-system: a system is only seeded if it has no schema_table
+    rows yet, so adding a new schema file seeds just that system and leaves
+    existing ones untouched.
     """
-    if not SCHEMA_SEED_PATH.exists():
+    seed_files = sorted(Path(__file__).parent.glob("*_schema.json"))
+    if not seed_files:
         return
     conn = get_db()
-    if conn.execute("SELECT COUNT(*) FROM schema_table").fetchone()[0] > 0:
-        conn.close()
-        return
-
-    with open(SCHEMA_SEED_PATH) as f:
-        data = json.load(f)
-
-    system_id = data.get("system_id")
-    # Only seed if the parent system actually exists in this database
-    if not conn.execute("SELECT 1 FROM system WHERE system_id=?", (system_id,)).fetchone():
-        conn.close()
-        return
-
     now = datetime.datetime.now().isoformat()
 
-    for t in data.get("tables", []):
-        conn.execute(
-            """INSERT INTO schema_table
-               (table_id, system_id, schema_name, table_name, primary_key,
-                x_pos, y_pos, created_date, updated_date)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (t["table_id"], system_id, t.get("schema_name"), t.get("table_name"),
-             t.get("primary_key"), t.get("x_pos", 0), t.get("y_pos", 0), now, now))
+    for path in seed_files:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"  Skipping schema seed {path.name}: {e}")
+            continue
 
-    for c in data.get("columns", []):
-        conn.execute(
-            """INSERT INTO schema_column
-               (column_id, table_id, column_name, ordinal, data_type, is_nullable,
-                is_identity, is_pk, is_fk, default_value, fk_target_schema,
-                fk_target_table, fk_target_column, fk_target_table_id, fk_constraint,
-                created_date, updated_date)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (c["column_id"], c["table_id"], c.get("column_name"), c.get("ordinal"),
-             c.get("data_type"), c.get("is_nullable", 1), c.get("is_identity", 0),
-             c.get("is_pk", 0), c.get("is_fk", 0), c.get("default_value"),
-             c.get("fk_target_schema"), c.get("fk_target_table"),
-             c.get("fk_target_column"), c.get("fk_target_table_id"),
-             c.get("fk_constraint"), now, now))
+        system_id = data.get("system_id")
+        if not system_id:
+            continue
+        # Parent system must exist in this database
+        if not conn.execute("SELECT 1 FROM system WHERE system_id=?", (system_id,)).fetchone():
+            continue
+        # Per-system idempotency: skip if this system already has a schema
+        if conn.execute("SELECT COUNT(*) FROM schema_table WHERE system_id=?",
+                        (system_id,)).fetchone()[0] > 0:
+            continue
 
-    conn.commit()
-    n_t = conn.execute("SELECT COUNT(*) FROM schema_table").fetchone()[0]
-    n_c = conn.execute("SELECT COUNT(*) FROM schema_column").fetchone()[0]
+        tables = data.get("tables", [])
+        cols = data.get("columns", [])
+        for t in tables:
+            conn.execute(
+                """INSERT INTO schema_table
+                   (table_id, system_id, schema_name, table_name, primary_key,
+                    x_pos, y_pos, created_date, updated_date)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (t["table_id"], system_id, t.get("schema_name"), t.get("table_name"),
+                 t.get("primary_key"), t.get("x_pos", 0), t.get("y_pos", 0), now, now))
+        for c in cols:
+            conn.execute(
+                """INSERT INTO schema_column
+                   (column_id, table_id, column_name, ordinal, data_type, is_nullable,
+                    is_identity, is_pk, is_fk, default_value, fk_target_schema,
+                    fk_target_table, fk_target_column, fk_target_table_id, fk_constraint,
+                    created_date, updated_date)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (c["column_id"], c["table_id"], c.get("column_name"), c.get("ordinal"),
+                 c.get("data_type"), c.get("is_nullable", 1), c.get("is_identity", 0),
+                 c.get("is_pk", 0), c.get("is_fk", 0), c.get("default_value"),
+                 c.get("fk_target_schema"), c.get("fk_target_table"),
+                 c.get("fk_target_column"), c.get("fk_target_table_id"),
+                 c.get("fk_constraint"), now, now))
+        conn.commit()
+        print(f"Schema seeded: {len(tables)} tables, {len(cols)} columns for {system_id} ({path.name})")
+
     conn.close()
-    print(f"Schema seeded: {n_t} tables, {n_c} columns for {system_id}")
 
 # ---------------------------------------------------------------------------
 # Tornado handlers
