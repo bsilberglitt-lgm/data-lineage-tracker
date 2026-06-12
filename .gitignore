@@ -1,0 +1,14 @@
+# Local SQLite database artifacts
+lineage.db-journal
+lineage.db-wal
+lineage.db-shm
+*.bak
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store

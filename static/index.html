@@ -133,6 +133,53 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .domain-tag-leadership { background: #f3e5f5; color: #6a1b9a; }
 .modal-section-title { font-size: 12px; font-weight: 700; color: #1B3A5C; margin: 18px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
 .modal-section-title:first-child { margin-top: 0; }
+/* ===== Schema drill-down ===== */
+.drill-banner { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 16px; background: linear-gradient(90deg,#eaf2fb,#f3f8fd); border: 1px solid #cfe0f2; border-radius: 8px; }
+.drill-banner .drill-icon { font-size: 20px; }
+.drill-banner .drill-text { flex: 1; font-size: 12px; color: #1B3A5C; }
+.drill-banner .drill-text strong { display: block; font-size: 13px; margin-bottom: 2px; }
+.breadcrumb { display: flex; align-items: center; gap: 7px; font-size: 13px; color: #555; }
+.breadcrumb .crumb-link { color: #2E75B6; cursor: pointer; font-weight: 500; }
+.breadcrumb .crumb-link:hover { text-decoration: underline; }
+.breadcrumb .crumb-sep { color: #bbb; }
+.schema-canvas { flex: 1; min-width: 0; position: relative; overflow: hidden; background: #eef2f7; cursor: grab; }
+.schema-canvas.panning { cursor: grabbing; }
+.schema-links { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; }
+.schema-world { position: absolute; top: 0; left: 0; transform-origin: 0 0; z-index: 2; }
+.schema-card { position: absolute; width: 240px; background: #fff; border: 1px solid #c3cedb; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.10); overflow: hidden; }
+.schema-card.selected { border-color: #D4772C; box-shadow: 0 0 0 2px rgba(212,119,44,0.35), 0 4px 14px rgba(0,0,0,0.18); }
+.schema-card.dimmed { opacity: 0.3; }
+.schema-card-header { height: 34px; display: flex; flex-direction: column; justify-content: center; padding: 0 10px; background: #1B3A5C; color: #fff; cursor: grab; }
+.schema-card-header:active { cursor: grabbing; }
+.schema-card-schema { font-size: 8px; letter-spacing: 0.5px; opacity: 0.6; text-transform: uppercase; line-height: 1.1; }
+.schema-card-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
+.schema-card-body { max-height: 220px; overflow-y: auto; }
+.schema-col-row { display: flex; align-items: center; gap: 5px; padding: 3px 9px; font-size: 11px; border-top: 1px solid #f1f3f5; cursor: pointer; }
+.schema-col-row:hover { background: #eef5fc; }
+.schema-col-row.selected { background: #fdebd0; }
+.schema-col-key { width: 22px; flex-shrink: 0; display: flex; gap: 2px; }
+.schema-col-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #1a2332; }
+.schema-col-type { color: #9aa6b2; font-size: 10px; flex-shrink: 0; }
+.col-badge { font-size: 8px; font-weight: 700; padding: 0 3px; border-radius: 3px; line-height: 1.4; }
+.col-badge-pk { background: #f9e79f; color: #7d6608; }
+.col-badge-fk { background: #aed6f1; color: #1a5276; }
+.gov-dot { width: 7px; height: 7px; border-radius: 50%; background: #D4772C; flex-shrink: 0; }
+.schema-link-line { stroke: #9fb3c8; stroke-width: 1.5; fill: none; }
+.schema-link-line.hl { stroke: #D4772C; stroke-width: 2.5; }
+.schema-empty { padding: 40px; text-align: center; color: #888; font-size: 14px; }
+/* governance inheritance display */
+.gov-field { display: flex; margin-bottom: 7px; font-size: 13px; line-height: 1.5; }
+.gov-field .field-label { width: 140px; flex-shrink: 0; color: #666; font-weight: 500; }
+.gov-field .gov-val { flex: 1; color: #1a2332; word-break: break-word; }
+.gov-val.inherited { color: #8a96a3; font-style: italic; }
+.src-tag { display: inline-block; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 6px; text-transform: uppercase; letter-spacing: 0.3px; vertical-align: middle; }
+.src-tag-system { background: #eceff1; color: #607d8b; }
+.src-tag-table { background: #e3f2fd; color: #1565c0; }
+.src-tag-column { background: #fdebd0; color: #b9770e; }
+.src-tag-none { background: #f5f5f5; color: #bbb; }
+.gov-hint { font-size: 10px; color: #999; margin-top: 2px; }
+.col-meta-row { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
+.col-meta-row .chip { background: #eef2f7; border-radius: 4px; padding: 2px 8px; color: #4a5764; }
 </style>
 </head>
 <body>
@@ -183,7 +230,7 @@ function CollapsibleSection({ title, domainTag, children, defaultOpen }) {
 }
 
 // ===== SVG Diagram =====
-function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition }) {
+function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onDrill }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -273,6 +320,7 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
             return (
               <g key={sys.system_id} className={`system-node ${isSel?'selected':''}`}
                  onMouseDown={(e)=>{handleMouseDown(e,sys);onSelectSystem(sys.system_id);}}
+                 onDoubleClick={(e)=>{e.stopPropagation(); if(sys.schema_table_count>0 && onDrill) onDrill(sys.system_id);}}
                  transform={`translate(${sys.x_pos},${sys.y_pos})`}>
                 <rect width={NODE_W} height={NODE_H} fill={c.fill} stroke={isSel?'#D4772C':c.stroke} strokeWidth={isSel?3:2} />
                 {sys.contains_pii ? <rect x={NODE_W-30} y={4} width={26} height={14} rx="7" fill="#f39c12" /> : null}
@@ -280,6 +328,10 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
                 <text x={NODE_W/2} y={24} textAnchor="middle" fontSize="11" fontWeight="700" fill={c.text}>{sys.name.length>28?sys.name.substring(0,26)+'...':sys.name}</text>
                 <text x={NODE_W/2} y={40} textAnchor="middle" fontSize="9" fill="#888">{sys.system_type}</text>
                 <text x={NODE_W/2} y={56} textAnchor="middle" fontSize="9" fill="#aaa">{sys.system_id}</text>
+                {sys.schema_table_count>0 ? <g style={{cursor:'pointer'}} onMouseDown={(e)=>e.stopPropagation()} onClick={(e)=>{e.stopPropagation(); onDrill && onDrill(sys.system_id);}}>
+                  <rect x={6} y={NODE_H-18} width={64} height={14} rx="7" fill="#1B3A5C" />
+                  <text x={38} y={NODE_H-8} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">&#9707; SCHEMA</text>
+                </g> : null}
               </g>
             );
           })}
@@ -291,6 +343,179 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
           <div key={type} className="legend-item"><div className="legend-color" style={{background:c.fill,border:`2px solid ${c.stroke}`}}></div>{type}</div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ===== Schema Drill-Down Canvas =====
+const GOV_OVERRIDE_FIELDS = ['data_classification','contains_pii','ferpa_protected','data_owner_id','data_steward_id','retention_schedule','access_restrictions','legal_authority','business_meaning','notes'];
+const colHasOverride = (c) => GOV_OVERRIDE_FIELDS.some(f => c[f] !== null && c[f] !== undefined && c[f] !== '');
+
+const CARD_W = 240, HEADER_H = 34, ROW_H = 21, MAX_BODY = 220;
+const cardHeight = (t) => HEADER_H + Math.min((t.columns ? t.columns.length : 0) * ROW_H, MAX_BODY);
+
+function rectEdge(cx, cy, w, h, tx, ty) {
+  const dx = tx - cx, dy = ty - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const sx = dx === 0 ? Infinity : (w / 2) / Math.abs(dx);
+  const sy = dy === 0 ? Infinity : (h / 2) / Math.abs(dy);
+  const s = Math.min(sx, sy);
+  return { x: cx + dx * s, y: cy + dy * s };
+}
+
+function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdatePosition }) {
+  const canvasRef = useRef(null);
+  const dragRef = useRef(null);
+  const [panOffset, setPanOffset] = useState({ x: 40, y: 20 });
+  const [zoom, setZoom] = useState(0.85);
+  const isPanning = useRef(false);
+  const panStart = useRef({ x: 0, y: 0 });
+
+  const tableMap = {};
+  tables.forEach(t => { tableMap[t.table_id] = t; });
+
+  const handleHeaderDown = useCallback((e, t) => {
+    e.stopPropagation();
+    dragRef.current = { id: t.table_id, mx: e.clientX, my: e.clientY, x0: t.x_pos, y0: t.y_pos, moved: false };
+  }, []);
+
+  const handleMouseMove = useCallback((e) => {
+    if (dragRef.current) {
+      const d = dragRef.current;
+      d.moved = true;
+      onUpdatePosition(d.id, d.x0 + (e.clientX - d.mx) / zoom, d.y0 + (e.clientY - d.my) / zoom);
+    } else if (isPanning.current) {
+      setPanOffset({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
+    }
+  }, [onUpdatePosition, zoom]);
+
+  const endDrag = useCallback(() => {
+    if (dragRef.current) {
+      const t = tableMap[dragRef.current.id];
+      if (t && dragRef.current.moved) api.put(`/api/schema/tables/${t.table_id}/position`, { x_pos: t.x_pos, y_pos: t.y_pos });
+      dragRef.current = null;
+    }
+    isPanning.current = false;
+  }, [tableMap]);
+
+  const handleBgDown = useCallback((e) => {
+    isPanning.current = true;
+    panStart.current = { x: e.clientX - panOffset.x, y: e.clientY - panOffset.y };
+  }, [panOffset]);
+
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    setZoom(z => Math.max(0.25, Math.min(2.5, z * (e.deltaY > 0 ? 0.9 : 1.1))));
+  }, []);
+
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (el) el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => { if (el) el.removeEventListener('wheel', handleWheel); };
+  }, [handleWheel]);
+
+  // Build deduped FK links between tables
+  const linkSet = {};
+  tables.forEach(t => {
+    (t.columns || []).forEach(c => {
+      if (c.is_fk && c.fk_target_table_id && tableMap[c.fk_target_table_id] && c.fk_target_table_id !== t.table_id) {
+        linkSet[`${t.table_id}->${c.fk_target_table_id}`] = { src: t.table_id, dst: c.fk_target_table_id };
+      }
+    });
+  });
+  const links = Object.values(linkSet);
+  const selId = selected && selected.type === 'schema_table' ? selected.id
+              : selected && selected.type === 'schema_column' ? selected.parentTableId : null;
+  const connected = new Set();
+  if (selId) { connected.add(selId); links.forEach(l => { if (l.src === selId) connected.add(l.dst); if (l.dst === selId) connected.add(l.src); }); }
+
+  const transform = `translate(${panOffset.x}px,${panOffset.y}px) scale(${zoom})`;
+
+  return (
+    <div ref={canvasRef} className={`schema-canvas ${isPanning.current ? 'panning' : ''}`}
+         onMouseDown={handleBgDown} onMouseMove={handleMouseMove} onMouseUp={endDrag} onMouseLeave={endDrag}>
+      {tables.length === 0 && <div className="schema-empty">No schema tables defined for this system yet.</div>}
+      <svg className="schema-links">
+        <defs>
+          <marker id="fk-arrow" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto" fill="#9fb3c8"><polygon points="0 0, 9 3, 0 6" /></marker>
+          <marker id="fk-arrow-hl" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto" fill="#D4772C"><polygon points="0 0, 9 3, 0 6" /></marker>
+        </defs>
+        <g transform={`translate(${panOffset.x},${panOffset.y}) scale(${zoom})`}>
+          {links.map(l => {
+            const s = tableMap[l.src], d = tableMap[l.dst];
+            if (!s || !d) return null;
+            const sH = cardHeight(s), dH = cardHeight(d);
+            const sc = { x: s.x_pos + CARD_W / 2, y: s.y_pos + sH / 2 };
+            const dc = { x: d.x_pos + CARD_W / 2, y: d.y_pos + dH / 2 };
+            const p1 = rectEdge(sc.x, sc.y, CARD_W, sH, dc.x, dc.y);
+            const p2 = rectEdge(dc.x, dc.y, CARD_W, dH, sc.x, sc.y);
+            const hl = selId && (l.src === selId || l.dst === selId);
+            return <line key={`${l.src}->${l.dst}`} className={`schema-link-line ${hl ? 'hl' : ''}`}
+                         x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                         markerEnd={hl ? 'url(#fk-arrow-hl)' : 'url(#fk-arrow)'} />;
+          })}
+        </g>
+      </svg>
+      <div className="schema-world" style={{ transform }}>
+        {tables.map(t => {
+          const isSel = selId === t.table_id;
+          const dim = selId && !connected.has(t.table_id);
+          const colSelId = selected && selected.type === 'schema_column' ? selected.id : null;
+          return (
+            <div key={t.table_id} className={`schema-card ${isSel ? 'selected' : ''} ${dim ? 'dimmed' : ''}`}
+                 style={{ left: t.x_pos, top: t.y_pos, width: CARD_W }}>
+              <div className="schema-card-header" onMouseDown={(e) => handleHeaderDown(e, t)}
+                   onClick={(e) => { e.stopPropagation(); if (!dragRef.current || !dragRef.current.moved) onSelectTable(t.table_id); }}>
+                <span className="schema-card-schema">{t.schema_name}</span>
+                <span className="schema-card-title">{t.table_name}</span>
+              </div>
+              <div className="schema-card-body">
+                {(t.columns || []).map(c => (
+                  <div key={c.column_id} className={`schema-col-row ${colSelId === c.column_id ? 'selected' : ''}`}
+                       onMouseDown={(e) => e.stopPropagation()}
+                       onClick={(e) => { e.stopPropagation(); onSelectColumn(c.column_id, t.table_id); }}>
+                    <span className="schema-col-key">
+                      {c.is_pk ? <span className="col-badge col-badge-pk">PK</span> : null}
+                      {c.is_fk ? <span className="col-badge col-badge-fk">FK</span> : null}
+                    </span>
+                    <span className="schema-col-name">{c.column_name}</span>
+                    {colHasOverride(c) ? <span className="gov-dot" title="Has governance override"></span> : null}
+                    <span className="schema-col-type">{c.data_type}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="legend">
+        <div className="legend-title">Schema View</div>
+        <div className="legend-item"><span className="col-badge col-badge-pk">PK</span> Primary key</div>
+        <div className="legend-item"><span className="col-badge col-badge-fk">FK</span> Foreign key</div>
+        <div className="legend-item"><span className="gov-dot"></span> Governance override</div>
+        <div className="legend-item" style={{marginTop:4,color:'#888'}}>Drag headers · scroll to zoom</div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Governance inheritance display helpers =====
+const SRC_LABEL = { system: 'Inherited', table: 'From table', column: 'Override', none: '—' };
+function fmtGov(field, v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (field === 'contains_pii' || field === 'ferpa_protected') return v ? 'Yes' : 'No';
+  return v;
+}
+function GovReadField({ label, field, gov }) {
+  const g = (gov && gov[field]) || { value: null, source: 'none' };
+  const inherited = g.source === 'system' || g.source === 'table';
+  return (
+    <div className="gov-field">
+      <span className="field-label">{label}</span>
+      <span className={`gov-val ${inherited ? 'inherited' : ''}`}>
+        {fmtGov(field, g.value)}
+        <span className={`src-tag src-tag-${g.source}`}>{SRC_LABEL[g.source]}</span>
+      </span>
     </div>
   );
 }
@@ -321,7 +546,7 @@ function ClassificationBadge({ value }) {
 }
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, onClose, onSave, systems }) {
+function DetailPanel({ data, type, onClose, onSave, systems, onDrill }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const isOpen = !!data;
@@ -374,6 +599,15 @@ function DetailPanel({ data, type, onClose, onSave, systems }) {
         business_meaning: form.business_meaning,
         data_owner_id: form.data_owner_id, data_steward_id: form.data_steward_id,
       };
+    } else if (type === 'schema_table' || type === 'schema_column') {
+      url = type === 'schema_table' ? `/api/schema/tables/${data.table_id}` : `/api/schema/columns/${data.column_id}`;
+      saveData = {
+        data_classification: form.data_classification, contains_pii: form.contains_pii,
+        ferpa_protected: form.ferpa_protected, data_owner_id: form.data_owner_id,
+        data_steward_id: form.data_steward_id, retention_schedule: form.retention_schedule,
+        access_restrictions: form.access_restrictions, legal_authority: form.legal_authority,
+        business_meaning: form.business_meaning, notes: form.notes,
+      };
     }
     const result = await api.put(url, saveData);
     setEditing(false);
@@ -381,11 +615,17 @@ function DetailPanel({ data, type, onClose, onSave, systems }) {
   };
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
 
+  const titleOf = () => {
+    if (type === 'schema_table') return `${data.schema_name}.${data.table_name}`;
+    if (type === 'schema_column') return data.column_name || '';
+    return data.name || '';
+  };
+
   return (
     <div className={`detail-panel ${isOpen ? '' : 'closed'}`}>
       {isOpen && <>
         <div className="panel-header">
-          <h2>{editing ? `Edit: ${data.name||''}` : (data.name||'')}</h2>
+          <h2>{editing ? `Edit: ${titleOf()}` : titleOf()}</h2>
           <button className="panel-close" onClick={onClose}>&times;</button>
         </div>
         <div className="panel-actions">
@@ -394,12 +634,16 @@ function DetailPanel({ data, type, onClose, onSave, systems }) {
           {editing && <button className="btn" onClick={cancelEdit}>Cancel</button>}
         </div>
         <div className="panel-body">
-          {type === 'system' && !editing && <SystemReadView data={data} />}
+          {type === 'system' && !editing && <SystemReadView data={data} onDrill={onDrill} />}
           {type === 'system' && editing && <SystemEditView form={form} set={set} />}
           {type === 'flow' && !editing && <FlowReadView data={data} />}
           {type === 'flow' && editing && <FlowEditView form={form} set={set} systems={systems} />}
           {type === 'element' && !editing && <ElementReadView data={data} />}
           {type === 'element' && editing && <ElementEditView form={form} set={set} />}
+          {type === 'schema_table' && !editing && <SchemaTableReadView data={data} />}
+          {type === 'schema_table' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="table" />}
+          {type === 'schema_column' && !editing && <SchemaColumnReadView data={data} />}
+          {type === 'schema_column' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="field" />}
         </div>
       </>}
     </div>
@@ -407,8 +651,13 @@ function DetailPanel({ data, type, onClose, onSave, systems }) {
 }
 
 // ===== System Views =====
-function SystemReadView({ data }) {
+function SystemReadView({ data, onDrill }) {
   return (<>
+    {data.schema_table_count > 0 && <div className="drill-banner">
+      <span className="drill-icon">&#128451;</span>
+      <div className="drill-text"><strong>Database schema available</strong>{data.schema_table_count} tables mapped for this system.</div>
+      <button className="btn btn-primary" onClick={() => onDrill(data.system_id)}>Explore Schema &rarr;</button>
+    </div>}
     <CollapsibleSection title="Overview">
       <ReadField label="ID" value={data.system_id} />
       <div className="field-row"><span className="field-label">Type</span><span className="field-value"><span className={`badge badge-${data.system_type?.toLowerCase().replace(/\s/g,'')}`}>{data.system_type}</span></span></div>
@@ -657,6 +906,119 @@ function ElementEditView({ form, set }) {
   </>);
 }
 
+// ===== Schema Table / Column Governance Panels =====
+function GovEditField({ field, label, form, set, inherited, type, options }) {
+  const inh = (inherited && inherited[field]) || { value: null, source: 'none' };
+  const hasInh = inh.value !== null && inh.value !== undefined && inh.value !== '';
+  const raw = form[field];
+  let control;
+  if (type === 'tri') {
+    const val = (raw === null || raw === undefined || raw === '') ? '' : String(raw);
+    control = <select className="edit-select" value={val} onChange={e => { const v = e.target.value; set(field, v === '' ? null : Number(v)); }}>
+      <option value="">(inherit)</option><option value="1">Yes</option><option value="0">No</option></select>;
+  } else if (type === 'select') {
+    control = <select className="edit-select" value={raw || ''} onChange={e => set(field, e.target.value)}>
+      <option value="">(inherit)</option>{options.map(o => <option key={o} value={o}>{o}</option>)}</select>;
+  } else if (type === 'textarea') {
+    control = <textarea className="edit-textarea" value={raw || ''} placeholder="(inherit / none)" onChange={e => set(field, e.target.value)} />;
+  } else {
+    control = <input className="edit-input" value={raw || ''} placeholder="(inherit)" onChange={e => set(field, e.target.value)} />;
+  }
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div className="edit-field-row" style={{ marginBottom: 2 }}><span className="field-label">{label}</span>{control}</div>
+      <div className="gov-hint" style={{ marginLeft: 140 }}>{hasInh ? `Inherits: ${fmtGov(field, inh.value)} (${SRC_LABEL[inh.source]})` : 'No inherited value'}</div>
+    </div>
+  );
+}
+
+function GovReadBlock({ gov }) {
+  return (<>
+    <GovReadField label="Classification" field="data_classification" gov={gov} />
+    <GovReadField label="Contains PII" field="contains_pii" gov={gov} />
+    <GovReadField label="FERPA Protected" field="ferpa_protected" gov={gov} />
+    <GovReadField label="Data Owner" field="data_owner_id" gov={gov} />
+    <GovReadField label="Data Steward" field="data_steward_id" gov={gov} />
+    <GovReadField label="Retention" field="retention_schedule" gov={gov} />
+    <GovReadField label="Access Restrictions" field="access_restrictions" gov={gov} />
+    <GovReadField label="Legal Authority" field="legal_authority" gov={gov} />
+  </>);
+}
+
+function SchemaGovEditView({ form, set, inherited, level }) {
+  return (<>
+    <div className="drill-banner" style={{ marginTop: 0 }}>
+      <span className="drill-icon">&#9432;</span>
+      <div className="drill-text">Leave a field blank to <strong style={{display:'inline'}}>inherit</strong> from the parent. Enter a value to override governance for just this {level}.</div>
+    </div>
+    <CollapsibleSection title="Governance Overrides" domainTag="security">
+      <GovEditField field="data_classification" label="Classification" form={form} set={set} inherited={inherited} type="select" options={['Confidential','Sensitive','Internal','Public']} />
+      <GovEditField field="contains_pii" label="Contains PII" form={form} set={set} inherited={inherited} type="tri" />
+      <GovEditField field="ferpa_protected" label="FERPA Protected" form={form} set={set} inherited={inherited} type="tri" />
+      <GovEditField field="data_owner_id" label="Data Owner" form={form} set={set} inherited={inherited} />
+      <GovEditField field="data_steward_id" label="Data Steward" form={form} set={set} inherited={inherited} />
+      <GovEditField field="retention_schedule" label="Retention" form={form} set={set} inherited={inherited} type="select" options={['1 year','3 years','5 years','7 years per state policy','10 years','Permanent retention','Per district policy','Per federal retention schedule']} />
+      <GovEditField field="access_restrictions" label="Access Restrictions" form={form} set={set} inherited={inherited} type="textarea" />
+      <GovEditField field="legal_authority" label="Legal Authority" form={form} set={set} inherited={inherited} />
+    </CollapsibleSection>
+    <CollapsibleSection title="Documentation">
+      <EditField label="Business Meaning" value={form.business_meaning} onChange={v => set('business_meaning', v)} type="textarea" />
+      <EditField label="Notes" value={form.notes} onChange={v => set('notes', v)} type="textarea" />
+    </CollapsibleSection>
+  </>);
+}
+
+function SchemaTableReadView({ data }) {
+  return (<>
+    <CollapsibleSection title="Table">
+      <ReadField label="Schema" value={data.schema_name} />
+      <ReadField label="Table" value={data.table_name} />
+      <ReadField label="Primary Key" value={data.primary_key} />
+      <ReadField label="Columns" value={String((data.columns || []).length)} />
+      <ReadField label="Parent System" value={data.parent_system && data.parent_system.name} />
+      {data.description && <ReadField label="Description" value={data.description} multiline />}
+    </CollapsibleSection>
+    <CollapsibleSection title="Governance" domainTag="security">
+      <GovReadBlock gov={data.governance} />
+    </CollapsibleSection>
+    {(data.business_meaning || data.notes) && <CollapsibleSection title="Documentation">
+      {data.business_meaning && <ReadField label="Business Meaning" value={data.business_meaning} multiline />}
+      {data.notes && <ReadField label="Notes" value={data.notes} multiline />}
+    </CollapsibleSection>}
+  </>);
+}
+
+function SchemaColumnReadView({ data }) {
+  const pt = data.parent_table || {};
+  return (<>
+    <CollapsibleSection title="Column">
+      <ReadField label="Name" value={data.column_name} />
+      <ReadField label="Table" value={pt.schema_name ? `${pt.schema_name}.${pt.table_name}` : pt.table_name} />
+      <ReadField label="Data Type" value={data.data_type} />
+      <div className="col-meta-row" style={{ marginTop: 4 }}>
+        {data.is_pk ? <span className="chip">Primary Key</span> : null}
+        {data.is_fk ? <span className="chip">Foreign Key</span> : null}
+        {data.is_identity ? <span className="chip">Identity</span> : null}
+        <span className="chip">{data.is_nullable ? 'Nullable' : 'Not Null'}</span>
+      </div>
+      {data.is_fk ? <ReadField label="References" value={data.fk_target_schema ? `${data.fk_target_schema}.${data.fk_target_table}.${data.fk_target_column}` : (data.fk_target_table || '—')} /> : null}
+      {data.default_value ? <ReadField label="Default" value={data.default_value} /> : null}
+    </CollapsibleSection>
+    <CollapsibleSection title="Governance" domainTag="security">
+      <GovReadBlock gov={data.governance} />
+    </CollapsibleSection>
+    {(data.business_meaning || data.notes) && <CollapsibleSection title="Documentation">
+      {data.business_meaning && <ReadField label="Business Meaning" value={data.business_meaning} multiline />}
+      {data.notes && <ReadField label="Notes" value={data.notes} multiline />}
+    </CollapsibleSection>}
+    <CollapsibleSection title="Upstream Lineage" defaultOpen={false}>
+      <div style={{ fontSize: '12px', color: '#888', lineHeight: 1.6 }}>
+        Field-level lineage tracing is not yet mapped. Once column-level source mappings are defined, this section will trace where this field originates, the transformations applied along the way, and the responsible owners and stewards at each hop.
+      </div>
+    </CollapsibleSection>
+  </>);
+}
+
 // ===== Add Modals =====
 function AddSystemModal({ onClose, onSave }) {
   const [form, setForm] = useState({
@@ -810,6 +1172,9 @@ function App() {
   const [detailType, setDetailType] = useState(null);
   const [showAddSystem, setShowAddSystem] = useState(false);
   const [showAddFlow, setShowAddFlow] = useState(false);
+  const [schemaSystemId, setSchemaSystemId] = useState(null);
+  const [schemaSystemName, setSchemaSystemName] = useState('');
+  const [schemaTables, setSchemaTables] = useState([]);
 
   const refresh = useCallback(() => {
     api.get('/api/systems').then(setSystems);
@@ -843,6 +1208,36 @@ function App() {
     setSystems(prev => prev.map(s => s.system_id === id ? { ...s, x_pos: x, y_pos: y } : s));
   }, []);
 
+  // --- Schema drill-down ---
+  const loadSchema = useCallback((sid) => {
+    return api.get(`/api/systems/${sid}/schema`).then(d => {
+      setSchemaTables(d.tables || []);
+      setSchemaSystemName(d.system ? d.system.name : '');
+    });
+  }, []);
+
+  const drillIntoSchema = useCallback((sid) => {
+    setSchemaSystemId(sid);
+    closeDetail();
+    loadSchema(sid).then(() => setView('schema'));
+  }, [loadSchema]);
+
+  const exitSchema = useCallback(() => { setView('diagram'); closeDetail(); }, []);
+
+  const selectSchemaTable = useCallback((id) => {
+    setSelected({ type: 'schema_table', id });
+    api.get(`/api/schema/tables/${id}`).then(d => { setDetailData(d); setDetailType('schema_table'); });
+  }, []);
+
+  const selectSchemaColumn = useCallback((id, tableId) => {
+    setSelected({ type: 'schema_column', id, parentTableId: tableId });
+    api.get(`/api/schema/columns/${id}`).then(d => { setDetailData(d); setDetailType('schema_column'); });
+  }, []);
+
+  const updateSchemaPosition = useCallback((id, x, y) => {
+    setSchemaTables(prev => prev.map(t => t.table_id === id ? { ...t, x_pos: x, y_pos: y } : t));
+  }, []);
+
   const handleSave = useCallback((type, result) => {
     if (type === 'system') {
       refresh();
@@ -854,8 +1249,11 @@ function App() {
     } else if (type === 'element') {
       refresh();
       setDetailData(result);
+    } else if (type === 'schema_table' || type === 'schema_column') {
+      setDetailData(result);
+      if (schemaSystemId) loadSchema(schemaSystemId);
     }
-  }, [refresh]);
+  }, [refresh, schemaSystemId, loadSchema]);
 
   const addSystem = async (data) => { await api.post('/api/systems', data); refresh(); setShowAddSystem(false); };
   const addFlow = async (data) => { await api.post('/api/flows', data); refresh(); setShowAddFlow(false); };
@@ -889,23 +1287,34 @@ function App() {
 
       <div className="main-area">
         <div className="toolbar">
-          <span className="toolbar-title">{view==='diagram'?'Lineage Diagram':view==='systems'?'Systems Catalog':view==='flows'?'Data Flows Catalog':'Data Elements Glossary'}</span>
+          {view==='schema'
+            ? <span className="breadcrumb"><span className="crumb-link" onClick={exitSchema}>Lineage Diagram</span><span className="crumb-sep">&rsaquo;</span><span>{schemaSystemName} &mdash; Database Schema</span></span>
+            : <span className="toolbar-title">{view==='diagram'?'Lineage Diagram':view==='systems'?'Systems Catalog':view==='flows'?'Data Flows Catalog':'Data Elements Glossary'}</span>}
           <div className="toolbar-spacer"></div>
+          {view==='schema' && <button className="btn" onClick={exitSchema}>&larr; Back to Lineage</button>}
           {(view==='diagram'||view==='systems')&&<button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
           {(view==='diagram'||view==='flows')&&<button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
         </div>
         <div className="stats-bar">
-          <div className="stat"><div className="stat-value">{systems.length}</div><div className="stat-label">Systems</div></div>
-          <div className="stat"><div className="stat-value">{flows.length}</div><div className="stat-label">Data Flows</div></div>
-          <div className="stat"><div className="stat-value">{elements.length}</div><div className="stat-label">Data Elements</div></div>
-          <div className="stat"><div className="stat-value">{elements.filter(e=>e.is_pii).length}</div><div className="stat-label">PII Elements</div></div>
+          {view==='schema' ? <>
+            <div className="stat"><div className="stat-value">{schemaTables.length}</div><div className="stat-label">Tables</div></div>
+            <div className="stat"><div className="stat-value">{schemaTables.reduce((n,t)=>n+(t.columns?t.columns.length:0),0)}</div><div className="stat-label">Columns</div></div>
+            <div className="stat"><div className="stat-value">{schemaTables.reduce((n,t)=>n+(t.columns?t.columns.filter(c=>c.is_fk&&c.fk_target_table_id).length:0),0)}</div><div className="stat-label">Relationships</div></div>
+            <div className="stat"><div className="stat-value">{schemaTables.reduce((n,t)=>n+(t.columns?t.columns.filter(colHasOverride).length:0),0)}</div><div className="stat-label">Field Overrides</div></div>
+          </> : <>
+            <div className="stat"><div className="stat-value">{systems.length}</div><div className="stat-label">Systems</div></div>
+            <div className="stat"><div className="stat-value">{flows.length}</div><div className="stat-label">Data Flows</div></div>
+            <div className="stat"><div className="stat-value">{elements.length}</div><div className="stat-label">Data Elements</div></div>
+            <div className="stat"><div className="stat-value">{elements.filter(e=>e.is_pii).length}</div><div className="stat-label">PII Elements</div></div>
+          </>}
         </div>
         <div className="content-area">
-          {view==='diagram' && <DiagramCanvas systems={systems} flows={flows} selected={selected} onSelectSystem={selectSystem} onSelectFlow={selectFlow} onUpdatePosition={updatePosition} />}
+          {view==='diagram' && <DiagramCanvas systems={systems} flows={flows} selected={selected} onSelectSystem={selectSystem} onSelectFlow={selectFlow} onUpdatePosition={updatePosition} onDrill={drillIntoSchema} />}
+          {view==='schema' && <SchemaCanvas tables={schemaTables} selected={selected} onSelectTable={selectSchemaTable} onSelectColumn={selectSchemaColumn} onUpdatePosition={updateSchemaPosition} />}
           {view==='systems' && <SystemsTable systems={systems} onSelect={selectSystem} />}
           {view==='flows' && <FlowsTable flows={flows} onSelect={selectFlow} />}
           {view==='elements' && <ElementsTable elements={elements} onSelect={selectElement} />}
-          <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave} systems={systems} />
+          <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave} systems={systems} onDrill={drillIntoSchema} />
         </div>
       </div>
 

@@ -50,6 +50,59 @@ def get_existing_columns(conn, table_name):
     cursor = conn.execute(f"PRAGMA table_info({table_name})")
     return {row[1] for row in cursor.fetchall()}
 
+# ---------------------------------------------------------------------------
+# Governance inheritance
+# ---------------------------------------------------------------------------
+# Each tuple is (governance field on schema_table/schema_column, the matching
+# field on the parent System row used as the inherited fallback). A None system
+# field means the value only exists at table/column level (no system fallback).
+GOV_FIELDS = [
+    ("data_classification", "data_classification"),
+    ("contains_pii", "contains_pii"),
+    ("ferpa_protected", "ferpa_protected"),
+    ("data_owner_id", "owner_id"),
+    ("data_steward_id", "data_steward_id"),
+    ("retention_schedule", "retention_schedule"),
+    ("access_restrictions", "data_sharing_restrictions"),
+    ("legal_authority", None),
+]
+
+# Governance override fields a client may write at the table/column level.
+GOV_WRITABLE = [f for f, _ in GOV_FIELDS] + ["business_meaning", "notes"]
+
+def _norm(v):
+    """Treat empty string as NULL so clearing a field reverts to inheritance."""
+    if isinstance(v, str) and v.strip() == "":
+        return None
+    return v
+
+def resolve_governance(system_row, table_row, column_row=None):
+    """Resolve effective governance with provenance.
+
+    Walks column -> table -> system, returning for each field the effective
+    value and which level it came from ('column' | 'table' | 'system' | 'none').
+    NULL at a level means "inherit"; 0 is a valid (non-inherited) override.
+    """
+    levels = []
+    if column_row is not None:
+        levels.append(("column", column_row))
+    if table_row is not None:
+        levels.append(("table", table_row))
+    result = {}
+    for field, sys_field in GOV_FIELDS:
+        val, source = None, "none"
+        for src_name, row in levels:
+            v = row.get(field)
+            if v is not None:
+                val, source = v, src_name
+                break
+        if val is None and sys_field and system_row is not None:
+            sv = system_row.get(sys_field)
+            if sv is not None:
+                val, source = sv, "system"
+        result[field] = {"value": val, "source": source}
+    return result
+
 def migrate_db():
     """Add new governance framework columns to existing databases."""
     conn = get_db()
@@ -267,6 +320,67 @@ CREATE TABLE IF NOT EXISTS flow_element (
     is_transformed INTEGER NOT NULL DEFAULT 0,
     transformation_note TEXT,
     PRIMARY KEY (flow_id, element_id)
+);
+
+-- Database schema drill-down: physical tables belonging to a System (e.g. NEO).
+-- Governance columns are NULLABLE on purpose: NULL means "inherit from the parent
+-- System"; a non-NULL value is an explicit override at the table level.
+CREATE TABLE IF NOT EXISTS schema_table (
+    table_id TEXT PRIMARY KEY,
+    system_id TEXT NOT NULL REFERENCES system(system_id),
+    schema_name TEXT,
+    table_name TEXT NOT NULL,
+    primary_key TEXT,
+    description TEXT,
+    x_pos REAL DEFAULT 0,
+    y_pos REAL DEFAULT 0,
+    -- Governance overrides (NULL = inherit from parent system)
+    data_classification TEXT,
+    contains_pii INTEGER,
+    ferpa_protected INTEGER,
+    data_owner_id TEXT REFERENCES stakeholder(stakeholder_id),
+    data_steward_id TEXT REFERENCES stakeholder(stakeholder_id),
+    retention_schedule TEXT,
+    access_restrictions TEXT,
+    legal_authority TEXT,
+    business_meaning TEXT,
+    notes TEXT,
+    created_date TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Columns within a schema_table. Governance columns are NULLABLE: NULL means
+-- "inherit from the parent table (which itself may inherit from the System)";
+-- a non-NULL value is an explicit override at the field level.
+CREATE TABLE IF NOT EXISTS schema_column (
+    column_id TEXT PRIMARY KEY,
+    table_id TEXT NOT NULL REFERENCES schema_table(table_id),
+    column_name TEXT NOT NULL,
+    ordinal INTEGER,
+    data_type TEXT,
+    is_nullable INTEGER DEFAULT 1,
+    is_identity INTEGER DEFAULT 0,
+    is_pk INTEGER DEFAULT 0,
+    is_fk INTEGER DEFAULT 0,
+    default_value TEXT,
+    fk_target_schema TEXT,
+    fk_target_table TEXT,
+    fk_target_column TEXT,
+    fk_target_table_id TEXT,
+    fk_constraint TEXT,
+    -- Governance overrides (NULL = inherit from parent table/system)
+    data_classification TEXT,
+    contains_pii INTEGER,
+    ferpa_protected INTEGER,
+    data_owner_id TEXT REFERENCES stakeholder(stakeholder_id),
+    data_steward_id TEXT REFERENCES stakeholder(stakeholder_id),
+    retention_schedule TEXT,
+    access_restrictions TEXT,
+    legal_authority TEXT,
+    business_meaning TEXT,
+    notes TEXT,
+    created_date TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -582,6 +696,67 @@ def seed_db():
     print(f"Database seeded at {DB_PATH}")
 
 # ---------------------------------------------------------------------------
+# Schema drill-down seeding (loads neo_schema.json into schema_table/column)
+# ---------------------------------------------------------------------------
+
+SCHEMA_SEED_PATH = Path(__file__).parent / "neo_schema.json"
+
+def seed_schema():
+    """Populate schema_table / schema_column from neo_schema.json.
+
+    Runs independently of seed_db() so that an existing (already-seeded)
+    deployed database still gains the NEO schema. Idempotent: only seeds when
+    schema_table is empty, and only if the parent system exists.
+    """
+    if not SCHEMA_SEED_PATH.exists():
+        return
+    conn = get_db()
+    if conn.execute("SELECT COUNT(*) FROM schema_table").fetchone()[0] > 0:
+        conn.close()
+        return
+
+    with open(SCHEMA_SEED_PATH) as f:
+        data = json.load(f)
+
+    system_id = data.get("system_id")
+    # Only seed if the parent system actually exists in this database
+    if not conn.execute("SELECT 1 FROM system WHERE system_id=?", (system_id,)).fetchone():
+        conn.close()
+        return
+
+    now = datetime.datetime.now().isoformat()
+
+    for t in data.get("tables", []):
+        conn.execute(
+            """INSERT INTO schema_table
+               (table_id, system_id, schema_name, table_name, primary_key,
+                x_pos, y_pos, created_date, updated_date)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (t["table_id"], system_id, t.get("schema_name"), t.get("table_name"),
+             t.get("primary_key"), t.get("x_pos", 0), t.get("y_pos", 0), now, now))
+
+    for c in data.get("columns", []):
+        conn.execute(
+            """INSERT INTO schema_column
+               (column_id, table_id, column_name, ordinal, data_type, is_nullable,
+                is_identity, is_pk, is_fk, default_value, fk_target_schema,
+                fk_target_table, fk_target_column, fk_target_table_id, fk_constraint,
+                created_date, updated_date)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (c["column_id"], c["table_id"], c.get("column_name"), c.get("ordinal"),
+             c.get("data_type"), c.get("is_nullable", 1), c.get("is_identity", 0),
+             c.get("is_pk", 0), c.get("is_fk", 0), c.get("default_value"),
+             c.get("fk_target_schema"), c.get("fk_target_table"),
+             c.get("fk_target_column"), c.get("fk_target_table_id"),
+             c.get("fk_constraint"), now, now))
+
+    conn.commit()
+    n_t = conn.execute("SELECT COUNT(*) FROM schema_table").fetchone()[0]
+    n_c = conn.execute("SELECT COUNT(*) FROM schema_column").fetchone()[0]
+    conn.close()
+    print(f"Schema seeded: {n_t} tables, {n_c} columns for {system_id}")
+
+# ---------------------------------------------------------------------------
 # Tornado handlers
 # ---------------------------------------------------------------------------
 
@@ -604,7 +779,11 @@ if HAS_TORNADO:
     class SystemsHandler(BaseAPIHandler):
         def get(self):
             conn = get_db()
-            rows = conn.execute("SELECT * FROM system ORDER BY system_id").fetchall()
+            rows = conn.execute(
+                """SELECT s.*,
+                          (SELECT COUNT(*) FROM schema_table st
+                           WHERE st.system_id = s.system_id) AS schema_table_count
+                   FROM system s ORDER BY s.system_id""").fetchall()
             conn.close()
             self.write_json(rows_to_list(rows))
 
@@ -651,7 +830,11 @@ if HAS_TORNADO:
     class SystemHandler(BaseAPIHandler):
         def get(self, sid):
             conn = get_db()
-            row = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
+            row = conn.execute(
+                """SELECT s.*,
+                          (SELECT COUNT(*) FROM schema_table st
+                           WHERE st.system_id = s.system_id) AS schema_table_count
+                   FROM system s WHERE s.system_id=?""", (sid,)).fetchone()
             conn.close()
             if row:
                 self.write_json(row_to_dict(row))
@@ -885,11 +1068,154 @@ if HAS_TORNADO:
             conn.close()
             self.write_json({"ok": True})
 
+    # -- Schema drill-down --
+    class SystemSchemaHandler(BaseAPIHandler):
+        """All tables + columns for a system's database schema (for the ER view)."""
+        def get(self, sid):
+            conn = get_db()
+            system = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
+            if not system:
+                conn.close()
+                self.set_status(404); self.write_json({"error": "Not found"}); return
+            tables = conn.execute(
+                "SELECT * FROM schema_table WHERE system_id=? ORDER BY schema_name, table_name",
+                (sid,)).fetchall()
+            cols_by_table = {}
+            table_ids = [t["table_id"] for t in tables]
+            if table_ids:
+                placeholders = ",".join("?" * len(table_ids))
+                cur = conn.execute(
+                    f"SELECT * FROM schema_column WHERE table_id IN ({placeholders}) ORDER BY ordinal",
+                    table_ids)
+                for c in cur.fetchall():
+                    cols_by_table.setdefault(c["table_id"], []).append(dict(c))
+            conn.close()
+            out_tables = []
+            for t in tables:
+                td = dict(t)
+                td["columns"] = cols_by_table.get(t["table_id"], [])
+                td["column_count"] = len(td["columns"])
+                out_tables.append(td)
+            self.write_json({
+                "system": {"system_id": system["system_id"], "name": system["name"]},
+                "tables": out_tables,
+            })
+
+    class SchemaTablePositionHandler(BaseAPIHandler):
+        def put(self, table_id):
+            data = self.get_json_body()
+            conn = get_db()
+            conn.execute("UPDATE schema_table SET x_pos=?, y_pos=? WHERE table_id=?",
+                         (data.get("x_pos", 0), data.get("y_pos", 0), table_id))
+            conn.commit()
+            conn.close()
+            self.write_json({"ok": True})
+
+    class SchemaTableHandler(BaseAPIHandler):
+        def _payload(self, conn, table_id):
+            t = conn.execute("SELECT * FROM schema_table WHERE table_id=?", (table_id,)).fetchone()
+            if not t:
+                return None
+            td = dict(t)
+            system = conn.execute("SELECT * FROM system WHERE system_id=?", (td["system_id"],)).fetchone()
+            sysd = dict(system) if system else {}
+            columns = conn.execute(
+                "SELECT * FROM schema_column WHERE table_id=? ORDER BY ordinal", (table_id,)).fetchall()
+            td["columns"] = rows_to_list(columns)
+            td["governance"] = resolve_governance(sysd, td, None)
+            # What each field would resolve to if the table override were cleared.
+            td["inherited"] = resolve_governance(sysd, {}, None)
+            td["parent_system"] = {"system_id": sysd.get("system_id"), "name": sysd.get("name")}
+            return td
+
+        def get(self, table_id):
+            conn = get_db()
+            payload = self._payload(conn, table_id)
+            conn.close()
+            if payload is None:
+                self.set_status(404); self.write_json({"error": "Not found"}); return
+            self.write_json(payload)
+
+        def put(self, table_id):
+            data = self.get_json_body()
+            conn = get_db()
+            now = datetime.datetime.now().isoformat()
+            fields, vals = [], []
+            for key in GOV_WRITABLE + ["description"]:
+                if key in data:
+                    fields.append(f"{key}=?")
+                    vals.append(_norm(data[key]))
+            if fields:
+                fields.append("updated_date=?")
+                vals.append(now)
+                vals.append(table_id)
+                conn.execute(f"UPDATE schema_table SET {','.join(fields)} WHERE table_id=?", vals)
+                conn.commit()
+            payload = self._payload(conn, table_id)
+            conn.close()
+            if payload is None:
+                self.set_status(404); self.write_json({"error": "Not found"}); return
+            self.write_json(payload)
+
+    class SchemaColumnHandler(BaseAPIHandler):
+        def _payload(self, conn, column_id):
+            c = conn.execute("SELECT * FROM schema_column WHERE column_id=?", (column_id,)).fetchone()
+            if not c:
+                return None
+            cd = dict(c)
+            table = conn.execute("SELECT * FROM schema_table WHERE table_id=?", (cd["table_id"],)).fetchone()
+            td = dict(table) if table else {}
+            system = conn.execute("SELECT * FROM system WHERE system_id=?", (td.get("system_id"),)).fetchone() if td else None
+            sysd = dict(system) if system else {}
+            cd["governance"] = resolve_governance(sysd, td, cd)
+            # What each field would resolve to if the column override were cleared
+            # (i.e. inherit from the parent table, which may inherit from the system).
+            cd["inherited"] = resolve_governance(sysd, td, None)
+            cd["parent_table"] = {"table_id": td.get("table_id"), "schema_name": td.get("schema_name"),
+                                  "table_name": td.get("table_name")}
+            cd["parent_system"] = {"system_id": sysd.get("system_id"), "name": sysd.get("name")}
+            # Phase 3 placeholder: upstream field-level lineage not yet mapped.
+            cd["upstream_lineage"] = []
+            return cd
+
+        def get(self, column_id):
+            conn = get_db()
+            payload = self._payload(conn, column_id)
+            conn.close()
+            if payload is None:
+                self.set_status(404); self.write_json({"error": "Not found"}); return
+            self.write_json(payload)
+
+        def put(self, column_id):
+            data = self.get_json_body()
+            conn = get_db()
+            now = datetime.datetime.now().isoformat()
+            fields, vals = [], []
+            for key in GOV_WRITABLE:
+                if key in data:
+                    fields.append(f"{key}=?")
+                    vals.append(_norm(data[key]))
+            if fields:
+                fields.append("updated_date=?")
+                vals.append(now)
+                vals.append(column_id)
+                conn.execute(f"UPDATE schema_column SET {','.join(fields)} WHERE column_id=?", vals)
+                conn.commit()
+            payload = self._payload(conn, column_id)
+            conn.close()
+            if payload is None:
+                self.set_status(404); self.write_json({"error": "Not found"}); return
+            self.write_json(payload)
+
     def make_app():
         return tornado.web.Application([
             (r"/api/systems", SystemsHandler),
+            (r"/api/systems/([^/]+)/schema", SystemSchemaHandler),
             (r"/api/systems/([^/]+)", SystemHandler),
             (r"/api/systems/([^/]+)/position", PositionHandler),
+            (r"/api/schema/tables/([^/]+)/position", SchemaTablePositionHandler),
+            (r"/api/schema/tables/([^/]+)", SchemaTableHandler),
+            (r"/api/schema/columns/([^/]+)", SchemaColumnHandler),
             (r"/api/flows", FlowsHandler),
             (r"/api/flows/([^/]+)", FlowHandler),
             (r"/api/elements", ElementsHandler),
@@ -912,6 +1238,7 @@ if __name__ == "__main__":
     print("Running migrations...")
     migrate_db()
     seed_db()
+    seed_schema()
 
     port = int(os.environ.get("PORT", 8765))
 
