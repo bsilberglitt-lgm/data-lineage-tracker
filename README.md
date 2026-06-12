@@ -48,7 +48,7 @@ PORT=9000 python3 app.py
 Click any row to open its detail panel.
 
 ### Database Schema Drill-Down
-Systems that have a database schema mapped (currently **NEO**, the State Operational Data Store) show a **SCHEMA** badge on their node and an **Explore Schema** button in their detail panel. Double-clicking the node also drills in.
+Systems that have a database schema mapped — currently **NEO** (State Operational Data Store) and **Federal Reporting (EDFacts)** — show a **SCHEMA** badge on their node and an **Explore Schema** button in their detail panel. Double-clicking the node also drills in.
 
 Inside the schema view you can:
 - **Browse the entity-relationship diagram** of the system's tables — each card lists its columns with PK/FK markers and data types. Drag table headers to rearrange (positions are saved), scroll to zoom, and drag the background to pan. Foreign-key relationships are drawn as connectors that follow the cards.
@@ -70,7 +70,8 @@ A breadcrumb at the top returns you to the high-level lineage diagram at any tim
 data-lineage-tracker/
   app.py              Python backend (Tornado + SQLite)
   requirements.txt    Python dependencies
-  neo_schema.json     NEO database schema seed (tables, columns, foreign keys)
+  neo_schema.json          NEO database schema seed (tables, columns, foreign keys)
+  fedreporting_schema.json Federal Reporting (EDFacts) database schema seed
   lineage.db          SQLite database (auto-created on first run)
   static/
     index.html        Frontend (React, runs in the browser)
@@ -100,9 +101,10 @@ The app comes pre-loaded with the SIF/CONNECT data flow based on the state's SIF
 - **8 systems**: District SIS, CONNECT, NEO (ODS), LDS, EDFacts, Funding Calculations, Generate, District HR Systems
 - **7 data flows**: across collection, reporting, funding, and longitudinal storage
 - **33 data elements**: From the SIF profile (Student ID, enrollment, demographics, special ed, discipline, etc.)
-- **NEO database schema** (from `neo_schema.json`): 56 tables and 649 columns across the `Ceds` and `core` schemas, with foreign-key relationships, surfaced via the schema drill-down
+- **NEO database schema** (from `neo_schema.json`): 56 tables and 649 columns across the `Ceds` and `core` schemas, with foreign-key relationships
+- **Federal Reporting (EDFacts) schema** (from `fedreporting_schema.json`): 62 tables and ~2,650 columns across the `Assessment`, `NSC`, and `Reports` schemas
 
-The schema is seeded independently of the main seed data, so an existing deployment gains the NEO schema on its next start without losing any existing records.
+Database schemas are seeded independently of the main seed data, one file per system (`*_schema.json`). Seeding is idempotent per system, so an existing deployment gains each schema on its next start without losing records or re-seeding ones already present. To map another system's schema, drop in a new `<name>_schema.json` declaring its `system_id`.
 
 ## Resetting the Database
 
@@ -115,7 +117,7 @@ python3 app.py
 ## Future Enhancements
 
 - **Field-level lineage tracing (Phase 3)** — trace each schema column back to its source element, the transformations applied, and the owners/stewards at each hop
-- Map database schemas for additional systems beyond NEO
+- Map database schemas for additional systems (NEO and Federal Reporting are done)
 - Stakeholder and Agreement management screens
 - Search and filter the diagram by type, owner, PII status
 - Export diagram as image
