@@ -6,19 +6,48 @@ every API endpoint, the governance inheritance chain, and the read/write paths,
 then restores anything it changed.
 
 Usage:
-    python3 selftest.py                      # tests http://localhost:8765
-    python3 selftest.py http://host:port     # tests another address
+    python3 selftest.py                          # tests http://localhost:8765
+    python3 selftest.py http://host:port         # tests another address
+    python3 selftest.py https://app.onrender.com # tests the deployed app
+    python3 selftest.py <url> --insecure         # skip TLS verification
 
 Only the Python standard library is required, so you can run this from your Mac
 without installing anything.
 """
 
 import json
+import ssl
 import sys
 import urllib.error
 import urllib.request
 
-BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8765").rstrip("/")
+_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+INSECURE = "--insecure" in sys.argv
+
+BASE = (_args[0] if _args else "http://localhost:8765").rstrip("/")
+
+
+def _ssl_context():
+    """Build a TLS context that works on stock macOS Python installs.
+
+    Python from python.org does not use the macOS system trust store, so
+    certificate verification fails until its bundled certificates are
+    installed. Prefer certifi when available, and allow --insecure as an
+    explicit escape hatch for testing your own known URL.
+    """
+    if INSECURE:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+SSL_CTX = _ssl_context()
 
 passed = 0
 failed = 0
@@ -42,7 +71,7 @@ def request(method, path, body=None):
     req = urllib.request.Request(url, data=data, method=method)
     if data:
         req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=60, context=SSL_CTX) as r:
         raw = r.read().decode()
         ctype = r.headers.get("Content-Type", "")
         return r.status, (json.loads(raw) if "json" in ctype else raw)
@@ -181,8 +210,23 @@ try:
             check("test system cleaned up", e.code == 404, f"status {e.code}")
 
 except urllib.error.URLError as e:
+    reason = getattr(e, "reason", e)
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        print(f"\nTLS certificate verification failed for {BASE}")
+        print("\nThis is a local Python issue, not a problem with the deployed app.")
+        print("Python installed from python.org does not use the macOS system")
+        print("certificate store. Fix it once with:\n")
+        version = f"{sys.version_info.major}.{sys.version_info.minor}"
+        print(f'    /Applications/Python\\ {version}/Install\\ Certificates.command\n')
+        print("Or install certifi:   pip3 install certifi")
+        print(f"Or skip verification: python3 selftest.py {BASE} --insecure")
+        sys.exit(2)
     print(f"\nCould not reach {BASE}: {e}")
-    print("Is the app running?  docker compose up")
+    if "localhost" in BASE or "127.0.0.1" in BASE:
+        print("Is the app running?  docker compose up")
+    else:
+        print("Check the service URL, and that the service is awake "
+              "(a free instance can take ~1 minute to spin up).")
     sys.exit(2)
 
 # ---------------------------------------------------------------------------
