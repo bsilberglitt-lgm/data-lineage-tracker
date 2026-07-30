@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+*.bak
+lineage.db-journal
+lineage.db-wal
+lineage.db-shm
+.DS_Store
+*.xlsx
+README.md

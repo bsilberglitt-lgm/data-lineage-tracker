@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Data Lineage Tracker — lightweight web application.
 
-Run:  python app.py
+Run locally with Docker Compose:  docker compose up
 Then open http://localhost:8765 in your browser.
 
-Uses Tornado (or falls back to http.server) + SQLite. No other dependencies.
+Uses Tornado + PostgreSQL. The schema is managed by Alembic migrations
+(see alembic/versions/), and database access goes through db.py, which keeps
+the sqlite3-style calling convention used throughout this file.
 """
 
-import json, os, sqlite3, datetime, re, sys
+import json, os, datetime, re, sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -20,35 +22,34 @@ try:
 except ImportError:
     HAS_TORNADO = False
 
-DB_PATH = Path(__file__).parent / "lineage.db"
+from db import get_db, close_pool  # noqa: E402  (PostgreSQL connection pool)
+
 STATIC_DIR = Path(__file__).parent / "static"
+PROJECT_DIR = Path(__file__).parent
 
 # ---------------------------------------------------------------------------
 # Database helpers
 # ---------------------------------------------------------------------------
 
-def get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def run_migrations():
+    """Bring the database schema up to date (Alembic).
 
-def init_db():
-    conn = get_db()
-    conn.executescript(SCHEMA_SQL)
-    conn.commit()
-    conn.close()
+    Running this at startup keeps deployment simple: the app is the single
+    place that owns schema state, so Render, Docker Compose, and a local run
+    all converge on the same schema with no extra release step.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config(str(PROJECT_DIR / "alembic.ini"))
+    cfg.set_main_option("script_location", str(PROJECT_DIR / "alembic"))
+    command.upgrade(cfg, "head")
 
 def row_to_dict(row):
     return dict(row) if row else None
 
 def rows_to_list(rows):
     return [dict(r) for r in rows]
-
-def get_existing_columns(conn, table_name):
-    """Return a set of column names for the given table."""
-    cursor = conn.execute(f"PRAGMA table_info({table_name})")
-    return {row[1] for row in cursor.fetchall()}
 
 # ---------------------------------------------------------------------------
 # Governance inheritance
@@ -102,287 +103,6 @@ def resolve_governance(system_row, table_row, column_row=None):
                 val, source = sv, "system"
         result[field] = {"value": val, "source": source}
     return result
-
-def migrate_db():
-    """Add new governance framework columns to existing databases."""
-    conn = get_db()
-
-    # Define new columns for each table: (table, column, type, default)
-    migrations = [
-        # System - Security & Privacy (Domain 2)
-        ("system", "data_classification", "TEXT", None),
-        ("system", "access_method", "TEXT", None),
-        ("system", "encryption_at_rest", "TEXT", None),
-        ("system", "encryption_in_transit", "TEXT", None),
-        ("system", "last_security_review", "TEXT", None),
-        ("system", "has_audit_trail", "INTEGER", "0"),
-        # System - Data Management (Domain 3)
-        ("system", "data_steward_id", "TEXT", None),
-        ("system", "retention_schedule", "TEXT", None),
-        ("system", "destruction_method", "TEXT", None),
-        ("system", "backup_frequency", "TEXT", None),
-        ("system", "disaster_recovery", "TEXT", None),
-        ("system", "data_standards", "TEXT", None),
-        # System - Data Use & Sharing (Domain 4)
-        ("system", "authorized_users", "TEXT", None),
-        ("system", "data_sharing_restrictions", "TEXT", None),
-
-        # Data Flow - Security & Privacy (Domain 2)
-        ("data_flow", "data_classification", "TEXT", None),
-        ("data_flow", "encryption_method", "TEXT", None),
-        ("data_flow", "disclosure_avoidance", "TEXT", None),
-        # Data Flow - Data Management (Domain 3)
-        ("data_flow", "data_quality_measures", "TEXT", None),
-        ("data_flow", "data_standard", "TEXT", None),
-        ("data_flow", "retention_at_destination", "TEXT", None),
-        # Data Flow - Data Use & Sharing (Domain 4)
-        ("data_flow", "legal_authority", "TEXT", None),
-
-        # Data Element - new governance fields
-        ("data_element", "data_classification", "TEXT", None),
-        ("data_element", "data_standard", "TEXT", None),
-        ("data_element", "business_meaning", "TEXT", None),
-        ("data_element", "data_owner_id", "TEXT", None),
-        ("data_element", "data_steward_id", "TEXT", None),
-
-        # Stakeholder - governance role fields
-        ("stakeholder", "governance_role", "TEXT", None),
-        ("stakeholder", "governance_responsibilities", "TEXT", None),
-        ("stakeholder", "training_status", "TEXT", None),
-        ("stakeholder", "last_training_date", "TEXT", None),
-
-        # Agreement - governance monitoring fields
-        ("agreement", "compliance_framework", "TEXT", None),
-        ("agreement", "data_classification", "TEXT", None),
-        ("agreement", "disclosure_restrictions", "TEXT", None),
-        ("agreement", "monitoring_frequency", "TEXT", None),
-        ("agreement", "last_review_date", "TEXT", None),
-        ("agreement", "review_status", "TEXT", None),
-    ]
-
-    tables_checked = {}
-    for table, column, col_type, default in migrations:
-        if table not in tables_checked:
-            tables_checked[table] = get_existing_columns(conn, table)
-        if column not in tables_checked[table]:
-            default_clause = f" DEFAULT {default}" if default is not None else ""
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}{default_clause}")
-            print(f"  Added column {table}.{column}")
-
-    conn.commit()
-    conn.close()
-
-# ---------------------------------------------------------------------------
-# Schema
-# ---------------------------------------------------------------------------
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS stakeholder (
-    stakeholder_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    title TEXT,
-    organization_unit TEXT NOT NULL,
-    email TEXT,
-    phone TEXT,
-    role_type TEXT,
-    notes TEXT,
-    governance_role TEXT,
-    governance_responsibilities TEXT,
-    training_status TEXT,
-    last_training_date TEXT,
-    created_date TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS system (
-    system_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    system_type TEXT NOT NULL,
-    vendor TEXT,
-    technology TEXT,
-    environment TEXT,
-    managed_by TEXT NOT NULL,
-    owner_id TEXT REFERENCES stakeholder(stakeholder_id),
-    organization TEXT,
-    contains_pii INTEGER NOT NULL DEFAULT 0,
-    ferpa_protected INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'Active',
-    notes TEXT,
-    x_pos REAL DEFAULT 0,
-    y_pos REAL DEFAULT 0,
-    -- Security & Privacy (Framework Domain 2)
-    data_classification TEXT,
-    access_method TEXT,
-    encryption_at_rest TEXT,
-    encryption_in_transit TEXT,
-    last_security_review TEXT,
-    has_audit_trail INTEGER DEFAULT 0,
-    -- Data Management (Framework Domain 3)
-    data_steward_id TEXT REFERENCES stakeholder(stakeholder_id),
-    retention_schedule TEXT,
-    destruction_method TEXT,
-    backup_frequency TEXT,
-    disaster_recovery TEXT,
-    data_standards TEXT,
-    -- Data Use & Sharing (Framework Domain 4)
-    authorized_users TEXT,
-    data_sharing_restrictions TEXT,
-    created_date TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS agreement (
-    agreement_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    partner_agency TEXT NOT NULL,
-    agreement_type TEXT NOT NULL,
-    legal_basis TEXT,
-    data_shared TEXT NOT NULL,
-    direction TEXT NOT NULL,
-    effective_date TEXT,
-    expiration_date TEXT,
-    renewal_status TEXT,
-    dept_contact_id TEXT REFERENCES stakeholder(stakeholder_id),
-    partner_contact TEXT,
-    document_link TEXT,
-    notes TEXT,
-    -- Governance fields (Framework Domains 2 & 4)
-    compliance_framework TEXT,
-    data_classification TEXT,
-    disclosure_restrictions TEXT,
-    monitoring_frequency TEXT,
-    last_review_date TEXT,
-    review_status TEXT,
-    created_date TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS data_flow (
-    flow_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    source_system_id TEXT NOT NULL REFERENCES system(system_id),
-    destination_system_id TEXT NOT NULL REFERENCES system(system_id),
-    direction TEXT NOT NULL DEFAULT 'Inbound',
-    frequency TEXT NOT NULL,
-    transfer_method TEXT NOT NULL,
-    format TEXT NOT NULL,
-    transformation_steps TEXT,
-    business_rules TEXT,
-    validations TEXT,
-    error_handling TEXT,
-    contains_pii INTEGER NOT NULL DEFAULT 0,
-    ferpa_protected INTEGER NOT NULL DEFAULT 0,
-    regulatory_driver TEXT,
-    agreement_id TEXT REFERENCES agreement(agreement_id),
-    owner_id TEXT REFERENCES stakeholder(stakeholder_id),
-    status TEXT NOT NULL DEFAULT 'Active',
-    known_issues TEXT,
-    -- Security & Privacy (Framework Domain 2)
-    data_classification TEXT,
-    encryption_method TEXT,
-    disclosure_avoidance TEXT,
-    -- Data Management (Framework Domain 3)
-    data_quality_measures TEXT,
-    data_standard TEXT,
-    retention_at_destination TEXT,
-    -- Data Use & Sharing (Framework Domain 4)
-    legal_authority TEXT,
-    created_date TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS data_element (
-    element_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    aliases TEXT,
-    definition TEXT NOT NULL,
-    data_type TEXT,
-    valid_values TEXT,
-    is_pii INTEGER NOT NULL DEFAULT 0,
-    ferpa_protected INTEGER NOT NULL DEFAULT 0,
-    source_of_truth TEXT REFERENCES system(system_id),
-    notes TEXT,
-    -- Governance fields (Framework Domains 2, 3, 4)
-    data_classification TEXT,
-    data_standard TEXT,
-    business_meaning TEXT,
-    data_owner_id TEXT REFERENCES stakeholder(stakeholder_id),
-    data_steward_id TEXT REFERENCES stakeholder(stakeholder_id),
-    created_date TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS flow_element (
-    flow_id TEXT NOT NULL REFERENCES data_flow(flow_id),
-    element_id TEXT NOT NULL REFERENCES data_element(element_id),
-    is_transformed INTEGER NOT NULL DEFAULT 0,
-    transformation_note TEXT,
-    PRIMARY KEY (flow_id, element_id)
-);
-
--- Database schema drill-down: physical tables belonging to a System (e.g. NEO).
--- Governance columns are NULLABLE on purpose: NULL means "inherit from the parent
--- System"; a non-NULL value is an explicit override at the table level.
-CREATE TABLE IF NOT EXISTS schema_table (
-    table_id TEXT PRIMARY KEY,
-    system_id TEXT NOT NULL REFERENCES system(system_id),
-    schema_name TEXT,
-    table_name TEXT NOT NULL,
-    primary_key TEXT,
-    description TEXT,
-    x_pos REAL DEFAULT 0,
-    y_pos REAL DEFAULT 0,
-    -- Governance overrides (NULL = inherit from parent system)
-    data_classification TEXT,
-    contains_pii INTEGER,
-    ferpa_protected INTEGER,
-    data_owner_id TEXT REFERENCES stakeholder(stakeholder_id),
-    data_steward_id TEXT REFERENCES stakeholder(stakeholder_id),
-    retention_schedule TEXT,
-    access_restrictions TEXT,
-    legal_authority TEXT,
-    business_meaning TEXT,
-    notes TEXT,
-    created_date TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Columns within a schema_table. Governance columns are NULLABLE: NULL means
--- "inherit from the parent table (which itself may inherit from the System)";
--- a non-NULL value is an explicit override at the field level.
-CREATE TABLE IF NOT EXISTS schema_column (
-    column_id TEXT PRIMARY KEY,
-    table_id TEXT NOT NULL REFERENCES schema_table(table_id),
-    column_name TEXT NOT NULL,
-    ordinal INTEGER,
-    data_type TEXT,
-    is_nullable INTEGER DEFAULT 1,
-    is_identity INTEGER DEFAULT 0,
-    is_pk INTEGER DEFAULT 0,
-    is_fk INTEGER DEFAULT 0,
-    default_value TEXT,
-    fk_target_schema TEXT,
-    fk_target_table TEXT,
-    fk_target_column TEXT,
-    fk_target_table_id TEXT,
-    fk_constraint TEXT,
-    -- Governance overrides (NULL = inherit from parent table/system)
-    data_classification TEXT,
-    contains_pii INTEGER,
-    ferpa_protected INTEGER,
-    data_owner_id TEXT REFERENCES stakeholder(stakeholder_id),
-    data_steward_id TEXT REFERENCES stakeholder(stakeholder_id),
-    retention_schedule TEXT,
-    access_restrictions TEXT,
-    legal_authority TEXT,
-    business_meaning TEXT,
-    notes TEXT,
-    created_date TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_date TEXT NOT NULL DEFAULT (datetime('now'))
-);
-"""
 
 # ---------------------------------------------------------------------------
 # Seed data
@@ -521,7 +241,7 @@ def seed_db():
          "State data management policy"),
         ("PL-003", "ODS to Longitudinal Data System",
          "Annual load of validated, complete data from the ODS into the long-term longitudinal store.",
-         "SYS-003", "SYS-004", "Outbound", "Annually", "Database ETL (SSIS)", "Relational (SQL Server)",
+         "SYS-005", "SYS-004", "Outbound", "Annually", "Database ETL (SSIS)", "Relational (SQL Server)",
          "1. End-of-year snapshot from ODS\n2. Final validation and completeness checks\n3. Historical record matching and linking\n4. Load into LDS with school year tagging",
          "Student records linked across years using StateProvinceId\nSchool year attribution for all records\nPoint-in-time snapshot preserves data as of year-end",
          "Completeness checks for all required federal and state reporting fields\nHistorical consistency validation\nYear-over-year enrollment continuity checks",
@@ -693,7 +413,7 @@ def seed_db():
 
     conn.commit()
     conn.close()
-    print(f"Database seeded at {DB_PATH}")
+    print("Database seeded with baseline systems, flows, and data elements")
 
 # ---------------------------------------------------------------------------
 # Schema drill-down seeding (loads neo_schema.json into schema_table/column)
@@ -1241,26 +961,22 @@ if HAS_TORNADO:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("Initializing database...")
-    init_db()
-    print("Running migrations...")
-    migrate_db()
+    if not HAS_TORNADO:
+        sys.exit("Tornado is required. Install dependencies with: pip install -r requirements.txt")
+
+    print("Running database migrations...")
+    run_migrations()
     seed_db()
     seed_schema()
 
     port = int(os.environ.get("PORT", 8765))
 
-    if HAS_TORNADO:
-        app = make_app()
-        app.listen(port)
-        print(f"\n  Data Lineage Tracker running at http://localhost:{port}\n")
-        try:
-            tornado.ioloop.IOLoop.current().start()
-        except KeyboardInterrupt:
-            print("\nShutting down...")
-    else:
-        import http.server, functools
-        print(f"Tornado not available. Serving static files only at http://localhost:{port}")
-        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(STATIC_DIR))
-        with http.server.HTTPServer(("", port), handler) as httpd:
-            httpd.serve_forever()
+    app = make_app()
+    app.listen(port)
+    print(f"\n  Data Lineage Tracker running at http://localhost:{port}\n")
+    try:
+        tornado.ioloop.IOLoop.current().start()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        close_pool()
