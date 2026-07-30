@@ -1,4 +1,9 @@
-# Local SQLite database artifacts
+# Secrets / local configuration
+.env
+
+# Legacy SQLite artifacts (the app now uses PostgreSQL).
+# lineage.db itself is kept in the repo for now as the migration source;
+# it can be removed once the Postgres migration is confirmed.
 lineage.db-journal
 lineage.db-wal
 lineage.db-shm
@@ -10,5 +15,6 @@ __pycache__/
 .venv/
 venv/
 
-# OS
+# OS / Office temp files
 .DS_Store
+~$*
