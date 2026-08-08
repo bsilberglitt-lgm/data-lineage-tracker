@@ -180,6 +180,63 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .gov-hint { font-size: 10px; color: #999; margin-top: 2px; }
 .col-meta-row { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
 .col-meta-row .chip { background: #eef2f7; border-radius: 4px; padding: 2px 8px; color: #4a5764; }
+/* ===== Auth / admin ===== */
+.login-box .login-sub { font-size: 12px; color: #888; margin-top: 14px; line-height: 1.5; }
+.login-box label { display: block; text-align: left; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
+.login-box .field { margin-bottom: 12px; }
+.login-note { background: #fff8e1; border: 1px solid #ffe0a3; color: #7a5b00; border-radius: 6px; padding: 10px 12px; font-size: 12px; margin-bottom: 14px; text-align: left; line-height: 1.5; }
+.policy-list { text-align: left; font-size: 12px; color: #c0392b; margin: -4px 0 12px; padding-left: 18px; }
+.policy-list li { margin-bottom: 2px; }
+.user-chip { display: flex; align-items: center; gap: 8px; padding: 10px 20px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 12px; }
+.user-chip .avatar { width: 28px; height: 28px; border-radius: 50%; background: #5BA4E6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; flex-shrink: 0; }
+.user-chip .who { flex: 1; min-width: 0; }
+.user-chip .who b { display: block; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-chip .who span { opacity: 0.6; font-size: 10px; }
+.user-chip button { background: rgba(255,255,255,0.15); border: none; color: #fff; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
+.user-chip button:hover { background: rgba(255,255,255,0.28); }
+.role-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; letter-spacing: 0.3px; }
+.role-Viewer { background: #e8eef4; color: #4a5764; }
+.role-Editor { background: #d6eaf8; color: #1a5276; }
+.role-Administrator { background: #e8daef; color: #6c3483; }
+.role-SuperAdmin { background: #fdebd0; color: #7e5109; }
+.inactive-row td { opacity: 0.45; }
+.filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; padding: 12px 20px; background: #fff; border-bottom: 1px solid #eee; }
+.filter-bar .fg { display: flex; flex-direction: column; gap: 3px; }
+.filter-bar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; font-weight: 600; }
+.filter-bar input, .filter-bar select { padding: 6px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 12px; font-family: inherit; }
+.audit-changes { margin-top: 4px; font-size: 11px; }
+.audit-changes .chg { display: block; color: #555; padding: 1px 0; }
+.audit-changes .old { color: #c0392b; text-decoration: line-through; margin-right: 4px; }
+.audit-changes .new { color: #1e7e34; }
+.pref-group { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; overflow: hidden; }
+.pref-group h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #fff; background: #1B3A5C; padding: 10px 16px; }
+.pref-row { display: flex; gap: 16px; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; align-items: flex-start; }
+.pref-row:last-child { border-bottom: none; }
+.pref-row .pref-label { width: 260px; flex-shrink: 0; }
+.pref-row .pref-label b { display: block; font-size: 13px; color: #1a2332; }
+.pref-row .pref-label span { font-size: 11px; color: #888; line-height: 1.45; }
+.pref-row .pref-control { flex: 1; }
+.pref-row input[type=text], .pref-row input[type=number], .pref-row select { width: 100%; max-width: 380px; padding: 7px 9px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px; font-family: inherit; }
+.pref-row.locked { background: #fafafa; }
+.pref-row.locked .pref-label b::after { content: ' — not yet available'; font-weight: 400; color: #b08900; font-size: 11px; }
+.banner { padding: 10px 20px; font-size: 13px; display: flex; align-items: center; gap: 10px; }
+.banner-error { background: #fde8e8; color: #922b21; border-bottom: 1px solid #f5c6cb; }
+.banner-ok { background: #e6f4ea; color: #1e7e34; border-bottom: 1px solid #bfe5c9; }
+.empty-state { padding: 40px; text-align: center; color: #999; font-size: 14px; }
+/* Screens that stack a toolbar above a scrolling table. The content area is a
+   flex row, so a screen with more than one child must declare its own column. */
+.screen { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.screen .table-view { flex: 1; overflow-y: auto; }
+/* Sortable table headers */
+.data-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.data-table th.sortable:hover { background: #24547f; }
+.data-table th .sort-arrow { display: inline-block; margin-left: 5px; font-size: 9px; opacity: 0.45; }
+.data-table th.sorted .sort-arrow { opacity: 1; }
+/* Diagram nodes: the border band drags, the inside opens the details panel. */
+.system-node .node-frame { cursor: grab; }
+.system-node .node-frame.locked { cursor: default; }
+.system-node:active .node-frame { cursor: grabbing; }
+.system-node .node-body { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -194,10 +251,44 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 // that cannot run in this inline (non-module) script.
 const { useState, useEffect, useCallback, useRef } = React;
 
+// ===== Session-aware API client =====
+// The CSRF token is issued at login and must accompany every state-changing
+// request. A 401 means the session expired or was revoked, so the app returns
+// to the login screen rather than silently rendering empty panels.
+const session = { csrf: null };
+let onAuthLost = () => {};
+
+class ApiError extends Error {
+  constructor(status, payload) {
+    super((payload && payload.error) || `Request failed (${status})`);
+    this.status = status;
+    this.payload = payload || {};
+    this.problems = this.payload.problems || null;
+  }
+}
+
+async function request(method, url, data) {
+  const opts = { method, credentials: 'same-origin', headers: {} };
+  if (data !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(data);
+  }
+  if (method !== 'GET' && session.csrf) opts.headers['X-CSRF-Token'] = session.csrf;
+  const r = await fetch(url, opts);
+  if (r.status === 401) { onAuthLost(); throw new ApiError(401, { error: 'Your session has ended.' }); }
+  const ctype = r.headers.get('Content-Type') || '';
+  const payload = ctype.includes('json') ? await r.json().catch(() => ({})) : await r.text();
+  if (!r.ok) throw new ApiError(r.status, typeof payload === 'object' ? payload : { error: payload });
+  return payload;
+}
+
 const api = {
-  get: (url) => fetch(url).then(r => r.json()),
-  post: (url, data) => fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) }).then(r => r.json()),
-  put: (url, data) => fetch(url, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) }).then(r => r.json()),
+  get: (url) => request('GET', url),
+  post: (url, data) => request('POST', url, data === undefined ? {} : data),
+  put: (url, data) => request('PUT', url, data === undefined ? {} : data),
+  del: (url) => request('DELETE', url),
+  // Fire-and-forget for high-frequency writes like node dragging.
+  quiet: (method, url, data) => request(method, url, data).catch(() => {}),
 };
 
 const TYPE_COLORS = {
@@ -211,6 +302,63 @@ const TYPE_COLORS = {
 const getColor = (type) => TYPE_COLORS[type] || TYPE_COLORS['Internal'];
 const STATUS_BADGE = { Active: 'active', Deprecated: 'deprecated', Planned: 'planned', Broken: 'broken', 'Under Review': 'planned' };
 const CLASS_BADGE = { Confidential: 'confidential', Sensitive: 'sensitive', Internal: 'internal', Public: 'public' };
+
+// Roles are ordered; a higher role inherits everything below it. This mirrors
+// permissions.py on the server, which is where the rule is actually enforced —
+// hiding a control here is only a convenience.
+const ROLE_ORDER = ['Viewer', 'Editor', 'Administrator', 'SuperAdmin'];
+const roleAtLeast = (role, minimum) =>
+  ROLE_ORDER.indexOf(role) >= ROLE_ORDER.indexOf(minimum);
+
+// ===== Sortable tables =====
+// Click a header to sort ascending, click again for descending. Values are
+// compared numerically when both sides are numeric, otherwise case-insensitively
+// as text, with blanks always sorted last.
+function useSort(rows, initialKey, initialDir) {
+  const [sort, setSort] = useState({ key: initialKey || null, dir: initialDir || 'asc' });
+  const toggle = (key) => setSort(s =>
+    s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+
+  const sorted = React.useMemo(() => {
+    if (!sort.key) return rows;
+    const factor = sort.dir === 'asc' ? 1 : -1;
+    const val = (r) => {
+      const v = typeof sort.key === 'function' ? sort.key(r) : r[sort.key];
+      return (v === null || v === undefined || v === '') ? null : v;
+    };
+    return [...rows].sort((a, b) => {
+      const x = val(a), y = val(b);
+      if (x === null && y === null) return 0;
+      if (x === null) return 1;          // blanks last, regardless of direction
+      if (y === null) return -1;
+      const nx = Number(x), ny = Number(y);
+      if (!Number.isNaN(nx) && !Number.isNaN(ny) && x !== true && y !== true) {
+        return (nx - ny) * factor;
+      }
+      return String(x).localeCompare(String(y), undefined, { sensitivity: 'base' }) * factor;
+    });
+  }, [rows, sort]);
+
+  return { sorted, sort, toggle };
+}
+
+function SortHeader({ label, sortKey, sort, toggle, style }) {
+  const active = sort.key === sortKey;
+  return (
+    <th className={`sortable ${active ? 'sorted' : ''}`} style={style}
+        onClick={() => toggle(sortKey)}
+        title={`Sort by ${label}`}>
+      {label}<span className="sort-arrow">{active ? (sort.dir === 'asc' ? '▲' : '▼') : '▴▾'}</span>
+    </th>
+  );
+}
+
+const VIEW_TITLES = {
+  diagram: 'Lineage Diagram', systems: 'Systems Catalog',
+  flows: 'Data Flows Catalog', elements: 'Data Elements Glossary',
+  contributors: 'Contributors', users: 'User Management',
+  preferences: 'Preferences', audit: 'Audit Log',
+};
 
 // ===== Collapsible Section =====
 function CollapsibleSection({ title, domainTag, children, defaultOpen }) {
@@ -234,16 +382,17 @@ function CollapsibleSection({ title, domainTag, children, defaultOpen }) {
 }
 
 // ===== SVG Diagram =====
-function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onDrill }) {
+function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onDrill, canEdit }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
-  const NODE_W = 200, NODE_H = 70;
+  const NODE_W = 200, NODE_H = 70, NODE_EDGE = 12;  // NODE_EDGE = draggable border band
 
   const handleMouseDown = useCallback((e, sys) => {
+    if (sys && !canEdit) { e.stopPropagation(); return; }   // viewers cannot rearrange
     if (sys) {
       e.stopPropagation();
       const svg = svgRef.current;
@@ -255,7 +404,7 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
       isPanning.current = true;
       panStart.current = { x: e.clientX - panOffset.x, y: e.clientY - panOffset.y };
     }
-  }, [panOffset, zoom]);
+  }, [panOffset, zoom, canEdit]);
 
   const handleMouseMove = useCallback((e) => {
     if (dragRef.current) {
@@ -274,7 +423,7 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
   const handleMouseUp = useCallback(() => {
     if (dragRef.current) {
       const sys = systems.find(s => s.system_id === dragRef.current.id);
-      if (sys) api.put(`/api/systems/${sys.system_id}/position`, { x_pos: sys.x_pos, y_pos: sys.y_pos });
+      if (sys) api.quiet('PUT', `/api/systems/${sys.system_id}/position`, { x_pos: sys.x_pos, y_pos: sys.y_pos });
       dragRef.current = null;
     }
     isPanning.current = false;
@@ -323,10 +472,19 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
             const isSel = selected && selected.type === 'system' && selected.id === sys.system_id;
             return (
               <g key={sys.system_id} className={`system-node ${isSel?'selected':''}`}
-                 onMouseDown={(e)=>{handleMouseDown(e,sys);onSelectSystem(sys.system_id);}}
                  onDoubleClick={(e)=>{e.stopPropagation(); if(sys.schema_table_count>0 && onDrill) onDrill(sys.system_id);}}
                  transform={`translate(${sys.x_pos},${sys.y_pos})`}>
-                <rect width={NODE_W} height={NODE_H} fill={c.fill} stroke={isSel?'#D4772C':c.stroke} strokeWidth={isSel?3:2} />
+                {/* Outer band: grab here to move the node. */}
+                <rect className={`node-frame ${canEdit ? '' : 'locked'}`}
+                      width={NODE_W} height={NODE_H} fill={c.fill}
+                      stroke={isSel?'#D4772C':c.stroke} strokeWidth={isSel?3:2}
+                      onMouseDown={(e)=>handleMouseDown(e,sys)} />
+                {/* Inner area: click here to open the details panel. */}
+                <rect className="node-body" x={NODE_EDGE} y={NODE_EDGE}
+                      width={NODE_W-NODE_EDGE*2} height={NODE_H-NODE_EDGE*2}
+                      fill={c.fill} stroke="none"
+                      onMouseDown={(e)=>e.stopPropagation()}
+                      onClick={(e)=>{e.stopPropagation(); onSelectSystem(sys.system_id);}} />
                 {sys.contains_pii ? <rect x={NODE_W-30} y={4} width={26} height={14} rx="7" fill="#f39c12" /> : null}
                 {sys.contains_pii ? <text x={NODE_W-17} y={14} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">PII</text> : null}
                 <text x={NODE_W/2} y={24} textAnchor="middle" fontSize="11" fontWeight="700" fill={c.text}>{sys.name.length>28?sys.name.substring(0,26)+'...':sys.name}</text>
@@ -367,7 +525,7 @@ function rectEdge(cx, cy, w, h, tx, ty) {
   return { x: cx + dx * s, y: cy + dy * s };
 }
 
-function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdatePosition }) {
+function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdatePosition, canEdit }) {
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const [panOffset, setPanOffset] = useState({ x: 40, y: 20 });
@@ -380,8 +538,9 @@ function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdat
 
   const handleHeaderDown = useCallback((e, t) => {
     e.stopPropagation();
+    if (!canEdit) return;   // viewers cannot rearrange the shared layout
     dragRef.current = { id: t.table_id, mx: e.clientX, my: e.clientY, x0: t.x_pos, y0: t.y_pos, moved: false };
-  }, []);
+  }, [canEdit]);
 
   const handleMouseMove = useCallback((e) => {
     if (dragRef.current) {
@@ -396,7 +555,7 @@ function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdat
   const endDrag = useCallback(() => {
     if (dragRef.current) {
       const t = tableMap[dragRef.current.id];
-      if (t && dragRef.current.moved) api.put(`/api/schema/tables/${t.table_id}/position`, { x_pos: t.x_pos, y_pos: t.y_pos });
+      if (t && dragRef.current.moved) api.quiet('PUT', `/api/schema/tables/${t.table_id}/position`, { x_pos: t.x_pos, y_pos: t.y_pos });
       dragRef.current = null;
     }
     isPanning.current = false;
@@ -550,7 +709,7 @@ function ClassificationBadge({ value }) {
 }
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, onClose, onSave, systems, onDrill }) {
+function DetailPanel({ data, type, onClose, onSave, systems, onDrill, canEdit, notify }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const isOpen = !!data;
@@ -603,6 +762,16 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill }) {
         business_meaning: form.business_meaning,
         data_owner_id: form.data_owner_id, data_steward_id: form.data_steward_id,
       };
+    } else if (type === 'contributor') {
+      url = `/api/contributors/${data.contributor_id}`;
+      saveData = {
+        name: form.name, title: form.title, organization_unit: form.organization_unit,
+        email: form.email, phone: form.phone, role_type: form.role_type,
+        governance_role: form.governance_role,
+        governance_responsibilities: form.governance_responsibilities,
+        training_status: form.training_status, last_training_date: form.last_training_date,
+        notes: form.notes,
+      };
     } else if (type === 'schema_table' || type === 'schema_column') {
       url = type === 'schema_table' ? `/api/schema/tables/${data.table_id}` : `/api/schema/columns/${data.column_id}`;
       saveData = {
@@ -613,9 +782,14 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill }) {
         business_meaning: form.business_meaning, notes: form.notes,
       };
     }
-    const result = await api.put(url, saveData);
-    setEditing(false);
-    onSave(type, result);
+    try {
+      const result = await api.put(url, saveData);
+      setEditing(false);
+      onSave(type, result);
+    } catch (err) {
+      if (notify) notify(err.message, true);
+      else alert(err.message);
+    }
   };
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
 
@@ -625,6 +799,47 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill }) {
     return data.name || '';
   };
 
+  const ContributorReadView = ({ data }) => (<>
+    <CollapsibleSection title="Contributor">
+      <ReadField label="ID" value={data.contributor_id} />
+      <ReadField label="Name" value={data.name} />
+      <ReadField label="Title" value={data.title} />
+      <ReadField label="Organization Unit" value={data.organization_unit} />
+      <ReadField label="Role Type" value={data.role_type} />
+      <ReadField label="Email" value={data.email} />
+      <ReadField label="Phone" value={data.phone} />
+    </CollapsibleSection>
+    <CollapsibleSection title="Governance" domainTag="leadership">
+      <ReadField label="Governance Role" value={data.governance_role} />
+      <ReadField label="Responsibilities" value={data.governance_responsibilities} multiline />
+      <ReadField label="Training Status" value={data.training_status} />
+      <ReadField label="Last Training" value={data.last_training_date} />
+    </CollapsibleSection>
+    {data.notes && <CollapsibleSection title="Notes">
+      <div className="field-value multiline" style={{fontSize:'13px'}}>{data.notes}</div>
+    </CollapsibleSection>}
+  </>);
+
+  const ContributorEditView = ({ form, set }) => (<>
+    <CollapsibleSection title="Contributor">
+      <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
+      <EditField label="Title" value={form.title} onChange={v=>set('title',v)} />
+      <EditField label="Organization Unit" value={form.organization_unit} onChange={v=>set('organization_unit',v)} />
+      <EditField label="Role Type" value={form.role_type} onChange={v=>set('role_type',v)} />
+      <EditField label="Email" value={form.email} onChange={v=>set('email',v)} />
+      <EditField label="Phone" value={form.phone} onChange={v=>set('phone',v)} />
+    </CollapsibleSection>
+    <CollapsibleSection title="Governance" domainTag="leadership">
+      <EditField label="Governance Role" value={form.governance_role} onChange={v=>set('governance_role',v)} />
+      <EditField label="Responsibilities" value={form.governance_responsibilities} onChange={v=>set('governance_responsibilities',v)} type="textarea" />
+      <EditField label="Training Status" value={form.training_status} onChange={v=>set('training_status',v)} type="select" options={['','Current','Overdue','Not required']} />
+      <EditField label="Last Training" value={form.last_training_date} onChange={v=>set('last_training_date',v)} />
+    </CollapsibleSection>
+    <CollapsibleSection title="Notes">
+      <EditField label="" value={form.notes} onChange={v=>set('notes',v)} type="textarea" />
+    </CollapsibleSection>
+  </>);
+
   return (
     <div className={`detail-panel ${isOpen ? '' : 'closed'}`}>
       {isOpen && <>
@@ -633,7 +848,9 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill }) {
           <button className="panel-close" onClick={onClose}>&times;</button>
         </div>
         <div className="panel-actions">
-          {!editing && <button className="btn btn-edit" onClick={startEdit}>Edit</button>}
+          {!editing && canEdit && <button className="btn btn-edit" onClick={startEdit}>Edit</button>}
+          {!editing && !canEdit && <span style={{fontSize:'12px',color:'#888'}}>
+            Read-only — your role does not permit editing.</span>}
           {editing && <button className="btn btn-save" onClick={saveEdit}>Save Changes</button>}
           {editing && <button className="btn" onClick={cancelEdit}>Cancel</button>}
         </div>
@@ -648,6 +865,8 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill }) {
           {type === 'schema_table' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="table" />}
           {type === 'schema_column' && !editing && <SchemaColumnReadView data={data} />}
           {type === 'schema_column' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="field" />}
+          {type === 'contributor' && !editing && <ContributorReadView data={data} />}
+          {type === 'contributor' && editing && <ContributorEditView form={form} set={set} />}
         </div>
       </>}
     </div>
@@ -1105,48 +1324,535 @@ function AddFlowModal({ systems, onClose, onSave }) {
 
 // ===== Table Views =====
 function SystemsTable({ systems, onSelect }) {
+  const { sorted, sort, toggle } = useSort(systems, 'system_id');
   return (<div className="table-view"><table className="data-table">
-    <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Classification</th><th>Organization</th><th>Status</th><th>PII</th></tr></thead>
-    <tbody>{systems.map(s=>(<tr key={s.system_id} className="clickable" onClick={()=>onSelect(s.system_id)}><td>{s.system_id}</td><td><strong>{s.name}</strong></td><td><span className={`badge badge-${s.system_type?.toLowerCase().replace(/\s/g,'')}`}>{s.system_type}</span></td><td>{s.data_classification ? <span className={`badge badge-${CLASS_BADGE[s.data_classification]||'internal'}`}>{s.data_classification}</span> : '—'}</td><td>{s.organization}</td><td><span className={`badge badge-${STATUS_BADGE[s.status]}`}>{s.status}</span></td><td>{s.contains_pii?<span className="badge badge-pii">PII</span>:'—'}</td></tr>))}</tbody>
+    <thead><tr>
+      <SortHeader label="ID" sortKey="system_id" sort={sort} toggle={toggle} />
+      <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
+      <SortHeader label="Type" sortKey="system_type" sort={sort} toggle={toggle} />
+      <SortHeader label="Classification" sortKey="data_classification" sort={sort} toggle={toggle} />
+      <SortHeader label="Organization" sortKey="organization" sort={sort} toggle={toggle} />
+      <SortHeader label="Status" sortKey="status" sort={sort} toggle={toggle} />
+      <SortHeader label="PII" sortKey="contains_pii" sort={sort} toggle={toggle} />
+    </tr></thead>
+    <tbody>{sorted.map(s=>(<tr key={s.system_id} className="clickable" onClick={()=>onSelect(s.system_id)}><td>{s.system_id}</td><td><strong>{s.name}</strong></td><td><span className={`badge badge-${s.system_type?.toLowerCase().replace(/\s/g,'')}`}>{s.system_type}</span></td><td>{s.data_classification ? <span className={`badge badge-${CLASS_BADGE[s.data_classification]||'internal'}`}>{s.data_classification}</span> : '—'}</td><td>{s.organization}</td><td><span className={`badge badge-${STATUS_BADGE[s.status]}`}>{s.status}</span></td><td>{s.contains_pii?<span className="badge badge-pii">PII</span>:'—'}</td></tr>))}</tbody>
   </table></div>);
 }
 
 function FlowsTable({ flows, onSelect }) {
+  const { sorted, sort, toggle } = useSort(flows, 'flow_id');
   return (<div className="table-view"><table className="data-table">
-    <thead><tr><th>ID</th><th>Name</th><th>Source</th><th>Destination</th><th>Classification</th><th>Frequency</th><th>Status</th></tr></thead>
-    <tbody>{flows.map(f=>(<tr key={f.flow_id} className="clickable" onClick={()=>onSelect(f.flow_id)}><td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.data_classification ? <span className={`badge badge-${CLASS_BADGE[f.data_classification]||'internal'}`}>{f.data_classification}</span> : '—'}</td><td>{f.frequency}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td></tr>))}</tbody>
+    <thead><tr>
+      <SortHeader label="ID" sortKey="flow_id" sort={sort} toggle={toggle} />
+      <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
+      <SortHeader label="Source" sortKey="source_name" sort={sort} toggle={toggle} />
+      <SortHeader label="Destination" sortKey="dest_name" sort={sort} toggle={toggle} />
+      <SortHeader label="Classification" sortKey="data_classification" sort={sort} toggle={toggle} />
+      <SortHeader label="Frequency" sortKey="frequency" sort={sort} toggle={toggle} />
+      <SortHeader label="Status" sortKey="status" sort={sort} toggle={toggle} />
+    </tr></thead>
+    <tbody>{sorted.map(f=>(<tr key={f.flow_id} className="clickable" onClick={()=>onSelect(f.flow_id)}><td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.data_classification ? <span className={`badge badge-${CLASS_BADGE[f.data_classification]||'internal'}`}>{f.data_classification}</span> : '—'}</td><td>{f.frequency}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td></tr>))}</tbody>
   </table></div>);
 }
 
 function ElementsTable({ elements, onSelect }) {
+  const { sorted, sort, toggle } = useSort(elements, 'element_id');
   return (<div className="table-view"><table className="data-table">
-    <thead><tr><th>ID</th><th>Name</th><th>Data Type</th><th>Classification</th><th>PII</th><th>FERPA</th></tr></thead>
-    <tbody>{elements.map(e=>(<tr key={e.element_id} className="clickable" onClick={()=>onSelect(e.element_id)}><td>{e.element_id}</td><td><strong>{e.name}</strong><br/><span style={{fontSize:'11px',color:'#888'}}>{e.aliases}</span></td><td>{e.data_type||'—'}</td><td>{e.data_classification ? <span className={`badge badge-${CLASS_BADGE[e.data_classification]||'internal'}`}>{e.data_classification}</span> : '—'}</td><td>{e.is_pii?<span className="badge badge-pii">PII</span>:'—'}</td><td>{e.ferpa_protected?<span className="badge badge-ferpa">FERPA</span>:'—'}</td></tr>))}</tbody>
+    <thead><tr>
+      <SortHeader label="ID" sortKey="element_id" sort={sort} toggle={toggle} />
+      <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
+      <SortHeader label="Data Type" sortKey="data_type" sort={sort} toggle={toggle} />
+      <SortHeader label="Classification" sortKey="data_classification" sort={sort} toggle={toggle} />
+      <SortHeader label="PII" sortKey="is_pii" sort={sort} toggle={toggle} />
+      <SortHeader label="FERPA" sortKey="ferpa_protected" sort={sort} toggle={toggle} />
+    </tr></thead>
+    <tbody>{sorted.map(e=>(<tr key={e.element_id} className="clickable" onClick={()=>onSelect(e.element_id)}><td>{e.element_id}</td><td><strong>{e.name}</strong><br/><span style={{fontSize:'11px',color:'#888'}}>{e.aliases}</span></td><td>{e.data_type||'—'}</td><td>{e.data_classification ? <span className={`badge badge-${CLASS_BADGE[e.data_classification]||'internal'}`}>{e.data_classification}</span> : '—'}</td><td>{e.is_pii?<span className="badge badge-pii">PII</span>:'—'}</td><td>{e.ferpa_protected?<span className="badge badge-ferpa">FERPA</span>:'—'}</td></tr>))}</tbody>
   </table></div>);
 }
 
-// ===== Login Screen =====
-function LoginScreen({ onLogin }) {
-  const [password, setPassword] = useState('');
+function ContributorsTable({ contributors, onSelect }) {
+  const { sorted, sort, toggle } = useSort(contributors, 'contributor_id');
+  return (<div className="table-view">
+    {contributors.length === 0 && <div className="empty-state">No contributors yet.</div>}
+    {contributors.length > 0 && <table className="data-table">
+      <thead><tr>
+        <SortHeader label="ID" sortKey="contributor_id" sort={sort} toggle={toggle} />
+        <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
+        <SortHeader label="Title" sortKey="title" sort={sort} toggle={toggle} />
+        <SortHeader label="Organization Unit" sortKey="organization_unit" sort={sort} toggle={toggle} />
+        <SortHeader label="Governance Role" sortKey="governance_role" sort={sort} toggle={toggle} />
+        <SortHeader label="Email" sortKey="email" sort={sort} toggle={toggle} />
+      </tr></thead>
+      <tbody>{sorted.map(c=>(
+        <tr key={c.contributor_id} className="clickable" onClick={()=>onSelect(c.contributor_id)}>
+          <td>{c.contributor_id}</td><td><strong>{c.name}</strong></td>
+          <td>{c.title||'—'}</td><td>{c.organization_unit||'—'}</td>
+          <td>{c.governance_role||'—'}</td><td>{c.email||'—'}</td>
+        </tr>))}</tbody>
+    </table>}
+  </div>);
+}
+
+// ===== Users (Administrator+) =====
+function UserFormModal({ user, contributors, assignableRoles, onClose, onSave }) {
+  const editing = !!user;
+  const [form, setForm] = useState(() => ({
+    email: user ? user.email : '', first_name: user ? user.first_name : '',
+    last_name: user ? user.last_name : '', role: user ? user.role : 'Viewer',
+    is_active: user ? user.is_active : 1, contributor_id: (user && user.contributor_id) || '',
+    password: '',
+  }));
   const [error, setError] = useState('');
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (password === 'MaineLineage') {
-      sessionStorage.setItem('dlt_auth', 'true');
-      onLogin();
-    } else {
-      setError('Incorrect password. Please try again.');
-      setPassword('');
+  const [problems, setProblems] = useState(null);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const save = async () => {
+    setError(''); setProblems(null);
+    try {
+      const body = { ...form, contributor_id: form.contributor_id || null };
+      if (editing && !body.password) delete body.password;
+      if (editing) delete body.email;
+      await onSave(body);
+    } catch (err) {
+      setError(err.message); setProblems(err.problems);
     }
   };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal-header">{editing ? `Edit ${user.email}` : 'Add User'}
+        <button className="panel-close" onClick={onClose}>&times;</button></div>
+      <div className="modal-body">
+        {error && <div className="login-error">{error}</div>}
+        {problems && <ul className="policy-list">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
+        {!editing && <div className="form-group"><label>Email (used as the username) *</label>
+          <input value={form.email} onChange={e => set('email', e.target.value)} /></div>}
+        <div className="form-row">
+          <div className="form-group"><label>First name *</label>
+            <input value={form.first_name} onChange={e => set('first_name', e.target.value)} /></div>
+          <div className="form-group"><label>Last name *</label>
+            <input value={form.last_name} onChange={e => set('last_name', e.target.value)} /></div>
+        </div>
+        <div className="form-row">
+          <div className="form-group"><label>Role</label>
+            <select value={form.role} onChange={e => set('role', e.target.value)}>
+              {assignableRoles.map(r => <option key={r} value={r}>{r}</option>)}
+            </select></div>
+          <div className="form-group"><label>Status</label>
+            <select value={form.is_active ? '1' : '0'} onChange={e => set('is_active', e.target.value === '1' ? 1 : 0)}>
+              <option value="1">Active</option><option value="0">Deactivated</option>
+            </select></div>
+        </div>
+        <div className="form-group"><label>Linked contributor (optional)</label>
+          <select value={form.contributor_id || ''} onChange={e => set('contributor_id', e.target.value)}>
+            <option value="">— none —</option>
+            {contributors.map(c => <option key={c.contributor_id} value={c.contributor_id}>
+              {c.contributor_id} — {c.name}</option>)}
+          </select></div>
+        <div className="form-group">
+          <label>{editing ? 'Set a new temporary password (optional)' : 'Temporary password *'}</label>
+          <input type="text" value={form.password} onChange={e => set('password', e.target.value)}
+                 placeholder={editing ? 'Leave blank to keep the current password' : ''} />
+          <div style={{fontSize:'11px',color:'#888',marginTop:4}}>
+            The user must change this at first sign-in. Share it through a separate
+            channel — email delivery isn't configured yet.
+          </div>
+        </div>
+      </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={save}>{editing ? 'Save changes' : 'Create user'}</button>
+      </div>
+    </div></div>
+  );
+}
+
+function UsersScreen({ currentUser, assignableRoles, notify }) {
+  const [users, setUsers] = useState([]);
+  const [contributors, setContributors] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(() => {
+    api.get('/api/users').then(setUsers).catch(e => notify(e.message, true));
+    api.get('/api/contributors').then(setContributors).catch(() => {});
+  }, [notify]);
+  useEffect(() => { load(); }, [load]);
+
+  const create = async (body) => {
+    await api.post('/api/users', body);
+    setAdding(false); load(); notify('User created.');
+  };
+  const update = async (body) => {
+    await api.put(`/api/users/${editing.user_id}`, body);
+    setEditing(null); load(); notify('User updated.');
+  };
+
+  const { sorted, sort, toggle } = useSort(users, 'email');
+
+  return (<div className="screen"><div className="table-view">
+    <div style={{display:'flex',alignItems:'center',marginBottom:12}}>
+      <div style={{flex:1,fontSize:12,color:'#888'}}>
+        Accounts are created here. Deactivate rather than delete so the audit history stays intact.
+      </div>
+      <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Add User</button>
+    </div>
+    <table className="data-table">
+      <thead><tr>
+        <SortHeader label="Email" sortKey="email" sort={sort} toggle={toggle} />
+        <SortHeader label="Name" sortKey="last_name" sort={sort} toggle={toggle} />
+        <SortHeader label="Role" sortKey="role" sort={sort} toggle={toggle} />
+        <SortHeader label="Contributor" sortKey="contributor_name" sort={sort} toggle={toggle} />
+        <SortHeader label="Last sign-in" sortKey="last_login_at" sort={sort} toggle={toggle} />
+        <SortHeader label="Status" sortKey="is_active" sort={sort} toggle={toggle} />
+        <th></th></tr></thead>
+      <tbody>{sorted.map(u => (
+        <tr key={u.user_id} className={u.is_active ? '' : 'inactive-row'}>
+          <td><strong>{u.email}</strong>{u.must_change_password ?
+            <div style={{fontSize:'11px',color:'#b08900'}}>temporary password pending</div> : null}</td>
+          <td>{u.first_name} {u.last_name}</td>
+          <td><span className={`role-badge role-${u.role}`}>{u.role}</span></td>
+          <td>{u.contributor_name || '—'}</td>
+          <td style={{fontSize:'12px'}}>{u.last_login_at ? String(u.last_login_at).slice(0,16).replace('T',' ') : 'never'}</td>
+          <td>{u.is_active ? <span className="badge badge-active">Active</span>
+                            : <span className="badge badge-deprecated">Deactivated</span>}</td>
+          <td><button className="btn btn-edit" onClick={() => setEditing(u)}>Edit</button></td>
+        </tr>))}
+      </tbody>
+    </table>
+    {adding && <UserFormModal contributors={contributors} assignableRoles={assignableRoles}
+                              onClose={() => setAdding(false)} onSave={create} />}
+    {editing && <UserFormModal user={editing} contributors={contributors}
+                               assignableRoles={assignableRoles}
+                               onClose={() => setEditing(null)} onSave={update} />}
+  </div></div>);
+}
+
+// ===== Add Contributor modal =====
+// The Contributors list itself uses the same table + detail-panel pattern as the
+// other catalogs, so a Viewer can open a record and read it. Only creation needs
+// a modal, matching "+ Add System" and "+ Add Flow".
+function AddContributorModal({ onClose, onSave }) {
+  const [form, setForm] = useState({ name:'', title:'', organization_unit:'', email:'',
+    phone:'', role_type:'', governance_role:'', governance_responsibilities:'', notes:'' });
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  return (
+    <div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+      <div className="modal-header">Add Contributor <button className="panel-close" onClick={onClose}>&times;</button></div>
+      <div className="modal-body">
+        <div className="form-group"><label>Name *</label>
+          <input value={form.name} onChange={e=>set('name',e.target.value)} /></div>
+        <div className="form-row">
+          <div className="form-group"><label>Title</label>
+            <input value={form.title} onChange={e=>set('title',e.target.value)} /></div>
+          <div className="form-group"><label>Organization unit</label>
+            <input value={form.organization_unit} onChange={e=>set('organization_unit',e.target.value)} /></div>
+        </div>
+        <div className="form-row">
+          <div className="form-group"><label>Email</label>
+            <input value={form.email} onChange={e=>set('email',e.target.value)} /></div>
+          <div className="form-group"><label>Phone</label>
+            <input value={form.phone} onChange={e=>set('phone',e.target.value)} /></div>
+        </div>
+        <div className="form-row">
+          <div className="form-group"><label>Role type</label>
+            <input value={form.role_type} onChange={e=>set('role_type',e.target.value)}
+                   placeholder="e.g. Data Owner" /></div>
+          <div className="form-group"><label>Governance role</label>
+            <input value={form.governance_role} onChange={e=>set('governance_role',e.target.value)}
+                   placeholder="e.g. Data Steward" /></div>
+        </div>
+        <div className="form-group"><label>Governance responsibilities</label>
+          <textarea value={form.governance_responsibilities}
+                    onChange={e=>set('governance_responsibilities',e.target.value)} /></div>
+        <div className="form-group"><label>Notes</label>
+          <textarea value={form.notes} onChange={e=>set('notes',e.target.value)} /></div>
+      </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={()=>{ if(form.name) onSave(form); }}>Add Contributor</button>
+      </div>
+    </div></div>
+  );
+}
+
+// ===== Preferences (SuperAdmin) =====
+function PreferencesScreen({ notify, onSaved, roles }) {
+  const [prefs, setPrefs] = useState([]);
+  const [draft, setDraft] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api.get('/api/preferences').then(rows => {
+      setPrefs(rows);
+      const d = {}; rows.forEach(p => { d[p.key] = p.value; });
+      setDraft(d);
+    }).catch(e => notify(e.message, true));
+  }, [notify]);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const editableKeys = prefs.filter(p => p.editable).map(p => p.key);
+      const values = {}; editableKeys.forEach(k => { values[k] = draft[k]; });
+      const rows = await api.put('/api/preferences', { values });
+      setPrefs(rows); notify('Preferences saved.'); onSaved && onSaved();
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
+  const categories = [];
+  prefs.forEach(p => { if (!categories.includes(p.category)) categories.push(p.category); });
+  const setVal = (k, v) => setDraft(d => ({ ...d, [k]: v }));
+
+  const control = (p) => {
+    const v = draft[p.key];
+    if (!p.editable) {
+      return <select disabled value="false"><option value="false">Off</option></select>;
+    }
+    if (p.value_type === 'boolean') {
+      return <select value={String(v) === 'true' ? 'true' : 'false'}
+                     onChange={e => setVal(p.key, e.target.value)}>
+        <option value="true">On</option><option value="false">Off</option></select>;
+    }
+    if (p.value_type === 'number') {
+      return <input type="number" value={v || ''} onChange={e => setVal(p.key, e.target.value)} />;
+    }
+    if (p.value_type === 'role') {
+      return <select value={v || 'Viewer'} onChange={e => setVal(p.key, e.target.value)}>
+        {(roles || []).map(r => <option key={r} value={r}>{r}</option>)}</select>;
+    }
+    return <input type="text" value={v || ''} onChange={e => setVal(p.key, e.target.value)} />;
+  };
+
+  return (<div className="screen"><div className="table-view">
+    <div style={{display:'flex',alignItems:'center',marginBottom:14}}>
+      <div style={{flex:1,fontSize:12,color:'#888'}}>
+        Global settings for this deployment. Changes are recorded in the audit log.
+      </div>
+      <button className="btn btn-primary" onClick={save} disabled={busy}>
+        {busy ? 'Saving…' : 'Save preferences'}</button>
+    </div>
+    {categories.map(cat => (
+      <div className="pref-group" key={cat}>
+        <h3>{cat}</h3>
+        {prefs.filter(p => p.category === cat).map(p => (
+          <div className={`pref-row ${p.editable ? '' : 'locked'}`} key={p.key}>
+            <div className="pref-label"><b>{p.label || p.key}</b><span>{p.description}</span></div>
+            <div className="pref-control">{control(p)}</div>
+          </div>
+        ))}
+      </div>
+    ))}
+  </div></div>);
+}
+
+// ===== Audit log (SuperAdmin) =====
+function AuditScreen({ notify }) {
+  const [data, setData] = useState({ events: [], total: 0, actions: [], entity_types: [] });
+  const [filters, setFilters] = useState({ start: '', end: '', user: '', action: '', entity_type: '' });
+  const [offset, setOffset] = useState(0);
+  const LIMIT = 100;
+
+  const queryString = useCallback((extra) => {
+    const p = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => { if (v) p.set(k, v); });
+    Object.entries(extra || {}).forEach(([k, v]) => p.set(k, v));
+    return p.toString();
+  }, [filters]);
+
+  const load = useCallback((newOffset) => {
+    const off = newOffset === undefined ? offset : newOffset;
+    api.get(`/api/audit?${queryString({ limit: LIMIT, offset: off })}`)
+      .then(d => { setData(d); setOffset(off); })
+      .catch(e => notify(e.message, true));
+  }, [queryString, offset, notify]);
+
+  useEffect(() => { load(0); /* eslint-disable-next-line */ }, []);
+
+  const setF = (k, v) => setFilters(f => ({ ...f, [k]: v }));
+  const fmt = (t) => t ? String(t).replace('T', ' ').slice(0, 19) : '';
+  // Sorting applies to the page currently loaded; the server always returns
+  // newest-first, and the filters narrow the set before paging.
+  const { sorted: sortedEvents, sort, toggle } = useSort(data.events, 'occurred_at', 'desc');
+
+  return (<div className="screen">
+    <div className="filter-bar">
+      <div className="fg"><label>From</label>
+        <input type="date" value={filters.start} onChange={e => setF('start', e.target.value)} /></div>
+      <div className="fg"><label>To</label>
+        <input type="date" value={filters.end} onChange={e => setF('end', e.target.value)} /></div>
+      <div className="fg"><label>User</label>
+        <input type="text" placeholder="email contains…" value={filters.user}
+               onChange={e => setF('user', e.target.value)} /></div>
+      <div className="fg"><label>Action</label>
+        <select value={filters.action} onChange={e => setF('action', e.target.value)}>
+          <option value="">All</option>
+          {data.actions.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+      <div className="fg"><label>Entity</label>
+        <select value={filters.entity_type} onChange={e => setF('entity_type', e.target.value)}>
+          <option value="">All</option>
+          {data.entity_types.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+      <button className="btn btn-primary" onClick={() => load(0)}>Apply</button>
+      <button className="btn" onClick={() => { setFilters({ start:'', end:'', user:'', action:'', entity_type:'' }); setTimeout(() => load(0), 0); }}>Clear</button>
+      <button className="btn" onClick={() => { window.location = `/api/audit/export?${queryString()}`; }}>
+        Export CSV</button>
+    </div>
+    <div className="table-view">
+      <div style={{fontSize:12,color:'#888',marginBottom:8}}>
+        {data.total} event{data.total === 1 ? '' : 's'}
+        {data.total > LIMIT ? ` — showing ${offset + 1}–${Math.min(offset + LIMIT, data.total)}` : ''}
+        . The audit log is append-only; nothing can edit or remove entries.
+      </div>
+      {data.events.length === 0 && <div className="empty-state">No matching events.</div>}
+      {data.events.length > 0 && <table className="data-table">
+        <thead><tr>
+          <SortHeader label="When (UTC)" sortKey="occurred_at" sort={sort} toggle={toggle} style={{width:150}} />
+          <SortHeader label="User" sortKey="actor_email" sort={sort} toggle={toggle} />
+          <SortHeader label="Action" sortKey="action" sort={sort} toggle={toggle} />
+          <SortHeader label="Entity" sortKey="entity_type" sort={sort} toggle={toggle} />
+          <th>Details</th>
+          <SortHeader label="IP" sortKey="ip_address" sort={sort} toggle={toggle} style={{width:110}} />
+        </tr></thead>
+        <tbody>{sortedEvents.map(e => (
+          <tr key={e.event_id}>
+            <td style={{fontSize:'12px'}}>{fmt(e.occurred_at)}</td>
+            <td style={{fontSize:'12px'}}>{e.actor_email || '—'}</td>
+            <td><span className="badge badge-internal">{e.action}</span></td>
+            <td style={{fontSize:'12px'}}>{e.entity_type || '—'}{e.entity_id ? ` ${e.entity_id}` : ''}</td>
+            <td>
+              {e.summary && <div style={{fontSize:'12px'}}>{e.summary}</div>}
+              {e.changes && e.changes.length > 0 && <div className="audit-changes">
+                {e.changes.slice(0, 6).map(c => (
+                  <span className="chg" key={c.change_id}>
+                    <strong>{c.field_name}</strong>{' '}
+                    {c.old_value ? <span className="old">{String(c.old_value).slice(0,60)}</span> : null}
+                    <span className="new">{c.new_value === null || c.new_value === undefined
+                      ? '(cleared)' : String(c.new_value).slice(0,60)}</span>
+                  </span>))}
+                {e.changes.length > 6 && <span className="chg">…and {e.changes.length - 6} more</span>}
+              </div>}
+            </td>
+            <td style={{fontSize:'11px',color:'#888'}}>{e.ip_address || '—'}</td>
+          </tr>))}
+        </tbody>
+      </table>}
+      {data.total > LIMIT && <div style={{display:'flex',gap:8,marginTop:12}}>
+        <button className="btn" disabled={offset === 0} onClick={() => load(Math.max(0, offset - LIMIT))}>Previous</button>
+        <button className="btn" disabled={offset + LIMIT >= data.total} onClick={() => load(offset + LIMIT)}>Next</button>
+      </div>}
+    </div>
+  </div>);
+}
+
+// ===== Login Screen =====
+function LoginScreen({ onSignedIn, settings }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (ev) => {
+    ev.preventDefault();
+    setBusy(true); setError('');
+    try {
+      const result = await api.post('/api/auth/login', { email, password });
+      session.csrf = result.csrf_token;
+      onSignedIn(result);
+    } catch (err) {
+      setError(err.message || 'Sign-in failed.');
+      setPassword('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="login-screen">
-      <form className="login-box" onSubmit={handleSubmit}>
-        <h1>Data Lineage Tracker</h1>
-        <p>Enter password to continue</p>
+      <form className="login-box" onSubmit={submit}>
+        <h1>{(settings && settings.app_title) || 'Data Lineage Tracker'}</h1>
+        <p>Sign in to continue</p>
         {error && <div className="login-error">{error}</div>}
-        <input type="password" placeholder="Password" value={password} onChange={e => { setPassword(e.target.value); setError(''); }} autoFocus />
-        <button type="submit" className="login-btn">Sign In</button>
+        <div className="field">
+          <label htmlFor="login-email">Email</label>
+          <input id="login-email" type="email" autoComplete="username" value={email}
+                 onChange={e => { setEmail(e.target.value); setError(''); }} autoFocus />
+        </div>
+        <div className="field">
+          <label htmlFor="login-password">Password</label>
+          <input id="login-password" type="password" autoComplete="current-password"
+                 value={password} onChange={e => { setPassword(e.target.value); setError(''); }} />
+        </div>
+        <button type="submit" className="login-btn" disabled={busy}>
+          {busy ? 'Signing in…' : 'Sign In'}
+        </button>
+        <div className="login-sub">
+          Accounts are created by an administrator. If you've forgotten your
+          password, ask an administrator to issue a new temporary one.
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ===== Forced password change =====
+function ChangePasswordScreen({ user, settings, onDone, onSignOut, forced }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [problems, setProblems] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (ev) => {
+    ev.preventDefault();
+    setError(''); setProblems(null);
+    if (next !== confirm) { setError('The new passwords do not match.'); return; }
+    setBusy(true);
+    try {
+      await api.post('/api/auth/change-password', { current_password: current, new_password: next });
+      onDone();
+    } catch (err) {
+      setError(err.message);
+      setProblems(err.problems);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="login-screen">
+      <form className="login-box" onSubmit={submit}>
+        <h1>Choose a new password</h1>
+        <p>{user ? user.email : ''}</p>
+        {forced && <div className="login-note">
+          Your account is using a temporary password. Choose a new one to continue.
+        </div>}
+        {error && <div className="login-error">{error}</div>}
+        {problems && <ul className="policy-list">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
+        <div className="field">
+          <label htmlFor="cp-current">Current password</label>
+          <input id="cp-current" type="password" autoComplete="current-password"
+                 value={current} onChange={e => setCurrent(e.target.value)} autoFocus />
+        </div>
+        <div className="field">
+          <label htmlFor="cp-new">New password</label>
+          <input id="cp-new" type="password" autoComplete="new-password"
+                 value={next} onChange={e => setNext(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="cp-confirm">Confirm new password</label>
+          <input id="cp-confirm" type="password" autoComplete="new-password"
+                 value={confirm} onChange={e => setConfirm(e.target.value)} />
+        </div>
+        <button type="submit" className="login-btn" disabled={busy}>
+          {busy ? 'Saving…' : 'Update password'}
+        </button>
+        <div className="login-sub">{(settings && settings.password_policy) || ''}</div>
+        {onSignOut && <div className="login-sub">
+          <a href="#" onClick={e => { e.preventDefault(); onSignOut(); }}>Sign out instead</a>
+        </div>}
       </form>
     </div>
   );
@@ -1154,39 +1860,94 @@ function LoginScreen({ onLogin }) {
 
 // ===== Main App Wrapper =====
 function AppWrapper() {
-  const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem('dlt_auth') === 'true');
-  if (!authenticated) return <LoginScreen onLogin={() => setAuthenticated(true)} />;
-  return <App />;
+  const [state, setState] = useState({ status: 'loading', user: null, settings: {} });
+
+  const loadSession = useCallback(async () => {
+    try {
+      const me = await api.get('/api/auth/me');
+      session.csrf = me.csrf_token;
+      setState({ status: me.user.must_change_password ? 'must-change' : 'ready',
+                 user: me.user, settings: me.settings || {} });
+    } catch (err) {
+      setState({ status: 'signed-out', user: null, settings: {} });
+    }
+  }, []);
+
+  useEffect(() => {
+    onAuthLost = () => { session.csrf = null; setState(s => ({ ...s, status: 'signed-out', user: null })); };
+    loadSession();
+    return () => { onAuthLost = () => {}; };
+  }, [loadSession]);
+
+  const signOut = useCallback(async () => {
+    try { await api.post('/api/auth/logout'); } catch (e) { /* already gone */ }
+    session.csrf = null;
+    setState({ status: 'signed-out', user: null, settings: {} });
+  }, []);
+
+  if (state.status === 'loading') {
+    return <div className="login-screen"><div className="login-box"><p>Loading…</p></div></div>;
+  }
+  if (state.status === 'signed-out') {
+    return <LoginScreen settings={state.settings} onSignedIn={(result) => {
+      setState({ status: result.user.must_change_password ? 'must-change' : 'ready',
+                 user: result.user, settings: result.settings || {} });
+    }} />;
+  }
+  if (state.status === 'must-change') {
+    return <ChangePasswordScreen forced user={state.user} settings={state.settings}
+                                 onDone={loadSession} onSignOut={signOut} />;
+  }
+  return <App user={state.user} settings={state.settings}
+              onSignOut={signOut} onSettingsChanged={loadSession} />;
 }
 
 // ===== Main App =====
-function App() {
+function App({ user, settings, onSignOut, onSettingsChanged }) {
   const [view, setView] = useState('diagram');
-  const [appTitle, setAppTitle] = useState(() => localStorage.getItem('dlt_title') || 'DATA LINEAGE TRACKER');
-  const [appSubtitle, setAppSubtitle] = useState(() => localStorage.getItem('dlt_subtitle') || 'Dept. of Education');
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [editingSubtitle, setEditingSubtitle] = useState(false);
-  const titleRef = useRef(null);
-  const subtitleRef = useRef(null);
+  const appTitle = settings.app_title || 'DATA LINEAGE TRACKER';
+  const appSubtitle = settings.app_subtitle || '';
+  const [notice, setNotice] = useState(null);
+  const [assignableRoles, setAssignableRoles] = useState(['Viewer', 'Editor']);
+  const canEdit = roleAtLeast(user.role, 'Editor');
+  const isAdmin = roleAtLeast(user.role, 'Administrator');
+  const isSuper = roleAtLeast(user.role, 'SuperAdmin');
+
+  const notify = useCallback((message, isError) => {
+    setNotice({ message, isError: !!isError });
+    if (!isError) setTimeout(() => setNotice(null), 4000);
+  }, []);
+
   const [systems, setSystems] = useState([]);
   const [flows, setFlows] = useState([]);
   const [elements, setElements] = useState([]);
+  const [contributors, setContributors] = useState([]);
   const [selected, setSelected] = useState(null);
   const [detailData, setDetailData] = useState(null);
   const [detailType, setDetailType] = useState(null);
   const [showAddSystem, setShowAddSystem] = useState(false);
   const [showAddFlow, setShowAddFlow] = useState(false);
+  const [showAddContributor, setShowAddContributor] = useState(false);
   const [schemaSystemId, setSchemaSystemId] = useState(null);
   const [schemaSystemName, setSchemaSystemName] = useState('');
   const [schemaTables, setSchemaTables] = useState([]);
 
   const refresh = useCallback(() => {
-    api.get('/api/systems').then(setSystems);
-    api.get('/api/flows').then(setFlows);
-    api.get('/api/elements').then(setElements);
+    api.get('/api/systems').then(setSystems).catch(() => {});
+    api.get('/api/flows').then(setFlows).catch(() => {});
+    api.get('/api/elements').then(setElements).catch(() => {});
+    api.get('/api/contributors').then(setContributors).catch(() => {});
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Re-read the data whenever a data view is opened, so edits made by someone
+  // else (including node positions, which are shared) show up without a reload.
+  useEffect(() => {
+    if (['diagram', 'systems', 'flows', 'elements', 'contributors'].includes(view)) {
+      refresh();
+    }
+  }, [view, refresh]);
 
   const selectSystem = useCallback((id) => {
     setSelected({ type: 'system', id });
@@ -1203,8 +1964,16 @@ function App() {
     api.get(`/api/elements/${id}`).then(d => { setDetailData(d); setDetailType('element'); });
   }, []);
 
-  useEffect(() => { if (editingTitle && titleRef.current) titleRef.current.focus(); }, [editingTitle]);
-  useEffect(() => { if (editingSubtitle && subtitleRef.current) subtitleRef.current.focus(); }, [editingSubtitle]);
+  const selectContributor = useCallback((id) => {
+    setSelected({ type: 'contributor', id });
+    api.get(`/api/contributors/${id}`).then(d => { setDetailData(d); setDetailType('contributor'); });
+  }, []);
+
+  useEffect(() => {
+    api.get('/api/auth/me')
+      .then(me => setAssignableRoles(me.assignable_roles || []))
+      .catch(() => {});
+  }, []);
 
   const closeDetail = () => { setSelected(null); setDetailData(null); setDetailType(null); };
 
@@ -1253,14 +2022,27 @@ function App() {
     } else if (type === 'element') {
       refresh();
       setDetailData(result);
+    } else if (type === 'contributor') {
+      refresh();
+      setDetailData(result);
     } else if (type === 'schema_table' || type === 'schema_column') {
       setDetailData(result);
       if (schemaSystemId) loadSchema(schemaSystemId);
     }
   }, [refresh, schemaSystemId, loadSchema]);
 
-  const addSystem = async (data) => { await api.post('/api/systems', data); refresh(); setShowAddSystem(false); };
-  const addFlow = async (data) => { await api.post('/api/flows', data); refresh(); setShowAddFlow(false); };
+  const addSystem = async (data) => {
+    try { await api.post('/api/systems', data); refresh(); setShowAddSystem(false); notify('System added.'); }
+    catch (err) { notify(err.message, true); }
+  };
+  const addFlow = async (data) => {
+    try { await api.post('/api/flows', data); refresh(); setShowAddFlow(false); notify('Data flow added.'); }
+    catch (err) { notify(err.message, true); }
+  };
+  const addContributor = async (data) => {
+    try { await api.post('/api/contributors', data); refresh(); setShowAddContributor(false); notify('Contributor added.'); }
+    catch (err) { notify(err.message, true); }
+  };
 
   const panelOpen = !!detailData;
 
@@ -1268,16 +2050,8 @@ function App() {
     <div className="app">
       <div className="sidebar">
         <div className="sidebar-header">
-          {editingTitle
-            ? <input className="header-title" ref={titleRef} defaultValue={appTitle}
-                onBlur={e => { const v = e.target.value.trim() || appTitle; setAppTitle(v); localStorage.setItem('dlt_title', v); setEditingTitle(false); }}
-                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setEditingTitle(false); } }} />
-            : <h1 onClick={() => setEditingTitle(true)}>{appTitle}</h1>}
-          {editingSubtitle
-            ? <input className="header-subtitle" ref={subtitleRef} defaultValue={appSubtitle}
-                onBlur={e => { const v = e.target.value.trim() || appSubtitle; setAppSubtitle(v); localStorage.setItem('dlt_subtitle', v); setEditingSubtitle(false); }}
-                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setEditingSubtitle(false); } }} />
-            : <p onClick={() => setEditingSubtitle(true)}>{appSubtitle}</p>}
+          <h1 style={{cursor:'default'}}>{appTitle}</h1>
+          {appSubtitle && <p style={{cursor:'default'}}>{appSubtitle}</p>}
         </div>
         <div className="sidebar-nav">
           <div className="nav-section">Views</div>
@@ -1286,6 +2060,19 @@ function App() {
           <div className={`nav-item ${view==='systems'?'active':''}`} onClick={()=>setView('systems')}><span className="nav-icon">&#9634;</span> Systems ({systems.length})</div>
           <div className={`nav-item ${view==='flows'?'active':''}`} onClick={()=>setView('flows')}><span className="nav-icon">&#8594;</span> Data Flows ({flows.length})</div>
           <div className={`nav-item ${view==='elements'?'active':''}`} onClick={()=>setView('elements')}><span className="nav-icon">&#9830;</span> Data Elements ({elements.length})</div>
+          <div className={`nav-item ${view==='contributors'?'active':''}`} onClick={()=>setView('contributors')}><span className="nav-icon">&#9787;</span> Contributors ({contributors.length})</div>
+          {(isAdmin || isSuper) && <div className="nav-section">Administration</div>}
+          {isAdmin && <div className={`nav-item ${view==='users'?'active':''}`} onClick={()=>setView('users')}><span className="nav-icon">&#9781;</span> Users</div>}
+          {isSuper && <div className={`nav-item ${view==='preferences'?'active':''}`} onClick={()=>setView('preferences')}><span className="nav-icon">&#9881;</span> Preferences</div>}
+          {isSuper && <div className={`nav-item ${view==='audit'?'active':''}`} onClick={()=>setView('audit')}><span className="nav-icon">&#9998;</span> Audit Log</div>}
+        </div>
+        <div className="user-chip">
+          <div className="avatar">{(user.first_name||'?').charAt(0)}{(user.last_name||'').charAt(0)}</div>
+          <div className="who">
+            <b title={user.email}>{user.first_name} {user.last_name}</b>
+            <span>{user.role}</span>
+          </div>
+          <button onClick={onSignOut} title="Sign out">Sign out</button>
         </div>
       </div>
 
@@ -1293,12 +2080,18 @@ function App() {
         <div className="toolbar">
           {view==='schema'
             ? <span className="breadcrumb"><span className="crumb-link" onClick={exitSchema}>Lineage Diagram</span><span className="crumb-sep">&rsaquo;</span><span>{schemaSystemName} &mdash; Database Schema</span></span>
-            : <span className="toolbar-title">{view==='diagram'?'Lineage Diagram':view==='systems'?'Systems Catalog':view==='flows'?'Data Flows Catalog':'Data Elements Glossary'}</span>}
+            : <span className="toolbar-title">{VIEW_TITLES[view] || ''}</span>}
           <div className="toolbar-spacer"></div>
           {view==='schema' && <button className="btn" onClick={exitSchema}>&larr; Back to Lineage</button>}
-          {(view==='diagram'||view==='systems')&&<button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
-          {(view==='diagram'||view==='flows')&&<button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
+          {canEdit && (view==='diagram'||view==='systems')&&<button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
+          {canEdit && (view==='diagram'||view==='flows')&&<button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
+          {canEdit && view==='contributors'&&<button className="btn btn-primary" onClick={()=>setShowAddContributor(true)}>+ Add Contributor</button>}
         </div>
+        {notice && <div className={`banner ${notice.isError ? 'banner-error' : 'banner-ok'}`}>
+          <span style={{flex:1}}>{notice.message}</span>
+          <button className="panel-close" onClick={()=>setNotice(null)}>&times;</button>
+        </div>}
+        {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
         <div className="stats-bar">
           {view==='schema' ? <>
             <div className="stat"><div className="stat-value">{schemaTables.length}</div><div className="stat-label">Tables</div></div>
@@ -1311,19 +2104,25 @@ function App() {
             <div className="stat"><div className="stat-value">{elements.length}</div><div className="stat-label">Data Elements</div></div>
             <div className="stat"><div className="stat-value">{elements.filter(e=>e.is_pii).length}</div><div className="stat-label">PII Elements</div></div>
           </>}
-        </div>
+        </div>}
         <div className="content-area">
-          {view==='diagram' && <DiagramCanvas systems={systems} flows={flows} selected={selected} onSelectSystem={selectSystem} onSelectFlow={selectFlow} onUpdatePosition={updatePosition} onDrill={drillIntoSchema} />}
-          {view==='schema' && <SchemaCanvas tables={schemaTables} selected={selected} onSelectTable={selectSchemaTable} onSelectColumn={selectSchemaColumn} onUpdatePosition={updateSchemaPosition} />}
+          {view==='diagram' && <DiagramCanvas systems={systems} flows={flows} selected={selected} onSelectSystem={selectSystem} onSelectFlow={selectFlow} onUpdatePosition={updatePosition} onDrill={drillIntoSchema} canEdit={canEdit} />}
+          {view==='schema' && <SchemaCanvas tables={schemaTables} selected={selected} onSelectTable={selectSchemaTable} onSelectColumn={selectSchemaColumn} onUpdatePosition={updateSchemaPosition} canEdit={canEdit} />}
           {view==='systems' && <SystemsTable systems={systems} onSelect={selectSystem} />}
           {view==='flows' && <FlowsTable flows={flows} onSelect={selectFlow} />}
           {view==='elements' && <ElementsTable elements={elements} onSelect={selectElement} />}
-          <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave} systems={systems} onDrill={drillIntoSchema} />
+          {view==='contributors' && <ContributorsTable contributors={contributors} onSelect={selectContributor} />}
+          {view==='users' && isAdmin && <UsersScreen currentUser={user} assignableRoles={assignableRoles} notify={notify} />}
+          {view==='preferences' && isSuper && <PreferencesScreen notify={notify} roles={ROLE_ORDER} onSaved={onSettingsChanged} />}
+          {view==='audit' && isSuper && <AuditScreen notify={notify} />}
+          {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
+            <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave} systems={systems} onDrill={drillIntoSchema} canEdit={canEdit} notify={notify} />}
         </div>
       </div>
 
       {showAddSystem && <AddSystemModal onClose={()=>setShowAddSystem(false)} onSave={addSystem} />}
       {showAddFlow && <AddFlowModal systems={systems} onClose={()=>setShowAddFlow(false)} onSave={addFlow} />}
+      {showAddContributor && <AddContributorModal onClose={()=>setShowAddContributor(false)} onSave={addContributor} />}
     </div>
   );
 }

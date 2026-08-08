@@ -31,6 +31,13 @@ services:
     environment:
       DATABASE_URL: postgresql://lineage:lineage@db:5432/lineage
       PORT: 8765
+      # First run only: creates the initial SuperAdmin account. Change the email
+      # to your own. If you omit the password, a strong one is generated and
+      # printed to the logs once. Either way you must change it at first sign-in.
+      BOOTSTRAP_SUPERADMIN_EMAIL: ${BOOTSTRAP_SUPERADMIN_EMAIL:-admin@example.gov}
+      BOOTSTRAP_SUPERADMIN_PASSWORD: ${BOOTSTRAP_SUPERADMIN_PASSWORD:-}
+      BOOTSTRAP_SUPERADMIN_FIRST_NAME: ${BOOTSTRAP_SUPERADMIN_FIRST_NAME:-System}
+      BOOTSTRAP_SUPERADMIN_LAST_NAME: ${BOOTSTRAP_SUPERADMIN_LAST_NAME:-Administrator}
     ports:
       - "8765:8765"
     depends_on:

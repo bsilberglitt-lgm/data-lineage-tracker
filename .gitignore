@@ -1,13 +1,17 @@
 # Secrets / local configuration
 .env
 
-# Legacy SQLite artifacts (the app now uses PostgreSQL).
-# lineage.db itself is kept in the repo for now as the migration source;
-# it can be removed once the Postgres migration is confirmed.
+# Legacy SQLite database (the app now uses PostgreSQL). Kept on disk as a
+# historical backup and as the source for migrate_sqlite_to_postgres.py, but
+# deliberately untracked — otherwise `git add -A` would re-add it.
+lineage.db
 lineage.db-journal
 lineage.db-wal
 lineage.db-shm
 *.bak
+
+# Generated exports
+*.xlsx
 
 # Python
 __pycache__/
