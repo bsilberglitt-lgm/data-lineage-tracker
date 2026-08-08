@@ -37,13 +37,32 @@ docker compose down -v         # stop and DELETE all data
 Code changes are picked up with `docker compose restart app`. If you change
 `requirements.txt`, rebuild with `docker compose up --build`.
 
+### First sign-in
+The first time the app starts against an empty database it creates a SuperAdmin
+account from `BOOTSTRAP_SUPERADMIN_EMAIL` (set in `docker-compose.yml`, or your
+own `.env`). If you don't supply a password, one is generated and printed to the
+logs **once**:
+
+```
+====================================================================
+  Initial SuperAdmin created
+    Email:    you@example.gov
+    Password: <generated>
+    (shown once — you must change it at first login)
+====================================================================
+```
+
+Sign in with it and you'll be required to choose a new password before you can
+go anywhere else.
+
 ### Verify everything works
 ```bash
-python3 selftest.py
+python3 selftest.py --email you@example.gov --password 'YourPassword'
 ```
-Exercises every endpoint, the governance inheritance chain, and the read/write
-paths, then reports `PASS`/`FAIL` per check. Uses only the Python standard
-library, so it runs from your Mac with nothing to install.
+Exercises every endpoint, the governance inheritance chain, the read/write
+paths, and — importantly — checks that roles are actually enforced on the
+server, by creating a temporary Viewer account and confirming it is blocked from
+writing. Uses only the Python standard library.
 
 ### Configuration
 All configuration is via environment variables (no code changes needed to move
@@ -53,8 +72,63 @@ hosts):
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL connection string (required) | set by Docker Compose |
 | `PORT` | Port to listen on | `8765` |
+| `BOOTSTRAP_SUPERADMIN_EMAIL` | First-run only: creates the initial SuperAdmin | — |
+| `BOOTSTRAP_SUPERADMIN_PASSWORD` | Optional; generated and logged once if omitted | — |
+| `SCRYPT_N` | Password hashing cost | `32768` |
 
 See `.env.example`.
+
+## Accounts, Roles, and the Audit Trail
+
+### Roles
+Roles are strictly ordered — each inherits everything below it.
+
+| Role | Can do |
+|---|---|
+| **Viewer** | Read the diagram, catalogs, and schema drill-down, including all detail panels. Cannot edit anything, including rearranging the diagram. |
+| **Editor** | Everything a Viewer can, plus create/update/delete systems, data flows, data elements, and contributors, and edit table- and field-level schema governance. |
+| **Administrator** | Everything an Editor can, plus create and manage user accounts and assign roles (except SuperAdmin). |
+| **SuperAdmin** | Everything an Administrator can, plus the Preferences and Audit Log screens, and managing other SuperAdmins. |
+
+Permissions are enforced **on the server for every request**. The interface also
+hides controls a user can't use, but that's only a convenience — the server is
+the security boundary.
+
+### Managing accounts
+There is no self-registration. An Administrator creates each account with a
+temporary password, which must be shared through a separate channel (email
+delivery isn't configured yet) and must be changed at first sign-in.
+
+Accounts are **deactivated, never deleted**, so audit history stays intact.
+Deactivation and role changes take effect immediately, on the deactivated user's
+very next request. The system refuses to demote or deactivate the last remaining
+SuperAdmin.
+
+### Sessions and passwords
+Sessions live in the database, so an Administrator can see who's signed in and
+force a sign-out. A session expires after 8 hours idle (configurable) and after
+30 days regardless. Passwords are hashed with scrypt, must be at least 12
+characters with upper case, lower case, a number and a symbol, are screened
+against a list of common passwords, and can't contain the user's own name or
+email. Repeated failed sign-ins trigger progressive delays and then a temporary
+lockout.
+
+### Audit log
+Every create, update, and delete is recorded **field by field**, with the old and
+new values, who made the change, when, and from which IP address. Sign-ins,
+failed sign-ins, and permission denials are recorded too. The log is
+append-only — nothing in the application can edit or remove an entry.
+
+SuperAdmins can filter by date range, user, action, and entity type, and export
+the filtered view to CSV.
+
+### Not yet built
+Two-factor authentication and self-service password reset both need email
+delivery, which isn't configured yet. Their toggles appear in Preferences,
+visibly locked, and the surrounding code is structured so they can be added
+without rework. When single sign-on (OIDC against a state identity provider)
+arrives, it replaces the sign-in step only — roles, permissions, and the audit
+trail stay exactly as they are.
 
 ## What You Can Do
 
@@ -95,6 +169,9 @@ A breadcrumb at the top returns you to the high-level lineage diagram at any tim
 data-lineage-tracker/
   app.py              Python backend (Tornado + PostgreSQL)
   db.py               Database layer: connection pool + sqlite-style query shim
+  auth.py             Password hashing, password policy, sessions, lockout
+  permissions.py      Role hierarchy and permission checks
+  audit.py            Append-only audit trail (field-level change tracking)
   requirements.txt    Python dependencies
   Dockerfile          Container image (portable to Render, AWS, or Azure)
   docker-compose.yml  Local stack: app + PostgreSQL
@@ -147,6 +224,8 @@ The app stores these entity types:
 | **Agreement** | A data sharing agreement governing interagency data exchanges |
 | **Schema Table** | A physical database table belonging to a System, with governance overrides |
 | **Schema Column** | A field within a schema table, with its own governance overrides (inheriting from the table, then the system) |
+| **Contributor** | A person holding a governance role (data owner, steward). Formerly "Stakeholder". May optionally be linked to a user account. |
+| **User** | A login account with a role. Users and contributors are separate: a contributor needs no login, and a user need not hold a governance role. |
 
 See the **Data_Lineage_Tracker_Data_Model.docx** for the full schema reference.
 
@@ -206,8 +285,9 @@ to storage you control if the lineage documentation has a retention requirement.
 
 ## Future Enhancements
 
-- **Real authentication (next up)** — the current password is hardcoded in client-side JavaScript and the API has no auth at all, so it is not suitable for multi-user access. Building on OIDC/SAML would allow single sign-on against the state's identity provider.
-- **Per-user audit trail** — record who changed what, which the governance framework this app models would itself expect
+- **Two-factor authentication and self-service password reset** — both need email delivery (Resend); the preference toggles already exist, locked off
+- **Single sign-on (OIDC)** — federate with a state identity provider such as Microsoft Entra ID, replacing local passwords entirely
+- **Agreement management screen** — the table and API exist; no UI yet
 - **Field-level lineage tracing (Phase 3)** — trace each schema column back to its source element, the transformations applied, and the owners/stewards at each hop
 - Map database schemas for additional systems (NEO and Federal Reporting are done)
 - Stakeholder and Agreement management screens
