@@ -628,6 +628,72 @@ BACKFILL_TABLES = [
 ]
 
 
+def reset_superadmin_if_requested(conn):
+    """Emergency password reset for a SuperAdmin, driven by environment variables.
+
+    Until self-service password reset exists (Phase 2), an administrator who
+    loses access has no way back in. Setting BOOTSTRAP_SUPERADMIN_RESET=true
+    together with BOOTSTRAP_SUPERADMIN_EMAIL and BOOTSTRAP_SUPERADMIN_PASSWORD
+    resets that account's password on the next start and forces a change at the
+    next sign-in.
+
+    Only someone who can already change the deployment's environment variables
+    can trigger this, and every use is written to the audit log. Remove the
+    variable afterwards so a later restart doesn't silently reset the password
+    again.
+    """
+    if str(os.environ.get("BOOTSTRAP_SUPERADMIN_RESET", "")).strip().lower() \
+            not in ("1", "true", "yes", "on"):
+        return
+
+    email = auth.normalize_email(os.environ.get("BOOTSTRAP_SUPERADMIN_EMAIL", ""))
+    password = os.environ.get("BOOTSTRAP_SUPERADMIN_PASSWORD", "").strip()
+    if not email or not password:
+        print("\n  BOOTSTRAP_SUPERADMIN_RESET is set, but BOOTSTRAP_SUPERADMIN_EMAIL "
+              "and BOOTSTRAP_SUPERADMIN_PASSWORD are both required. Skipping.\n",
+              flush=True)
+        return
+
+    row = conn.execute("SELECT * FROM app_user WHERE email=?", (email,)).fetchone()
+    now = iso(utcnow())
+    if row:
+        conn.execute(
+            """UPDATE app_user
+                  SET password_hash=?, must_change_password=1, is_active=1,
+                      role=?, updated_date=?
+                WHERE user_id=?""",
+            (auth.hash_password(password), permissions.SUPERADMIN, now, row["user_id"]))
+        conn.execute("UPDATE user_session SET revoked_at=? WHERE user_id=? "
+                     "AND revoked_at IS NULL", (now, row["user_id"]))
+        user_id = row["user_id"]
+        what = "reset"
+    else:
+        created = conn.execute(
+            """INSERT INTO app_user
+                 (email, first_name, last_name, password_hash, role, is_active,
+                  must_change_password, created_date, updated_date)
+               VALUES (?,?,?,?,?,1,1,?,?)
+               RETURNING user_id""",
+            (email,
+             os.environ.get("BOOTSTRAP_SUPERADMIN_FIRST_NAME", "System"),
+             os.environ.get("BOOTSTRAP_SUPERADMIN_LAST_NAME", "Administrator"),
+             auth.hash_password(password), permissions.SUPERADMIN, now, now)).fetchone()
+        user_id = created["user_id"]
+        what = "created"
+
+    audit.record_event(conn, {"user_id": user_id, "email": email}, audit.PASSWORD_CHANGED,
+                       "user", user_id,
+                       summary="SuperAdmin password reset via BOOTSTRAP_SUPERADMIN_RESET")
+    conn.commit()
+
+    print("\n" + "=" * 68, flush=True)
+    print(f"  SuperAdmin account {what}: {email}", flush=True)
+    print("  Password set from BOOTSTRAP_SUPERADMIN_PASSWORD.", flush=True)
+    print("  You must change it at next sign-in.", flush=True)
+    print("  >> Now REMOVE BOOTSTRAP_SUPERADMIN_RESET from the environment. <<", flush=True)
+    print("=" * 68 + "\n", flush=True)
+
+
 def bootstrap_superadmin():
     """Create the first SuperAdmin from environment variables, once.
 
@@ -639,6 +705,7 @@ def bootstrap_superadmin():
     conn = get_db()
     try:
         if conn.execute("SELECT COUNT(*) FROM app_user").fetchone()[0] > 0:
+            reset_superadmin_if_requested(conn)
             return
         email = auth.normalize_email(os.environ.get("BOOTSTRAP_SUPERADMIN_EMAIL", ""))
         if not email:
@@ -688,16 +755,16 @@ def bootstrap_superadmin():
                         f"{email}; created before audit logging began")
         conn.commit()
 
-        print("\n" + "=" * 68)
-        print("  Initial SuperAdmin created")
-        print(f"    Email:    {email}")
+        print("\n" + "=" * 68, flush=True)
+        print("  Initial SuperAdmin created", flush=True)
+        print(f"    Email:    {email}", flush=True)
         if generated:
-            print(f"    Password: {password}")
-            print("    (shown once — you must change it at first login)")
+            print(f"    Password: {password}", flush=True)
+            print("    (shown once — you must change it at first login)", flush=True)
         else:
-            print("    Password: as supplied in BOOTSTRAP_SUPERADMIN_PASSWORD")
-            print("    (you must change it at first login)")
-        print("=" * 68 + "\n")
+            print("    Password: as supplied in BOOTSTRAP_SUPERADMIN_PASSWORD", flush=True)
+            print("    (you must change it at first login)", flush=True)
+        print("=" * 68 + "\n", flush=True)
     finally:
         conn.close()
 
@@ -2142,7 +2209,17 @@ if __name__ == "__main__":
     if not HAS_TORNADO:
         sys.exit("Tornado is required. Install dependencies with: pip install -r requirements.txt")
 
-    print("Running database migrations...")
+    # Force line-buffered output. Without this, Python block-buffers stdout when
+    # it isn't attached to a terminal, so startup messages (including the
+    # one-time SuperAdmin password) sit in a buffer instead of reaching the
+    # hosting platform's log viewer.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
+    print("Running database migrations...", flush=True)
     run_migrations()
     seed_db()
     seed_schema()
