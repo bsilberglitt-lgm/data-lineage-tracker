@@ -237,6 +237,52 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .system-node .node-frame.locked { cursor: default; }
 .system-node:active .node-frame { cursor: grabbing; }
 .system-node .node-body { cursor: pointer; }
+/* ===== Version badge ===== */
+.version-badge { position: fixed; right: 10px; bottom: 8px; z-index: 60; font-size: 10px;
+  color: #8a96a3; background: rgba(255,255,255,0.85); border: 1px solid #e2e8ef;
+  border-radius: 10px; padding: 2px 9px; cursor: pointer; letter-spacing: 0.3px; }
+.version-badge:hover { color: #2E75B6; border-color: #b9d3ea; }
+/* ===== Release notes ===== */
+.release-modal { width: 680px; max-height: 82vh; display: flex; flex-direction: column; }
+.release-scroll { overflow-y: auto; padding: 4px 24px 8px; }
+.release-entry { border-bottom: 1px solid #eee; padding: 14px 0; }
+.release-entry:last-child { border-bottom: none; }
+.release-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.release-head h3 { font-size: 15px; color: #1B3A5C; }
+.release-ver { font-size: 11px; font-weight: 700; background: #1B3A5C; color: #fff;
+  border-radius: 9px; padding: 2px 9px; }
+.release-date { font-size: 11px; color: #999; margin-left: auto; }
+.md { font-size: 13px; line-height: 1.6; color: #33414f; }
+.md h2 { font-size: 13px; color: #1B3A5C; margin: 10px 0 6px; }
+.md ul { margin: 4px 0 8px 18px; }
+.md li { margin-bottom: 3px; }
+.md p { margin-bottom: 6px; }
+.md code { background: #f2f5f8; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.draft-pill { font-size: 10px; font-weight: 700; background: #fff3cd; color: #856404;
+  border-radius: 8px; padding: 1px 8px; }
+/* ===== Resources ===== */
+.res-list { display: flex; flex-direction: column; gap: 8px; }
+.res-item { border: 1px solid #e2e8ef; border-radius: 8px; padding: 10px 12px; background: #fbfcfd; }
+.res-top { display: flex; align-items: center; gap: 8px; }
+.res-label { font-weight: 600; font-size: 13px; color: #1a2332; flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res-icon { font-size: 15px; }
+.res-meta { font-size: 11px; color: #8a96a3; margin-top: 3px; }
+.res-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.res-actions .btn { padding: 4px 10px; font-size: 11px; }
+.res-preview { margin-top: 8px; border: 1px solid #e2e8ef; border-radius: 6px; overflow: hidden; background: #fff; }
+.res-preview iframe, .res-preview img { display: block; width: 100%; border: 0; }
+.res-preview iframe { height: 420px; }
+.res-add { display: flex; gap: 6px; margin-top: 10px; }
+.locked-tag { font-size: 9px; font-weight: 700; background: #eceff1; color: #607d8b;
+  border-radius: 3px; padding: 1px 5px; text-transform: uppercase; }
+/* ===== Confirm dialog ===== */
+.confirm-box { width: 520px; }
+.confirm-box .modal-body { font-size: 13px; line-height: 1.6; }
+.confirm-warn { background: #fff8e1; border: 1px solid #ffe0a3; color: #7a5b00;
+  border-radius: 6px; padding: 10px 12px; margin-top: 10px; font-size: 12px; }
+.mono-diff { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
+  background: #f7f9fb; border-radius: 4px; padding: 6px 8px; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -282,6 +328,30 @@ async function request(method, url, data) {
   return payload;
 }
 
+// Multipart uploads can't go through request(): FormData sets its own
+// Content-Type. This mirrors its error handling, including the case where the
+// server answers with something that isn't JSON at all.
+async function uploadFile(url, formData) {
+  const r = await fetch(url, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': session.csrf }, body: formData,
+  });
+  if (r.status === 401) { onAuthLost(); throw new ApiError(401, { error: 'Your session has ended.' }); }
+  const text = await r.text();
+  let payload;
+  try { payload = JSON.parse(text); }
+  catch (e) {
+    throw new ApiError(r.status, {
+      error: r.ok
+        ? 'The server returned an unexpected response.'
+        : `Upload failed (${r.status} ${r.statusText}). The server did not return JSON — ` +
+          `check the container logs with: docker compose logs --tail=50 app`,
+    });
+  }
+  if (!r.ok) throw new ApiError(r.status, payload);
+  return payload;
+}
+
 const api = {
   get: (url) => request('GET', url),
   post: (url, data) => request('POST', url, data === undefined ? {} : data),
@@ -297,7 +367,7 @@ const TYPE_COLORS = {
   'Data Store': { fill: '#e8daef', stroke: '#8e44ad', text: '#6c3483' },
   'Internal': { fill: '#d6eaf8', stroke: '#2E75B6', text: '#1a5276' },
   'Destination': { fill: '#fadbd8', stroke: '#e74c3c', text: '#922b21' },
-  'Manual Process': { fill: '#fdebd0', stroke: '#e67e22', text: '#935116' },
+  'Manual Entry': { fill: '#fdebd0', stroke: '#e67e22', text: '#935116' },
 };
 const getColor = (type) => TYPE_COLORS[type] || TYPE_COLORS['Internal'];
 const STATUS_BADGE = { Active: 'active', Deprecated: 'deprecated', Planned: 'planned', Broken: 'broken', 'Under Review': 'planned' };
@@ -353,11 +423,33 @@ function SortHeader({ label, sortKey, sort, toggle, style }) {
   );
 }
 
+// Contributor references are stored as IDs; show the person's name with the ID
+// in parentheses so the record is still easy to spot.
+function contributorLabel(id, contributors) {
+  if (!id) return null;
+  const c = (contributors || []).find(x => x.contributor_id === id);
+  return c ? `${c.name} (${c.contributor_id})` : id;
+}
+function ContributorField({ label, value, contributors }) {
+  return <ReadField label={label} value={contributorLabel(value, contributors)} />;
+}
+function ContributorSelect({ label, value, onChange, contributors }) {
+  return (
+    <div className="edit-field-row"><span className="field-label">{label}</span>
+      <select className="edit-select" value={value || ''} onChange={e => onChange(e.target.value || null)}>
+        <option value="">— none —</option>
+        {(contributors || []).map(c =>
+          <option key={c.contributor_id} value={c.contributor_id}>{c.name} ({c.contributor_id})</option>)}
+      </select>
+    </div>
+  );
+}
+
 const VIEW_TITLES = {
   diagram: 'Lineage Diagram', systems: 'Systems Catalog',
   flows: 'Data Flows Catalog', elements: 'Data Elements Glossary',
   contributors: 'Contributors', users: 'User Management',
-  preferences: 'Preferences', audit: 'Audit Log',
+  preferences: 'Preferences', audit: 'Audit Log', releases: 'Release Notes',
 };
 
 // ===== Collapsible Section =====
@@ -709,7 +801,7 @@ function ClassificationBadge({ value }) {
 }
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, onClose, onSave, systems, onDrill, canEdit, notify }) {
+function DetailPanel({ data, type, onClose, onSave, systems, onDrill, canEdit, notify, contributors, isAdmin }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const isOpen = !!data;
@@ -735,6 +827,10 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill, canEdit, n
         destruction_method: form.destruction_method, backup_frequency: form.backup_frequency,
         disaster_recovery: form.disaster_recovery, data_standards: form.data_standards,
         authorized_users: form.authorized_users, data_sharing_restrictions: form.data_sharing_restrictions,
+        entry_type: form.entry_type, entered_by: form.entered_by,
+        entry_validation: form.entry_validation,
+        entry_error_correction: form.entry_error_correction,
+        target_system_id: form.target_system_id,
       };
     } else if (type === 'flow') {
       url = `/api/flows/${data.flow_id}`;
@@ -747,6 +843,8 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill, canEdit, n
         validations: form.validations, error_handling: form.error_handling,
         contains_pii: form.contains_pii, ferpa_protected: form.ferpa_protected,
         regulatory_driver: form.regulatory_driver, status: form.status, known_issues: form.known_issues,
+        frequency_detail: form.frequency_detail, organization: form.organization,
+        managed_by: form.managed_by, data_steward_id: form.data_steward_id,
         data_classification: form.data_classification, encryption_method: form.encryption_method,
         disclosure_avoidance: form.disclosure_avoidance,
         data_quality_measures: form.data_quality_measures, data_standard: form.data_standard,
@@ -855,10 +953,15 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill, canEdit, n
           {editing && <button className="btn" onClick={cancelEdit}>Cancel</button>}
         </div>
         <div className="panel-body">
-          {type === 'system' && !editing && <SystemReadView data={data} onDrill={onDrill} />}
-          {type === 'system' && editing && <SystemEditView form={form} set={set} />}
-          {type === 'flow' && !editing && <FlowReadView data={data} />}
-          {type === 'flow' && editing && <FlowEditView form={form} set={set} systems={systems} />}
+          {type === 'system' && !editing && <SystemReadView data={data} onDrill={onDrill}
+              contributors={contributors} canEdit={canEdit} notify={notify} isAdmin={isAdmin}
+              systems={systems} />}
+          {type === 'system' && editing && <SystemEditView form={form} set={set}
+              contributors={contributors} systems={systems} />}
+          {type === 'flow' && !editing && <FlowReadView data={data} contributors={contributors}
+              canEdit={canEdit} notify={notify} />}
+          {type === 'flow' && editing && <FlowEditView form={form} set={set} systems={systems}
+              contributors={contributors} />}
           {type === 'element' && !editing && <ElementReadView data={data} />}
           {type === 'element' && editing && <ElementEditView form={form} set={set} />}
           {type === 'schema_table' && !editing && <SchemaTableReadView data={data} />}
@@ -874,7 +977,7 @@ function DetailPanel({ data, type, onClose, onSave, systems, onDrill, canEdit, n
 }
 
 // ===== System Views =====
-function SystemReadView({ data, onDrill }) {
+function SystemReadView({ data, onDrill, contributors, canEdit, notify, isAdmin, systems }) {
   return (<>
     {data.schema_table_count > 0 && <div className="drill-banner">
       <span className="drill-icon">&#128451;</span>
@@ -905,8 +1008,19 @@ function SystemReadView({ data, onDrill }) {
       <div className="field-row"><span className="field-label">Audit Trail</span><span className="field-value">{data.has_audit_trail ? 'Yes' : 'No'}</span></div>
     </CollapsibleSection>
 
+    {data.system_type === 'Manual Entry' && <CollapsibleSection title="Manual Entry">
+      <ReadField label="Entry Type" value={data.entry_type} />
+      <ReadField label="Who Enters Data" value={data.entered_by} />
+      <ReadField label="Target Data Store" value={(() => {
+        const t = (systems || []).find(x => x.system_id === data.target_system_id);
+        return t ? `${t.name} (${t.system_id})` : data.target_system_id;
+      })()} />
+      <ReadField label="Validation at Entry" value={data.entry_validation} multiline />
+      <ReadField label="Error Correction" value={data.entry_error_correction} multiline />
+    </CollapsibleSection>}
+
     <CollapsibleSection title="Data Management" domainTag="management">
-      <ReadField label="Data Steward" value={data.data_steward_id} />
+      <ContributorField label="Data Steward" value={data.data_steward_id} contributors={contributors} />
       <ReadField label="Retention Schedule" value={data.retention_schedule} />
       <ReadField label="Destruction Method" value={data.destruction_method} />
       <ReadField label="Backup Frequency" value={data.backup_frequency} />
@@ -918,14 +1032,24 @@ function SystemReadView({ data, onDrill }) {
       <ReadField label="Authorized Users" value={data.authorized_users} multiline />
       <ReadField label="Sharing Restrictions" value={data.data_sharing_restrictions} multiline />
     </CollapsibleSection>
+
+    <CollapsibleSection title="Resources">
+      <ResourcesSection entityType="system" entityId={data.system_id}
+                        canEdit={canEdit} notify={notify} />
+    </CollapsibleSection>
+
+    {isAdmin && data.system_type === 'Data Store' &&
+      <CollapsibleSection title="Database Schema" defaultOpen={false}>
+        <SchemaUploadPanel system={data} notify={notify} />
+      </CollapsibleSection>}
   </>);
 }
 
-function SystemEditView({ form, set }) {
+function SystemEditView({ form, set, contributors, systems }) {
   return (<>
     <CollapsibleSection title="Overview">
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
-      <EditField label="Type" value={form.system_type} onChange={v=>set('system_type',v)} type="select" options={['Source','Internal','Destination','ETL Process','Manual Process','Data Store']} />
+      <EditField label="Type" value={form.system_type} onChange={v=>set('system_type',v)} type="select" options={['Source','Internal','Destination','ETL Process','Manual Entry','Data Store']} />
       <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Deprecated','Under Review']} />
       <EditField label="Organization" value={form.organization} onChange={v=>set('organization',v)} />
       <EditField label="Managed By" value={form.managed_by} onChange={v=>set('managed_by',v)} />
@@ -947,8 +1071,22 @@ function SystemEditView({ form, set }) {
       <EditField label="Audit Trail" value={form.has_audit_trail} onChange={v=>set('has_audit_trail',v)} type="checkbox" />
     </CollapsibleSection>
 
+    {form.system_type === 'Manual Entry' && <CollapsibleSection title="Manual Entry">
+      <EditField label="Entry Type" value={form.entry_type} onChange={v=>set('entry_type',v)}
+                 type="select" options={['','Direct Entry','File Upload']} />
+      <EditField label="Who Enters Data" value={form.entered_by} onChange={v=>set('entered_by',v)} />
+      <EditField label="Target Data Store" value={form.target_system_id}
+                 onChange={v=>set('target_system_id',v)} type="select"
+                 options={[''].concat((systems||[]).filter(x=>x.system_type==='Data Store').map(x=>x.system_id))} />
+      <EditField label="Validation at Entry" value={form.entry_validation}
+                 onChange={v=>set('entry_validation',v)} type="textarea" />
+      <EditField label="Error Correction" value={form.entry_error_correction}
+                 onChange={v=>set('entry_error_correction',v)} type="textarea" />
+    </CollapsibleSection>}
+
     <CollapsibleSection title="Data Management" domainTag="management">
-      <EditField label="Data Steward" value={form.data_steward_id} onChange={v=>set('data_steward_id',v)} />
+      <ContributorSelect label="Data Steward" value={form.data_steward_id}
+                         onChange={v=>set('data_steward_id',v)} contributors={contributors} />
       <EditField label="Retention Schedule" value={form.retention_schedule} onChange={v=>set('retention_schedule',v)} type="select" options={['','1 year','3 years','5 years','7 years per state policy','10 years','Permanent retention','Per district policy','Per federal retention schedule','Other']} />
       <EditField label="Destruction" value={form.destruction_method} onChange={v=>set('destruction_method',v)} type="select" options={['','Secure deletion','Secure deletion with verification','Physical destruction','Degaussing','N/A - permanent archive','Per district policy','Per federal policy','Other']} />
       <EditField label="Backup Freq." value={form.backup_frequency} onChange={v=>set('backup_frequency',v)} type="select" options={['','Real-time replication','Daily incremental, weekly full','Daily','Weekly','Monthly','Varies','N/A','Other']} />
@@ -964,7 +1102,7 @@ function SystemEditView({ form, set }) {
 }
 
 // ===== Flow Views =====
-function FlowReadView({ data }) {
+function FlowReadView({ data, contributors, canEdit, notify }) {
   return (<>
     <CollapsibleSection title="Flow Overview">
       <ReadField label="ID" value={data.flow_id} />
@@ -977,8 +1115,17 @@ function FlowReadView({ data }) {
 
     <CollapsibleSection title="Transfer Details">
       <ReadField label="Frequency" value={data.frequency} />
+      {data.frequency === 'Other' &&
+        <ReadField label="Timing" value={data.frequency_detail} multiline />}
       <ReadField label="Method" value={data.transfer_method} />
       <ReadField label="Format" value={data.format} />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Ownership">
+      <ReadField label="Organization" value={data.organization} />
+      <ReadField label="Managed By" value={data.managed_by} />
+      <ContributorField label="Owner" value={data.owner_id} contributors={contributors} />
+      <ContributorField label="Data Steward" value={data.data_steward_id} contributors={contributors} />
     </CollapsibleSection>
 
     <CollapsibleSection title="Security & Privacy" domainTag="security">
@@ -1007,6 +1154,11 @@ function FlowReadView({ data }) {
 
     {data.known_issues && <CollapsibleSection title="Known Issues" defaultOpen={false}><div className="field-value multiline" style={{fontSize:'13px'}}>{data.known_issues}</div></CollapsibleSection>}
 
+    <CollapsibleSection title="Resources">
+      <ResourcesSection entityType="data_flow" entityId={data.flow_id}
+                        canEdit={canEdit} notify={notify} />
+    </CollapsibleSection>
+
     {data.elements && data.elements.length > 0 && <CollapsibleSection title={`Data Elements (${data.elements.length})`} defaultOpen={false}>
       <table className="data-table" style={{fontSize:'12px'}}>
         <thead><tr><th>Element</th><th>PII</th><th>Transformed</th></tr></thead>
@@ -1018,7 +1170,7 @@ function FlowReadView({ data }) {
   </>);
 }
 
-function FlowEditView({ form, set, systems }) {
+function FlowEditView({ form, set, systems, contributors }) {
   return (<>
     <CollapsibleSection title="Flow Overview">
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)} />
@@ -1030,9 +1182,21 @@ function FlowEditView({ form, set, systems }) {
     </CollapsibleSection>
 
     <CollapsibleSection title="Transfer Details">
-      <EditField label="Frequency" value={form.frequency} onChange={v=>set('frequency',v)} type="select" options={['Real-time','Daily','Weekly','Monthly','Annually','Ad Hoc','Event-triggered']} />
+      <EditField label="Frequency" value={form.frequency} onChange={v=>set('frequency',v)} type="select" options={['Real-time','Daily','Weekly','Monthly','Annually','Ad Hoc','Event-triggered','Other']} />
+      {form.frequency === 'Other' &&
+        <EditField label="Timing" value={form.frequency_detail} onChange={v=>set('frequency_detail',v)}
+                   type="textarea" />}
       <EditField label="Method" value={form.transfer_method} onChange={v=>set('transfer_method',v)} />
       <EditField label="Format" value={form.format} onChange={v=>set('format',v)} />
+    </CollapsibleSection>
+
+    <CollapsibleSection title="Ownership">
+      <EditField label="Organization" value={form.organization} onChange={v=>set('organization',v)} />
+      <EditField label="Managed By" value={form.managed_by} onChange={v=>set('managed_by',v)} />
+      <ContributorSelect label="Owner" value={form.owner_id}
+                         onChange={v=>set('owner_id',v)} contributors={contributors} />
+      <ContributorSelect label="Data Steward" value={form.data_steward_id}
+                         onChange={v=>set('data_steward_id',v)} contributors={contributors} />
     </CollapsibleSection>
 
     <CollapsibleSection title="Security & Privacy" domainTag="security">
@@ -1243,12 +1407,17 @@ function SchemaColumnReadView({ data }) {
 }
 
 // ===== Add Modals =====
-function AddSystemModal({ onClose, onSave }) {
+function AddSystemModal({ onClose, onSave, systems }) {
   const [form, setForm] = useState({
     name:'', description:'', system_type:'Source', vendor:'', technology:'', environment:'Production',
     managed_by:'', organization:'', contains_pii:false, ferpa_protected:false, status:'Active', notes:'',
     data_classification:'', access_method:'', encryption_at_rest:'', encryption_in_transit:'',
-    retention_schedule:'', data_standards:''
+    retention_schedule:'', data_standards:'',
+    // Manual Entry, plus the inbound flow created alongside it
+    entry_type:'Direct Entry', entered_by:'', target_system_id:'',
+    entry_validation:'', entry_error_correction:'',
+    flow_frequency:'Daily', flow_frequency_detail:'', flow_format:'',
+    flow_transfer_method:'', flow_contains_pii:false, flow_ferpa_protected:false
   });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   return (
@@ -1257,11 +1426,63 @@ function AddSystemModal({ onClose, onSave }) {
       <div className="modal-body">
         <div className="modal-section-title">Overview</div>
         <div className="form-group"><label>Name *</label><input value={form.name} onChange={e=>set('name',e.target.value)} placeholder="e.g., PowerSchool SIS" /></div>
-        <div className="form-row"><div className="form-group"><label>Type *</label><select value={form.system_type} onChange={e=>set('system_type',e.target.value)}><option>Source</option><option>Internal</option><option>Destination</option><option>ETL Process</option><option>Manual Process</option><option>Data Store</option></select></div><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>set('status',e.target.value)}><option>Active</option><option>Planned</option><option>Deprecated</option><option>Under Review</option></select></div></div>
+        <div className="form-row"><div className="form-group"><label>Type *</label><select value={form.system_type} onChange={e=>set('system_type',e.target.value)}><option>Source</option><option>Internal</option><option>Destination</option><option>ETL Process</option><option>Manual Entry</option><option>Data Store</option></select></div><div className="form-group"><label>Status</label><select value={form.status} onChange={e=>set('status',e.target.value)}><option>Active</option><option>Planned</option><option>Deprecated</option><option>Under Review</option></select></div></div>
         <div className="form-row"><div className="form-group"><label>Vendor</label><input value={form.vendor} onChange={e=>set('vendor',e.target.value)} /></div><div className="form-group"><label>Technology</label><input value={form.technology} onChange={e=>set('technology',e.target.value)} /></div></div>
         <div className="form-group"><label>Managed By *</label><input value={form.managed_by} onChange={e=>set('managed_by',e.target.value)} /></div>
         <div className="form-group"><label>Organization</label><input value={form.organization} onChange={e=>set('organization',e.target.value)} /></div>
         <div className="form-group"><label>Description</label><textarea value={form.description} onChange={e=>set('description',e.target.value)} /></div>
+
+        {form.system_type === 'Manual Entry' && <>
+          <div className="modal-section-title">Manual Entry</div>
+          <div className="form-row">
+            <div className="form-group"><label>Entry type</label>
+              <select value={form.entry_type} onChange={e=>set('entry_type',e.target.value)}>
+                <option>Direct Entry</option><option>File Upload</option></select></div>
+            <div className="form-group"><label>Who enters the data</label>
+              <input value={form.entered_by} onChange={e=>set('entered_by',e.target.value)}
+                     placeholder="e.g. District staff, State Help Desk staff" /></div>
+          </div>
+          <div className="form-group"><label>Target data store *</label>
+            <select value={form.target_system_id} onChange={e=>set('target_system_id',e.target.value)}>
+              <option value="">Select…</option>
+              {(systems||[]).filter(x=>x.system_type==='Data Store').map(x=>
+                <option key={x.system_id} value={x.system_id}>{x.name}</option>)}
+            </select>
+            <div style={{fontSize:'11px',color:'#888',marginTop:4}}>
+              The data flow into this store is created for you, so you only answer
+              the timing questions once.
+            </div>
+          </div>
+          <div className="form-group"><label>What validates the data at entry?</label>
+            <textarea value={form.entry_validation}
+                      onChange={e=>set('entry_validation',e.target.value)} /></div>
+          <div className="form-group"><label>How are errors corrected once entered?</label>
+            <textarea value={form.entry_error_correction}
+                      onChange={e=>set('entry_error_correction',e.target.value)} /></div>
+
+          <div className="modal-section-title">The data flow into that store</div>
+          <div className="form-row">
+            <div className="form-group"><label>How often</label>
+              <select value={form.flow_frequency} onChange={e=>set('flow_frequency',e.target.value)}>
+                <option>Real-time</option><option>Daily</option><option>Weekly</option>
+                <option>Monthly</option><option>Annually</option><option>Ad Hoc</option>
+                <option>Event-triggered</option><option>Other</option></select></div>
+            <div className="form-group"><label>Format</label>
+              <input value={form.flow_format} onChange={e=>set('flow_format',e.target.value)}
+                     placeholder="e.g. Keyed entry, CSV" /></div>
+          </div>
+          {form.flow_frequency === 'Other' &&
+            <div className="form-group"><label>Timing and conditions</label>
+              <textarea value={form.flow_frequency_detail}
+                        onChange={e=>set('flow_frequency_detail',e.target.value)}
+                        placeholder="e.g. Whenever a correction is reported, and always before the October count" /></div>}
+          <div className="checkbox-row">
+            <label><input type="checkbox" checked={form.flow_contains_pii}
+                          onChange={e=>set('flow_contains_pii',e.target.checked)} /> Flow contains PII</label>
+            <label><input type="checkbox" checked={form.flow_ferpa_protected}
+                          onChange={e=>set('flow_ferpa_protected',e.target.checked)} /> FERPA protected</label>
+          </div>
+        </>}
 
         <div className="modal-section-title">Security & Privacy</div>
         <div className="form-row">
@@ -1281,7 +1502,16 @@ function AddSystemModal({ onClose, onSave }) {
         </div>
         <div className="form-group"><label>Notes</label><textarea value={form.notes} onChange={e=>set('notes',e.target.value)} /></div>
       </div>
-      <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={()=>{if(form.name&&form.managed_by)onSave({...form,contains_pii:form.contains_pii?1:0,ferpa_protected:form.ferpa_protected?1:0});}}>Add System</button></div>
+      <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={()=>{
+          if(!form.name || !form.managed_by) return;
+          if(form.system_type==='Manual Entry' && !form.target_system_id) return;
+          onSave({...form,
+            contains_pii:form.contains_pii?1:0,
+            ferpa_protected:form.ferpa_protected?1:0,
+            flow_contains_pii:form.flow_contains_pii?1:0,
+            flow_ferpa_protected:form.flow_ferpa_protected?1:0});
+        }}>Add System</button></div>
     </div></div>
   );
 }
@@ -1391,6 +1621,442 @@ function ContributorsTable({ contributors, onSelect }) {
         </tr>))}</tbody>
     </table>}
   </div>);
+}
+
+// ===== Version badge =====
+function VersionBadge({ version, onClick }) {
+  if (!version) return null;
+  return (
+    <div className="version-badge" onClick={onClick}
+         title={onClick ? "See what's new" : `Version ${version}`}>
+      v{version}
+    </div>
+  );
+}
+
+// ===== Minimal markdown =====
+// Release notes support a deliberately small subset: headings, bullets, bold,
+// italic and links. Input is escaped first, so notes can never inject markup.
+function renderMarkdown(text) {
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const inline = (s) => esc(s)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+             '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  const out = [];
+  let list = null;
+  (text || '').split('\n').forEach(raw => {
+    const line = raw.replace(/\s+$/, '');
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    const heading = line.match(/^(#{1,3})\s+(.*)$/);
+    if (bullet) {
+      list = list || [];
+      list.push(`<li>${inline(bullet[1])}</li>`);
+      return;
+    }
+    if (list) { out.push(`<ul>${list.join('')}</ul>`); list = null; }
+    if (heading) { out.push(`<h2>${inline(heading[2])}</h2>`); return; }
+    if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  });
+  if (list) out.push(`<ul>${list.join('')}</ul>`);
+  return out.join('');
+}
+
+function ReleaseBody({ notes }) {
+  return <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(notes) }} />;
+}
+
+function ReleaseEntry({ release }) {
+  return (
+    <div className="release-entry">
+      <div className="release-head">
+        <span className="release-ver">v{release.version}</span>
+        <h3>{release.title || 'Release'}</h3>
+        {!release.is_published && <span className="draft-pill">Draft</span>}
+        <span className="release-date">{release.released_date || ''}</span>
+      </div>
+      <ReleaseBody notes={release.notes} />
+    </div>
+  );
+}
+
+// ===== What's-new modal (shown once per release) =====
+function WhatsNewModal({ releases, onLater, onAcknowledge }) {
+  if (!releases || releases.length === 0) return null;
+  const many = releases.length > 1;
+  return (
+    <div className="modal-overlay">
+      <div className="modal release-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          {many ? `What's new — ${releases.length} releases since your last visit` : "What's new"}
+        </div>
+        <div className="release-scroll">
+          {/* Oldest first, so reading top to bottom follows what happened. */}
+          {releases.map(r => <ReleaseEntry key={r.version} release={r} />)}
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onLater}>Remind me later</button>
+          <button className="btn btn-primary" onClick={onAcknowledge}>Got it</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Releases screen: history for everyone, editing for SuperAdmin =====
+function ReleasesScreen({ canEdit, notify, currentVersion }) {
+  const [releases, setReleases] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const blank = { version: '', title: '', notes: '', released_date: '', is_published: 0 };
+  const [form, setForm] = useState(blank);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const load = useCallback(() => {
+    api.get('/api/releases').then(d => setReleases(d.releases || []))
+      .catch(e => notify(e.message, true));
+  }, [notify]);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    try {
+      if (editing) await api.put(`/api/releases/${editing.version}`, form);
+      else await api.post('/api/releases', form);
+      setEditing(null); setAdding(false); load(); notify('Saved.');
+    } catch (err) { notify(err.message, true); }
+  };
+  const publish = async (r, value) => {
+    try {
+      await api.put(`/api/releases/${r.version}`, { is_published: value });
+      load(); notify(value ? `v${r.version} published.` : `v${r.version} unpublished.`);
+    } catch (err) { notify(err.message, true); }
+  };
+
+  return (<div className="screen"><div className="table-view">
+    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ flex: 1, fontSize: 12, color: '#888' }}>
+        Release history. Everyone sees published notes; drafts are visible to SuperAdmins only.
+        This deployment is running <strong>v{currentVersion}</strong>.
+      </div>
+      {canEdit && <button className="btn btn-primary"
+        onClick={() => { setForm(blank); setAdding(true); }}>+ Add Release</button>}
+    </div>
+    {releases.length === 0 && <div className="empty-state">No releases recorded yet.</div>}
+    {releases.map(r => (
+      <div className="pref-group" key={r.version}>
+        <div style={{ padding: '12px 16px' }}>
+          <ReleaseEntry release={r} />
+          {canEdit && <div className="res-actions">
+            <button className="btn btn-edit" onClick={() => {
+              setForm({ ...blank, ...r }); setEditing(r);
+            }}>Edit</button>
+            <button className="btn" onClick={() => publish(r, r.is_published ? 0 : 1)}>
+              {r.is_published ? 'Unpublish' : 'Publish'}
+            </button>
+          </div>}
+        </div>
+      </div>
+    ))}
+
+    {(adding || editing) && <div className="modal-overlay"
+        onClick={() => { setAdding(false); setEditing(null); }}>
+      <div className="modal release-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">{editing ? `Edit v${editing.version}` : 'Add Release'}
+          <button className="panel-close"
+                  onClick={() => { setAdding(false); setEditing(null); }}>&times;</button></div>
+        <div className="modal-body" style={{ overflowY: 'auto' }}>
+          <div className="form-row">
+            <div className="form-group"><label>Version *</label>
+              <input value={form.version} disabled={!!editing}
+                     onChange={e => set('version', e.target.value)} placeholder="0.3.0" /></div>
+            <div className="form-group"><label>Release date</label>
+              <input type="date" value={form.released_date || ''}
+                     onChange={e => set('released_date', e.target.value)} /></div>
+          </div>
+          <div className="form-group"><label>Title</label>
+            <input value={form.title || ''} onChange={e => set('title', e.target.value)} /></div>
+          <div className="form-group"><label>Notes (markdown: ## heading, * bullet, **bold**, [link](url))</label>
+            <textarea style={{ minHeight: 200, fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 12 }}
+                      value={form.notes || ''} onChange={e => set('notes', e.target.value)} /></div>
+          <div className="checkbox-row"><label>
+            <input type="checkbox" checked={!!form.is_published}
+                   onChange={e => set('is_published', e.target.checked ? 1 : 0)} />
+            Published — everyone sees this, and it triggers the what's-new modal
+          </label></div>
+          {form.notes && <>
+            <div className="modal-section-title">Preview</div>
+            <ReleaseBody notes={form.notes} />
+          </>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={() => { setAdding(false); setEditing(null); }}>Cancel</button>
+          <button className="btn btn-primary" onClick={save}>Save</button>
+        </div>
+      </div></div>}
+  </div></div>);
+}
+
+// ===== Confirm dialog =====
+function ConfirmDialog({ title, message, detail, confirmLabel, danger, onConfirm, onCancel }) {
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal confirm-box" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">{title}</div>
+        <div className="modal-body">
+          <div>{message}</div>
+          {detail}
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onCancel}>Cancel</button>
+          <button className={`btn ${danger ? '' : 'btn-primary'}`}
+                  style={danger ? { background: '#c0392b', color: '#fff', borderColor: '#c0392b' } : {}}
+                  onClick={onConfirm}>{confirmLabel || 'Confirm'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Resources (documents and links) =====
+const RES_ICON = { link: '🔗', file: '📄' };
+
+function ResourcesSection({ entityType, entityId, canEdit, notify }) {
+  const [items, setItems] = useState([]);
+  const [previewing, setPreviewing] = useState(null);
+  const [adding, setAdding] = useState(null);   // 'link' | 'file'
+  const [form, setForm] = useState({ label: '', url: '' });
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const replaceRefs = useRef({});
+
+  const load = useCallback(() => {
+    if (!entityId) return;
+    api.get(`/api/resources/${entityType}/${entityId}`).then(setItems).catch(() => {});
+  }, [entityType, entityId]);
+  useEffect(() => { load(); }, [load]);
+
+  const addLink = async () => {
+    if (!form.label.trim() || !form.url.trim()) { notify('Label and URL are both required.', true); return; }
+    setBusy(true);
+    try {
+      const rows = await api.post(`/api/resources/${entityType}/${entityId}`,
+        { label: form.label, kind: 'link', url: form.url });
+      setItems(rows); setAdding(null); setForm({ label: '', url: '' }); notify('Link added.');
+    } catch (e) { notify(e.message, true); } finally { setBusy(false); }
+  };
+
+  const uploadNew = async () => {
+    if (!form.label.trim() || !file) { notify('Label and file are both required.', true); return; }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('label', form.label);
+      fd.append('file', file);
+      const payload = await uploadFile(`/api/resources/${entityType}/${entityId}`, fd);
+      setItems(payload); setAdding(null); setForm({ label: '', url: '' }); setFile(null);
+      notify('Document uploaded.');
+    } catch (e) { notify(e.message, true); } finally { setBusy(false); }
+  };
+
+  const replaceFile = async (res, chosen) => {
+    if (!chosen) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', chosen);
+      const payload = await uploadFile(`/api/resources/${res.resource_id}`, fd);
+      setItems(payload);
+      notify(`New version of "${res.label}" uploaded.`);
+    } catch (e) { notify(e.message, true); } finally { setBusy(false); }
+  };
+
+  const remove = async (res) => {
+    try { setItems(await api.del(`/api/resources/${res.resource_id}`)); notify('Removed.'); }
+    catch (e) { notify(e.message, true); }
+    finally { setConfirmDelete(null); }
+  };
+
+  const sizeText = (n) => !n ? '' :
+    n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+
+  return (<>
+    <div className="res-list">
+      {items.length === 0 && <div style={{ fontSize: 12, color: '#999' }}>
+        No documents or links yet.</div>}
+      {items.map(r => (
+        <div className="res-item" key={r.resource_id}>
+          <div className="res-top">
+            <span className="res-icon">{RES_ICON[r.kind] || '📄'}</span>
+            <span className="res-label">{r.label}</span>
+            {r.label_locked ? <span className="locked-tag">fixed</span> : null}
+          </div>
+          <div className="res-meta">
+            {r.kind === 'link'
+              ? (r.url || 'No URL set')
+              : (r.filename
+                  ? `${r.filename} · ${sizeText(r.size_bytes)} · v${r.version_no}` +
+                    (r.uploaded_by_email ? ` · ${r.uploaded_by_email}` : '') +
+                    (r.version_count > 1 ? ` · ${r.version_count} versions` : '')
+                  : 'Nothing uploaded yet')}
+          </div>
+          <div className="res-actions">
+            {r.kind === 'link' && r.url &&
+              <a className="btn" href={r.url} target="_blank" rel="noopener noreferrer">Open ↗</a>}
+            {r.kind === 'file' && r.filename && <>
+              {r.can_preview &&
+                <button className="btn" onClick={() =>
+                  setPreviewing(previewing === r.resource_id ? null : r.resource_id)}>
+                  {previewing === r.resource_id ? 'Hide' : 'View'}
+                </button>}
+              <a className="btn" href={`/api/resources/${r.resource_id}/file?download=1`}>Download</a>
+            </>}
+            {canEdit && r.kind === 'file' && <>
+              <input type="file" style={{ display: 'none' }}
+                     ref={el => { replaceRefs.current[r.resource_id] = el; }}
+                     onChange={e => { replaceFile(r, e.target.files[0]); e.target.value = ''; }} />
+              <button className="btn" disabled={busy}
+                      onClick={() => replaceRefs.current[r.resource_id].click()}>
+                {r.filename ? 'Upload new version' : 'Upload'}
+              </button>
+            </>}
+            {canEdit && !r.label_locked &&
+              <button className="btn" onClick={() => setConfirmDelete(r)}>Remove</button>}
+          </div>
+          {previewing === r.resource_id && r.can_preview && (
+            <div className="res-preview">
+              {(r.content_type || '').startsWith('image/')
+                ? <img src={`/api/resources/${r.resource_id}/file`} alt={r.label} />
+                : <iframe src={`/api/resources/${r.resource_id}/file`} title={r.label} />}
+            </div>
+          )}
+          {r.kind === 'file' && !r.can_preview && r.filename && previewing === r.resource_id && (
+            <div className="res-preview" style={{ padding: 14, fontSize: 12, color: '#666' }}>
+              This file type can't be shown in the browser. Download it to open,
+              then upload the edited copy back here as a new version.
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+
+    {canEdit && (adding === null
+      ? <div className="res-add">
+          <button className="btn" onClick={() => { setForm({ label: '', url: '' }); setAdding('file'); }}>
+            + Document</button>
+          <button className="btn" onClick={() => { setForm({ label: '', url: '' }); setAdding('link'); }}>
+            + Link</button>
+        </div>
+      : <div style={{ marginTop: 10, borderTop: '1px solid #eee', paddingTop: 10 }}>
+          <div className="form-group"><label>Label shown in the app *</label>
+            <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
+                   placeholder={adding === 'link' ? 'e.g. Vendor documentation' : 'e.g. Data sharing agreement'} /></div>
+          {adding === 'link'
+            ? <div className="form-group"><label>URL *</label>
+                <input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
+                       placeholder="https://…" /></div>
+            : <div className="form-group"><label>File * (max 10 MB)</label>
+                <input type="file" onChange={e => setFile(e.target.files[0])} /></div>}
+          <div className="res-actions">
+            <button className="btn btn-primary" disabled={busy}
+                    onClick={adding === 'link' ? addLink : uploadNew}>
+              {busy ? 'Saving…' : 'Save'}</button>
+            <button className="btn" onClick={() => { setAdding(null); setFile(null); }}>Cancel</button>
+          </div>
+        </div>)}
+
+    {confirmDelete && <ConfirmDialog
+      title="Remove this resource?" danger confirmLabel="Remove"
+      message={`"${confirmDelete.label}" and all of its versions will be deleted. This cannot be undone.`}
+      onCancel={() => setConfirmDelete(null)} onConfirm={() => remove(confirmDelete)} />}
+  </>);
+}
+
+// ===== Schema upload (Administrator+, Data Store systems) =====
+function SchemaUploadPanel({ system, notify }) {
+  const [snapshots, setSnapshots] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [confirmRevert, setConfirmRevert] = useState(null);
+  const fileRef = useRef(null);
+
+  const load = useCallback(() => {
+    api.get(`/api/systems/${system.system_id}/schema/snapshots`)
+      .then(setSnapshots).catch(() => {});
+  }, [system.system_id]);
+  useEffect(() => { load(); }, [load]);
+
+  const upload = async (chosen) => {
+    if (!chosen) return;
+    setBusy(true); setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', chosen);
+      const payload = await uploadFile(`/api/systems/${system.system_id}/schema/upload`, fd);
+      setResult(payload); load();
+      notify(payload.message);
+    } catch (e) { notify(e.message, true); } finally { setBusy(false); }
+  };
+
+  const revert = async (snap) => {
+    try {
+      const r = await api.post(`/api/schema/snapshots/${snap.snapshot_id}/revert`);
+      notify(r.message); load(); setResult(null);
+    } catch (e) { notify(e.message, true); }
+    finally { setConfirmRevert(null); }
+  };
+
+  return (<>
+    <div style={{ fontSize: 12, color: '#666', lineHeight: 1.6, marginBottom: 10 }}>
+      Upload a SQL Server schema script to refresh this system's tables and columns.
+      Governance you've already entered is kept wherever the schema and table and
+      column names still match; the previous schema is saved so you can go back.
+    </div>
+    <input type="file" accept=".sql,text/plain" ref={fileRef} style={{ display: 'none' }}
+           onChange={e => { upload(e.target.files[0]); e.target.value = ''; }} />
+    <button className="btn btn-primary" disabled={busy} onClick={() => fileRef.current.click()}>
+      {busy ? 'Reading…' : 'Upload .sql schema'}
+    </button>
+
+    {result && <div className="mono-diff">
+      {result.stats.tables} tables · {result.stats.columns} columns · {result.stats.schemas.join(', ')}<br />
+      {result.summary.matched_tables} matched, {result.summary.new_tables} added,
+      {' '}{result.summary.removed_tables} removed ·
+      {' '}{result.summary.carried_values} governance values kept
+      {result.warnings && result.warnings.length > 0 &&
+        <div style={{ color: '#b9770e', marginTop: 4 }}>{result.warnings.join(' ')}</div>}
+    </div>}
+
+    {snapshots.length > 0 && <>
+      <div className="panel-section-title" style={{ marginTop: 14 }}>Previous versions</div>
+      {snapshots.map(sn => (
+        <div className="res-item" key={sn.snapshot_id}>
+          <div className="res-meta" style={{ marginTop: 0 }}>
+            {String(sn.created_at).slice(0, 16).replace('T', ' ')} ·
+            {' '}{sn.table_count} tables, {sn.column_count} columns
+            {sn.created_by_email ? ` · ${sn.created_by_email}` : ''}
+          </div>
+          <div style={{ fontSize: 12, marginTop: 2 }}>{sn.summary}</div>
+          <div className="res-actions">
+            <button className="btn" onClick={() => setConfirmRevert(sn)}>Revert to this</button>
+          </div>
+        </div>
+      ))}
+    </>}
+
+    {confirmRevert && <ConfirmDialog
+      title="Revert this schema?" confirmLabel="Revert schema" danger
+      message={`This replaces the current schema for ${system.name} with the version saved on ` +
+               `${String(confirmRevert.created_at).slice(0, 16).replace('T', ' ')} ` +
+               `(${confirmRevert.table_count} tables, ${confirmRevert.column_count} columns).`}
+      detail={<div className="confirm-warn">
+        The current schema is saved first, so this is itself reversible.
+      </div>}
+      onCancel={() => setConfirmRevert(null)} onConfirm={() => revert(confirmRevert)} />}
+  </>);
 }
 
 // ===== Users (Administrator+) =====
@@ -1653,6 +2319,11 @@ function AuditScreen({ notify }) {
   const [data, setData] = useState({ events: [], total: 0, actions: [], entity_types: [] });
   const [filters, setFilters] = useState({ start: '', end: '', user: '', action: '', entity_type: '' });
   const [offset, setOffset] = useState(0);
+  // Without this the empty-state message showed while the first request was
+  // still in flight, which read as "there is no audit history".
+  const [loading, setLoading] = useState(true);
+  const [confirmRevert, setConfirmRevert] = useState(null);
+  const [conflicts, setConflicts] = useState(null);
   const LIMIT = 100;
 
   const queryString = useCallback((extra) => {
@@ -1664,10 +2335,26 @@ function AuditScreen({ notify }) {
 
   const load = useCallback((newOffset) => {
     const off = newOffset === undefined ? offset : newOffset;
+    setLoading(true);
     api.get(`/api/audit?${queryString({ limit: LIMIT, offset: off })}`)
       .then(d => { setData(d); setOffset(off); })
-      .catch(e => notify(e.message, true));
+      .catch(e => notify(e.message, true))
+      .finally(() => setLoading(false));
   }, [queryString, offset, notify]);
+
+  const doRevert = async (event, force) => {
+    try {
+      await api.post(`/api/audit/${event.event_id}/revert`, force ? { force: true } : {});
+      notify('Change reverted.');
+      setConfirmRevert(null); setConflicts(null); load();
+    } catch (err) {
+      if (err.status === 409 && err.payload && err.payload.conflicts) {
+        setConflicts(err.payload.conflicts);
+      } else {
+        notify(err.message, true); setConfirmRevert(null);
+      }
+    }
+  };
 
   useEffect(() => { load(0); /* eslint-disable-next-line */ }, []);
 
@@ -1705,8 +2392,10 @@ function AuditScreen({ notify }) {
         {data.total > LIMIT ? ` — showing ${offset + 1}–${Math.min(offset + LIMIT, data.total)}` : ''}
         . The audit log is append-only; nothing can edit or remove entries.
       </div>
-      {data.events.length === 0 && <div className="empty-state">No matching events.</div>}
-      {data.events.length > 0 && <table className="data-table">
+      {loading && <div className="empty-state">Loading audit history…</div>}
+      {!loading && data.events.length === 0 &&
+        <div className="empty-state">No matching events.</div>}
+      {!loading && data.events.length > 0 && <table className="data-table">
         <thead><tr>
           <SortHeader label="When (UTC)" sortKey="occurred_at" sort={sort} toggle={toggle} style={{width:150}} />
           <SortHeader label="User" sortKey="actor_email" sort={sort} toggle={toggle} />
@@ -1714,6 +2403,7 @@ function AuditScreen({ notify }) {
           <SortHeader label="Entity" sortKey="entity_type" sort={sort} toggle={toggle} />
           <th>Details</th>
           <SortHeader label="IP" sortKey="ip_address" sort={sort} toggle={toggle} style={{width:110}} />
+          <th style={{width:80}}></th>
         </tr></thead>
         <tbody>{sortedEvents.map(e => (
           <tr key={e.event_id}>
@@ -1735,9 +2425,37 @@ function AuditScreen({ notify }) {
               </div>}
             </td>
             <td style={{fontSize:'11px',color:'#888'}}>{e.ip_address || '—'}</td>
+            <td>{e.revertible &&
+              <button className="btn" style={{padding:'3px 8px',fontSize:'11px'}}
+                      onClick={() => { setConflicts(null); setConfirmRevert(e); }}>Revert</button>}</td>
           </tr>))}
         </tbody>
       </table>}
+      {confirmRevert && <ConfirmDialog
+        title="Revert this change?" danger
+        confirmLabel={conflicts ? 'Revert anyway' : 'Revert change'}
+        message={`This restores the values as they were before ${confirmRevert.actor_email || 'this change'} ` +
+                 `edited ${confirmRevert.entity_type} ${confirmRevert.entity_id} on ` +
+                 `${String(confirmRevert.occurred_at).slice(0,16).replace('T',' ')}.`}
+        detail={<>
+          <div className="mono-diff">
+            {(confirmRevert.changes || []).map(c =>
+              <div key={c.change_id}>{c.field_name}: {String(c.new_value).slice(0,50)} → {String(c.old_value === null ? '(empty)' : c.old_value).slice(0,50)}</div>)}
+          </div>
+          {conflicts && <div className="confirm-warn">
+            <strong>These fields have changed since then.</strong> Reverting will discard
+            those newer changes:
+            <div className="mono-diff">
+              {conflicts.map(c => <div key={c.field}>{c.field}: now "{String(c.current).slice(0,40)}"</div>)}
+            </div>
+          </div>}
+          <div style={{fontSize:12,color:'#888',marginTop:10}}>
+            The revert is recorded as a new audit entry; nothing is erased from the log.
+          </div>
+        </>}
+        onCancel={() => { setConfirmRevert(null); setConflicts(null); }}
+        onConfirm={() => doRevert(confirmRevert, !!conflicts)} />}
+
       {data.total > LIMIT && <div style={{display:'flex',gap:8,marginTop:12}}>
         <button className="btn" disabled={offset === 0} onClick={() => load(Math.max(0, offset - LIMIT))}>Previous</button>
         <button className="btn" disabled={offset + LIMIT >= data.total} onClick={() => load(offset + LIMIT)}>Next</button>
@@ -1748,6 +2466,8 @@ function AuditScreen({ notify }) {
 
 // ===== Login Screen =====
 function LoginScreen({ onSignedIn, settings }) {
+  const [version, setVersion] = useState(null);
+  useEffect(() => { api.get('/api/version').then(v => setVersion(v.version)).catch(() => {}); }, []);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -1792,6 +2512,7 @@ function LoginScreen({ onSignedIn, settings }) {
           password, ask an administrator to issue a new temporary one.
         </div>
       </form>
+      <VersionBadge version={version} />
     </div>
   );
 }
@@ -1909,6 +2630,8 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const appSubtitle = settings.app_subtitle || '';
   const [notice, setNotice] = useState(null);
   const [assignableRoles, setAssignableRoles] = useState(['Viewer', 'Editor']);
+  const [version, setVersion] = useState(null);
+  const [whatsNew, setWhatsNew] = useState([]);
   const canEdit = roleAtLeast(user.role, 'Editor');
   const isAdmin = roleAtLeast(user.role, 'Administrator');
   const isSuper = roleAtLeast(user.role, 'SuperAdmin');
@@ -1973,7 +2696,15 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     api.get('/api/auth/me')
       .then(me => setAssignableRoles(me.assignable_roles || []))
       .catch(() => {});
+    api.get('/api/version').then(v => setVersion(v.version)).catch(() => {});
+    // Releases published since this user last acknowledged, oldest first.
+    api.get('/api/whats-new').then(d => setWhatsNew(d.unseen || [])).catch(() => {});
   }, []);
+
+  const acknowledgeReleases = async () => {
+    try { await api.post('/api/whats-new'); } catch (e) { /* non-critical */ }
+    setWhatsNew([]);
+  };
 
   const closeDetail = () => { setSelected(null); setDetailData(null); setDetailType(null); };
 
@@ -2061,6 +2792,8 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           <div className={`nav-item ${view==='flows'?'active':''}`} onClick={()=>setView('flows')}><span className="nav-icon">&#8594;</span> Data Flows ({flows.length})</div>
           <div className={`nav-item ${view==='elements'?'active':''}`} onClick={()=>setView('elements')}><span className="nav-icon">&#9830;</span> Data Elements ({elements.length})</div>
           <div className={`nav-item ${view==='contributors'?'active':''}`} onClick={()=>setView('contributors')}><span className="nav-icon">&#9787;</span> Contributors ({contributors.length})</div>
+          <div className="nav-section">About</div>
+          <div className={`nav-item ${view==='releases'?'active':''}`} onClick={()=>setView('releases')}><span className="nav-icon">&#9873;</span> Release Notes</div>
           {(isAdmin || isSuper) && <div className="nav-section">Administration</div>}
           {isAdmin && <div className={`nav-item ${view==='users'?'active':''}`} onClick={()=>setView('users')}><span className="nav-icon">&#9781;</span> Users</div>}
           {isSuper && <div className={`nav-item ${view==='preferences'?'active':''}`} onClick={()=>setView('preferences')}><span className="nav-icon">&#9881;</span> Preferences</div>}
@@ -2115,14 +2848,21 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           {view==='users' && isAdmin && <UsersScreen currentUser={user} assignableRoles={assignableRoles} notify={notify} />}
           {view==='preferences' && isSuper && <PreferencesScreen notify={notify} roles={ROLE_ORDER} onSaved={onSettingsChanged} />}
           {view==='audit' && isSuper && <AuditScreen notify={notify} />}
+          {view==='releases' && <ReleasesScreen canEdit={isSuper} notify={notify}
+                                                currentVersion={version} />}
           {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
-            <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave} systems={systems} onDrill={drillIntoSchema} canEdit={canEdit} notify={notify} />}
+            <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave}
+                         systems={systems} onDrill={drillIntoSchema} canEdit={canEdit}
+                         notify={notify} contributors={contributors} isAdmin={isAdmin} />}
         </div>
       </div>
 
-      {showAddSystem && <AddSystemModal onClose={()=>setShowAddSystem(false)} onSave={addSystem} />}
+      {showAddSystem && <AddSystemModal systems={systems} onClose={()=>setShowAddSystem(false)} onSave={addSystem} />}
       {showAddFlow && <AddFlowModal systems={systems} onClose={()=>setShowAddFlow(false)} onSave={addFlow} />}
       {showAddContributor && <AddContributorModal onClose={()=>setShowAddContributor(false)} onSave={addContributor} />}
+      {whatsNew.length > 0 && <WhatsNewModal releases={whatsNew}
+        onLater={() => setWhatsNew([])} onAcknowledge={acknowledgeReleases} />}
+      <VersionBadge version={version} onClick={() => setView('releases')} />
     </div>
   );
 }

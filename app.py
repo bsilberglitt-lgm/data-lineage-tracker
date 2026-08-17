@@ -26,6 +26,20 @@ from db import get_db, close_pool  # noqa: E402  (PostgreSQL connection pool)
 import auth  # noqa: E402
 import permissions  # noqa: E402
 import audit  # noqa: E402
+import schema_import  # noqa: E402
+from version import VERSION  # noqa: E402
+
+# Uploaded files are held in PostgreSQL for now, so they are covered by the
+# database's existing backups and point-in-time recovery with nothing extra to
+# provision. See CLAUDE.md: this moves to S3 when object storage is set up.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# Files a browser can display inline. Everything else is offered as a download
+# only — browsers cannot render Office formats without a conversion service.
+INLINE_CONTENT_TYPES = {
+    "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp",
+    "image/svg+xml", "text/plain", "text/csv",
+}
 
 STATIC_DIR = Path(__file__).parent / "static"
 PROJECT_DIR = Path(__file__).parent
@@ -537,6 +551,11 @@ DEFAULT_PREFERENCES = [
     ("password_require_symbol", "true", "boolean", "Require a symbol",
      "", "Password policy", 1, 100),
 
+    ("audit_retention_days", "0", "number", "Audit log retention (days)",
+     "How long to keep audit history. 0 means keep everything forever, which is "
+     "the default. Changing this does not delete anything on its own.",
+     "Security", 1, 105),
+
     # Phase 2 — the plumbing is in place; the flows are not built yet, so these
     # are shown but locked off.
     ("require_2fa", "false", "boolean", "Require two-factor authentication",
@@ -626,6 +645,94 @@ BACKFILL_TABLES = [
     ("schema_table", "table_id"),
     ("schema_column", "column_id"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Release notes
+# ---------------------------------------------------------------------------
+# Notes for versions that shipped before release tracking existed are seeded
+# here so the "What's New" history isn't blank. Later releases are written in
+# the app by a SuperAdmin.
+#
+# NOTE TO WHOEVER SHIPS THE NEXT RELEASE (human or AI assistant):
+# see CLAUDE.md — draft the notes, then show Ben a preview and ask for edits
+# BEFORE publishing.
+
+SEED_RELEASES = [
+    ("0.1.0", "Initial release", "2026-04-10", 1, 100, """\
+## Data Lineage Tracker
+
+* Interactive lineage diagram of systems and the data flows between them
+* Catalogs for systems, data flows, and data elements
+* Governance fields aligned to the Education Data Governance Framework
+* Database schema drill-down for NEO and Federal Reporting, with governance
+  that can be set at the table and field level and inherits from the parent
+  system unless overridden
+"""),
+    ("0.1.1", "PostgreSQL, Docker, and sign-in", "2026-08-05", 1, 200, """\
+## Infrastructure and access control
+
+* Moved from SQLite to **PostgreSQL**, so data is no longer lost when the
+  service restarts
+* Runs in Docker locally, matching the deployed environment
+* Database schema changes now managed with versioned migrations
+* **Sign-in with roles**: Viewer, Editor, Administrator, and SuperAdmin
+* **Audit trail** recording every change field by field, plus sign-ins
+* Preferences screen for global settings
+* Renamed *Stakeholders* to **Contributors**
+"""),
+    (VERSION, "Releases, resources, and manual entry", None, 0, 300, """\
+## What's new in this release
+
+* **Version numbering and release notes** — the version appears in the corner
+  of every page; click it to see what changed
+* **Resources** on systems and data flows — attach documents or links with your
+  own labels
+* **Manual Entry** system type, for tracking data typed directly into a data
+  store (replaces *Manual Process*)
+* **Upload a .sql file** to refresh a data store's schema, keeping any
+  governance you've already entered
+* **Revert a change** from the audit log
+* Data flows gained Organization, Managed By, and Data Steward, and an *Other*
+  option for frequency where you can describe the timing in your own words
+* Contributors now show by name rather than by ID
+* Sortable tables, and a fix for the audit log appearing empty while loading
+"""),
+]
+
+
+def ensure_releases(conn=None):
+    """Insert release notes for versions that don't have an entry yet."""
+    own = conn is None
+    conn = conn or get_db()
+    now = iso(utcnow())
+    existing = {r["version"] for r in
+                conn.execute("SELECT version FROM app_release").fetchall()}
+    added = 0
+    for ver, title, released, published, sort_key, notes in SEED_RELEASES:
+        if ver in existing:
+            continue
+        conn.execute(
+            """INSERT INTO app_release
+                 (version, title, notes, released_date, is_published, sort_key,
+                  created_date, updated_date)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (ver, title, notes, released or now[:10], published, sort_key, now, now))
+        added += 1
+    # Any account without a marker is treated as up to date, so nobody is shown
+    # a backlog of releases from before they had an account. Without this, a NULL
+    # would also suppress every FUTURE release for that user.
+    latest = conn.execute(
+        "SELECT version FROM app_release WHERE is_published=1 "
+        "ORDER BY sort_key DESC LIMIT 1").fetchone()
+    if latest:
+        conn.execute("UPDATE app_user SET last_seen_release=? "
+                     "WHERE last_seen_release IS NULL", (latest["version"],))
+    conn.commit()
+    if own:
+        conn.close()
+    if added:
+        print(f"Release notes: seeded {added} version(s)", flush=True)
 
 
 def reset_superadmin_if_requested(conn):
@@ -829,6 +936,27 @@ if HAS_TORNADO:
             proto = self.request.headers.get("X-Forwarded-Proto", self.request.protocol)
             return proto == "https"
 
+        def write_error(self, status_code, **kwargs):
+            """Return JSON for API errors, never Tornado's HTML page.
+
+            An HTML body reaches the frontend as "Unexpected token '<'", which
+            hides the real status. This keeps every failure legible.
+            """
+            reason = self._reason or "Request failed"
+            detail = None
+            exc = kwargs.get("exc_info")
+            if exc and not isinstance(exc[1], tornado.web.HTTPError):
+                # Log the traceback server-side; don't leak internals to the client.
+                import traceback
+                traceback.print_exception(*exc)
+                detail = f"{exc[0].__name__}: {exc[1]}"
+            self.set_header("Content-Type", "application/json")
+            self.finish(json.dumps({
+                "error": f"{status_code}: {reason}",
+                "detail": detail,
+                "status": status_code,
+            }))
+
         def fail(self, status, message, **extra):
             self.set_status(status)
             payload = {"error": message}
@@ -1019,8 +1147,9 @@ if HAS_TORNADO:
                 data_steward_id,retention_schedule,destruction_method,backup_frequency,
                 disaster_recovery,data_standards,
                 authorized_users,data_sharing_restrictions,
+                entry_type,entered_by,entry_validation,entry_error_correction,target_system_id,
                 created_date,updated_date)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (sid, data.get('name',''), data.get('description',''), data.get('system_type','Internal'),
                  data.get('vendor',''), data.get('technology',''), data.get('environment','Production'),
                  data.get('managed_by',''), data.get('owner_id'), data.get('organization',''),
@@ -1033,10 +1162,16 @@ if HAS_TORNADO:
                  data.get('destruction_method'), data.get('backup_frequency'),
                  data.get('disaster_recovery'), data.get('data_standards'),
                  data.get('authorized_users'), data.get('data_sharing_restrictions'),
+                 data.get('entry_type'), data.get('entered_by'),
+                 data.get('entry_validation'), data.get('entry_error_correction'),
+                 data.get('target_system_id') or None,
                  now, now))
             self.stamp_author(conn, "system", "system_id", sid, creating=True)
             row = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
             self.audit_create(conn, "system", sid, dict(row))
+            if row["system_type"] == MANUAL_ENTRY:
+                ensure_field_list_resource(self, conn, sid)
+                sync_manual_entry(self, conn, sid, data, creating=True)
             conn.commit()
             conn.close()
             self.set_status(201)
@@ -1064,7 +1199,10 @@ if HAS_TORNADO:
                         'last_security_review','has_audit_trail',
                         'data_steward_id','retention_schedule','destruction_method','backup_frequency',
                         'disaster_recovery','data_standards',
-                        'authorized_users','data_sharing_restrictions')
+                        'authorized_users','data_sharing_restrictions',
+                        # Manual Entry
+                        'entry_type','entered_by','entry_validation',
+                        'entry_error_correction','target_system_id')
 
         def put(self, sid):
             data = self.get_json_body()
@@ -1094,6 +1232,9 @@ if HAS_TORNADO:
             self.audit_update(conn, "system", sid, before, dict(row),
                               fields=[f for f in self.SYSTEM_FIELDS
                                       if f not in ("x_pos", "y_pos")])
+            if row["system_type"] == MANUAL_ENTRY:
+                ensure_field_list_resource(self, conn, sid)
+                sync_manual_entry(self, conn, sid, data)
             conn.commit()
             conn.close()
             self.write_json(row_to_dict(row))
@@ -1146,10 +1287,11 @@ if HAS_TORNADO:
                 destination_system_id,direction,frequency,transfer_method,format,transformation_steps,
                 business_rules,validations,error_handling,contains_pii,ferpa_protected,regulatory_driver,
                 agreement_id,owner_id,status,known_issues,
+                frequency_detail,organization,managed_by,data_steward_id,
                 data_classification,encryption_method,disclosure_avoidance,
                 data_quality_measures,data_standard,retention_at_destination,legal_authority,
                 created_date,updated_date)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (fid, data.get('name',''), data.get('description',''),
                  data.get('source_system_id',''), data.get('destination_system_id',''),
                  data.get('direction','Inbound'), data.get('frequency','Daily'),
@@ -1160,6 +1302,8 @@ if HAS_TORNADO:
                  data.get('regulatory_driver',''), data.get('agreement_id'),
                  data.get('owner_id'), data.get('status','Active'),
                  data.get('known_issues',''),
+                 data.get('frequency_detail'), data.get('organization'),
+                 data.get('managed_by'), data.get('data_steward_id') or None,
                  data.get('data_classification'), data.get('encryption_method'),
                  data.get('disclosure_avoidance'),
                  data.get('data_quality_measures'), data.get('data_standard'),
@@ -1197,6 +1341,7 @@ if HAS_TORNADO:
                        'frequency','transfer_method','format','transformation_steps','business_rules',
                        'validations','error_handling','contains_pii','ferpa_protected','regulatory_driver',
                        'agreement_id','owner_id','status','known_issues',
+                       'frequency_detail','organization','managed_by','data_steward_id',
                        'data_classification','encryption_method','disclosure_avoidance',
                        'data_quality_measures','data_standard','retention_at_destination','legal_authority')
 
@@ -1888,6 +2033,12 @@ if HAS_TORNADO:
                      self.current_user["user_id"], self.current_user["user_id"])
                 ).fetchone()
                 uid = row["user_id"]
+                latest = conn.execute(
+                    "SELECT version FROM app_release WHERE is_published=1 "
+                    "ORDER BY sort_key DESC LIMIT 1").fetchone()
+                if latest:
+                    conn.execute("UPDATE app_user SET last_seen_release=? WHERE user_id=?",
+                                 (latest["version"], uid))
                 self.audit_create(conn, "user", uid, {
                     "email": email, "first_name": first, "last_name": last,
                     "role": role, "contributor_id": data.get("contributor_id"),
@@ -2106,13 +2257,20 @@ if HAS_TORNADO:
             try:
                 events, total = audit.query_events(conn, limit=limit, offset=offset,
                                                    **filters)
-                actions = [r["action"] for r in conn.execute(
-                    "SELECT DISTINCT action FROM audit_event ORDER BY action").fetchall()]
-                entities = [r["entity_type"] for r in conn.execute(
-                    "SELECT DISTINCT entity_type FROM audit_event "
-                    "WHERE entity_type IS NOT NULL ORDER BY entity_type").fetchall()]
+                # Fixed lists rather than DISTINCT scans over a growing table.
+                actions = [audit.CREATE, audit.UPDATE, audit.DELETE, audit.LOGIN,
+                           audit.LOGOUT, audit.LOGIN_FAILED, audit.PERMISSION_DENIED,
+                           audit.PASSWORD_CHANGED, audit.BACKFILL]
+                entities = ["system", "data_flow", "data_element", "contributor",
+                            "schema_table", "schema_column", "system_schema",
+                            "system_resource", "data_flow_resource", "user",
+                            "session", "preference", "release"]
             finally:
                 conn.close()
+            for e in events:
+                e["revertible"] = (e.get("action") == audit.UPDATE
+                                   and e.get("entity_type") in REVERTIBLE_ENTITIES
+                                   and bool(e.get("changes")))
             self.write_json({"events": events, "total": total, "limit": limit,
                              "offset": offset, "actions": actions,
                              "entity_types": entities})
@@ -2151,6 +2309,844 @@ if HAS_TORNADO:
                             f'attachment; filename="audit-log-{stamp}.csv"')
             self.finish(buf.getvalue())
 
+    # -----------------------------------------------------------------------
+    # Manual Entry helpers
+    # -----------------------------------------------------------------------
+    MANUAL_ENTRY = "Manual Entry"
+    FIELD_LIST_LABEL = "Data entry field list"
+
+    def next_flow_id(conn):
+        last = conn.execute("SELECT flow_id FROM data_flow ORDER BY flow_id DESC LIMIT 1").fetchone()
+        num = int(re.search(r"\d+", last["flow_id"]).group()) + 1 if last else 1
+        return f"PL-{num:03d}"
+
+    def sync_manual_entry(handler, conn, system_id, data, creating=False):
+        """Keep a Manual Entry system's inbound data flow in step with its target.
+
+        The flow into the target data store is created with the system, so the
+        person only answers the timing questions once. If the target is changed
+        later the existing flow is repointed rather than orphaned.
+        """
+        sys_row = conn.execute("SELECT * FROM system WHERE system_id=?", (system_id,)).fetchone()
+        if not sys_row or sys_row["system_type"] != MANUAL_ENTRY:
+            return None
+        target = sys_row["target_system_id"]
+        if not target:
+            return None
+        if not conn.execute("SELECT 1 FROM system WHERE system_id=?", (target,)).fetchone():
+            return None
+
+        existing = conn.execute(
+            "SELECT * FROM data_flow WHERE source_system_id=? ORDER BY flow_id LIMIT 1",
+            (system_id,)).fetchone()
+        now = iso(utcnow())
+        target_name = conn.execute("SELECT name FROM system WHERE system_id=?",
+                                   (target,)).fetchone()["name"]
+        flow_name = f"{sys_row['name']} to {target_name}"
+
+        if existing:
+            if existing["destination_system_id"] != target:
+                before = dict(existing)
+                conn.execute(
+                    """UPDATE data_flow SET destination_system_id=?, name=?,
+                           updated_date=?, updated_by=? WHERE flow_id=?""",
+                    (target, flow_name, now, handler.current_user["user_id"],
+                     existing["flow_id"]))
+                after = dict(conn.execute("SELECT * FROM data_flow WHERE flow_id=?",
+                                          (existing["flow_id"],)).fetchone())
+                handler.audit_update(conn, "data_flow", existing["flow_id"], before, after,
+                                     fields=("destination_system_id", "name"))
+            return existing["flow_id"]
+
+        fid = next_flow_id(conn)
+        conn.execute(
+            """INSERT INTO data_flow
+                 (flow_id, name, description, source_system_id, destination_system_id,
+                  direction, frequency, frequency_detail, transfer_method, format,
+                  contains_pii, ferpa_protected, organization, managed_by,
+                  data_steward_id, owner_id, status, created_date, updated_date,
+                  created_by, updated_by)
+               VALUES (?,?,?,?,?,'Inbound',?,?,?,?,?,?,?,?,?,?, 'Active',?,?,?,?)""",
+            (fid, flow_name,
+             data.get("flow_description") or
+             f"Data entered manually via {sys_row['name']} and stored in {target_name}.",
+             system_id, target,
+             data.get("flow_frequency") or "Ad Hoc",
+             data.get("flow_frequency_detail"),
+             data.get("flow_transfer_method") or
+             ("File upload" if sys_row["entry_type"] == "File Upload" else "Manual entry"),
+             data.get("flow_format") or
+             ("File" if sys_row["entry_type"] == "File Upload" else "Keyed entry"),
+             1 if data.get("flow_contains_pii") else 0,
+             1 if data.get("flow_ferpa_protected") else 0,
+             sys_row["organization"], sys_row["managed_by"], sys_row["data_steward_id"],
+             sys_row["owner_id"], now, now,
+             handler.current_user["user_id"], handler.current_user["user_id"]))
+        handler.audit_create(conn, "data_flow", fid,
+                             {"name": flow_name, "source_system_id": system_id,
+                              "destination_system_id": target,
+                              "created_with": "Manual Entry system"})
+        return fid
+
+    def ensure_field_list_resource(handler, conn, system_id):
+        """Give every Manual Entry system a fixed slot for its field list."""
+        exists = conn.execute(
+            "SELECT 1 FROM resource WHERE entity_type='system' AND entity_id=? AND label=?",
+            (system_id, FIELD_LIST_LABEL)).fetchone()
+        if exists:
+            return
+        now = iso(utcnow())
+        conn.execute(
+            """INSERT INTO resource
+                 (entity_type, entity_id, label, kind, label_locked, sort_order,
+                  created_date, updated_date, created_by, updated_by)
+               VALUES ('system',?,?,'file',1,0,?,?,?,?)""",
+            (system_id, FIELD_LIST_LABEL, now, now,
+             handler.current_user["user_id"], handler.current_user["user_id"]))
+
+    # -----------------------------------------------------------------------
+    # Version and release notes
+    # -----------------------------------------------------------------------
+    class VersionHandler(BaseAPIHandler):
+        """Public: the sign-in screen shows the version before anyone is authenticated."""
+        requires_auth = False
+
+        def get(self):
+            self.write_json({"version": VERSION})
+
+    class ReleasesHandler(BaseAPIHandler):
+        """Published notes are readable by everyone; drafts and editing are SuperAdmin."""
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.SUPERADMIN
+        allow_when_password_expired = False
+
+        def get(self):
+            include_drafts = permissions.at_least(self.current_user["role"],
+                                                  permissions.SUPERADMIN)
+            conn = get_db()
+            where = "" if include_drafts else "WHERE is_published = 1"
+            rows = conn.execute(
+                f"SELECT * FROM app_release {where} ORDER BY sort_key DESC, version DESC"
+            ).fetchall()
+            conn.close()
+            self.write_json({"releases": rows_to_list(rows),
+                             "current_version": VERSION})
+
+        def post(self):
+            data = self.get_json_body()
+            ver = (data.get("version") or "").strip()
+            if not ver:
+                return self.fail(400, "A version number is required.")
+            conn = get_db()
+            try:
+                if conn.execute("SELECT 1 FROM app_release WHERE version=?", (ver,)).fetchone():
+                    return self.fail(409, f"Release {ver} already exists.")
+                now = iso(utcnow())
+                top = conn.execute("SELECT COALESCE(MAX(sort_key),0) AS m FROM app_release").fetchone()
+                conn.execute(
+                    """INSERT INTO app_release
+                         (version, title, notes, released_date, is_published, sort_key,
+                          created_date, updated_date, created_by, updated_by)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (ver, data.get("title"), data.get("notes"),
+                     data.get("released_date") or now[:10],
+                     1 if data.get("is_published") else 0, int(top["m"]) + 100,
+                     now, now, self.current_user["user_id"], self.current_user["user_id"]))
+                self.audit_create(conn, "release", ver, {
+                    "version": ver, "title": data.get("title"),
+                    "is_published": 1 if data.get("is_published") else 0})
+                conn.commit()
+                row = conn.execute("SELECT * FROM app_release WHERE version=?", (ver,)).fetchone()
+            finally:
+                conn.close()
+            self.set_status(201)
+            self.write_json(row_to_dict(row))
+
+    class ReleaseHandler(BaseAPIHandler):
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def put(self, ver):
+            data = self.get_json_body()
+            conn = get_db()
+            try:
+                before = conn.execute("SELECT * FROM app_release WHERE version=?",
+                                      (ver,)).fetchone()
+                if not before:
+                    return self.fail(404, "Not found")
+                before = dict(before)
+                fields, vals = [], []
+                for key in ("title", "notes", "released_date"):
+                    if key in data:
+                        fields.append(f"{key}=?")
+                        vals.append(data[key])
+                if "is_published" in data:
+                    fields.append("is_published=?")
+                    vals.append(1 if data["is_published"] else 0)
+                if fields:
+                    fields += ["updated_date=?", "updated_by=?"]
+                    vals += [iso(utcnow()), self.current_user["user_id"], ver]
+                    conn.execute(f"UPDATE app_release SET {','.join(fields)} WHERE version=?", vals)
+                after = dict(conn.execute("SELECT * FROM app_release WHERE version=?",
+                                          (ver,)).fetchone())
+                self.audit_update(conn, "release", ver, before, after,
+                                  fields=("title", "notes", "released_date", "is_published"))
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json(after)
+
+        def delete(self, ver):
+            conn = get_db()
+            try:
+                before = conn.execute("SELECT * FROM app_release WHERE version=?",
+                                      (ver,)).fetchone()
+                if not before:
+                    return self.fail(404, "Not found")
+                conn.execute("DELETE FROM app_release WHERE version=?", (ver,))
+                self.audit_delete(conn, "release", ver, dict(before))
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"deleted": ver})
+
+    class WhatsNewHandler(BaseAPIHandler):
+        """Published releases this user hasn't been shown yet, oldest first.
+
+        Someone returning after several releases sees all of them in order
+        rather than only the newest.
+        """
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.VIEWER
+        allow_when_password_expired = True
+
+        def get(self):
+            conn = get_db()
+            try:
+                row = conn.execute("SELECT last_seen_release FROM app_user WHERE user_id=?",
+                                   (self.current_user["user_id"],)).fetchone()
+                seen = (row or {}).get("last_seen_release")
+                releases = conn.execute(
+                    "SELECT * FROM app_release WHERE is_published=1 "
+                    "ORDER BY sort_key ASC, version ASC").fetchall()
+            finally:
+                conn.close()
+            all_published = rows_to_list(releases)
+            if seen is None:
+                # Should not normally happen: accounts are stamped on creation.
+                unseen = all_published
+            else:
+                seen_key = next((r["sort_key"] for r in all_published
+                                 if r["version"] == seen), None)
+                unseen = [r for r in all_published
+                          if seen_key is None or r["sort_key"] > seen_key]
+            self.write_json({"unseen": unseen, "current_version": VERSION})
+
+        def post(self):
+            """Mark everything published as seen ("Got it")."""
+            conn = get_db()
+            try:
+                latest = conn.execute(
+                    "SELECT version FROM app_release WHERE is_published=1 "
+                    "ORDER BY sort_key DESC LIMIT 1").fetchone()
+                marker = (latest or {}).get("version") or VERSION
+                conn.execute("UPDATE app_user SET last_seen_release=? WHERE user_id=?",
+                             (marker, self.current_user["user_id"]))
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"ok": True})
+
+    # -----------------------------------------------------------------------
+    # Resources: documents and links on systems and data flows
+    # -----------------------------------------------------------------------
+    RESOURCE_PARENTS = {
+        "system": ("system", "system_id"),
+        "data_flow": ("data_flow", "flow_id"),
+    }
+
+    def resource_rows(conn, entity_type, entity_id):
+        """Resources with their current version, never selecting the file bytes."""
+        return conn.execute(
+            """SELECT r.resource_id, r.entity_type, r.entity_id, r.label, r.kind,
+                      r.label_locked, r.sort_order, r.created_date, r.updated_date,
+                      v.version_id, v.version_no, v.url, v.filename, v.content_type,
+                      v.size_bytes, v.uploaded_at, v.uploaded_by, v.note,
+                      u.email AS uploaded_by_email,
+                      (SELECT COUNT(*) FROM resource_version rv
+                        WHERE rv.resource_id = r.resource_id) AS version_count
+                 FROM resource r
+                 LEFT JOIN resource_version v
+                        ON v.resource_id = r.resource_id AND v.is_current = 1
+                 LEFT JOIN app_user u ON u.user_id = v.uploaded_by
+                WHERE r.entity_type = ? AND r.entity_id = ?
+                ORDER BY r.sort_order, r.resource_id""",
+            (entity_type, entity_id)).fetchall()
+
+    class ResourcesHandler(BaseAPIHandler):
+        """List resources for an entity, or attach a new link/document."""
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.EDITOR
+
+        def get(self, entity_type, entity_id):
+            if entity_type not in RESOURCE_PARENTS:
+                return self.fail(400, "Unknown entity type")
+            conn = get_db()
+            rows = resource_rows(conn, entity_type, entity_id)
+            conn.close()
+            out = []
+            for r in rows_to_list(rows):
+                r["can_preview"] = (r.get("content_type") or "") in INLINE_CONTENT_TYPES
+                out.append(r)
+            self.write_json(out)
+
+        def post(self, entity_type, entity_id):
+            if entity_type not in RESOURCE_PARENTS:
+                return self.fail(400, "Unknown entity type")
+            table, pk = RESOURCE_PARENTS[entity_type]
+
+            uploaded = self.request.files.get("file")
+            if uploaded:
+                label = (self.get_body_argument("label", "") or "").strip()
+                kind = "file"
+            else:
+                data = self.get_json_body()
+                label = (data.get("label") or "").strip()
+                kind = data.get("kind") or "link"
+            if not label:
+                return self.fail(400, "A label is required.")
+
+            conn = get_db()
+            try:
+                if not conn.execute(f"SELECT 1 FROM {table} WHERE {pk}=?",
+                                    (entity_id,)).fetchone():
+                    return self.fail(404, f"No such {entity_type}.")
+                now = iso(utcnow())
+                top = conn.execute(
+                    "SELECT COALESCE(MAX(sort_order),0) AS m FROM resource "
+                    "WHERE entity_type=? AND entity_id=?",
+                    (entity_type, entity_id)).fetchone()
+                created = conn.execute(
+                    """INSERT INTO resource
+                         (entity_type, entity_id, label, kind, sort_order,
+                          created_date, updated_date, created_by, updated_by)
+                       VALUES (?,?,?,?,?,?,?,?,?) RETURNING resource_id""",
+                    (entity_type, entity_id, label, kind, int(top["m"]) + 10,
+                     now, now, self.current_user["user_id"],
+                     self.current_user["user_id"])).fetchone()
+                rid = created["resource_id"]
+
+                if kind == "file":
+                    err = self._store_file(conn, rid, 1)
+                    if err:
+                        return self.fail(400, err)
+                else:
+                    url = (self.get_json_body().get("url") or "").strip()
+                    if not url:
+                        return self.fail(400, "A link URL is required.")
+                    if not re.match(r'^https?://', url, re.I):
+                        return self.fail(400, "Links must start with http:// or https://")
+                    conn.execute(
+                        """INSERT INTO resource_version
+                             (resource_id, version_no, is_current, url, uploaded_at, uploaded_by)
+                           VALUES (?,1,1,?,?,?)""",
+                        (rid, url, now, self.current_user["user_id"]))
+
+                self.audit_create(conn, f"{entity_type}_resource", rid,
+                                  {"label": label, "kind": kind,
+                                   "attached_to": entity_id})
+                conn.commit()
+                rows = resource_rows(conn, entity_type, entity_id)
+            finally:
+                conn.close()
+            self.set_status(201)
+            self.write_json(rows_to_list(rows))
+
+        def _store_file(self, conn, resource_id, version_no, note=None):
+            """Write an uploaded file as a new version. Returns an error string or None."""
+            uploaded = self.request.files.get("file")
+            if not uploaded:
+                return "No file was included."
+            f = uploaded[0]
+            body = f["body"]
+            if len(body) > MAX_UPLOAD_BYTES:
+                return (f"That file is {len(body)/1024/1024:.1f} MB. "
+                        f"The limit is {MAX_UPLOAD_BYTES//1024//1024} MB.")
+            if not body:
+                return "That file is empty."
+            conn.execute("UPDATE resource_version SET is_current=0 WHERE resource_id=?",
+                         (resource_id,))
+            conn.execute(
+                """INSERT INTO resource_version
+                     (resource_id, version_no, is_current, filename, content_type,
+                      size_bytes, file_data, uploaded_at, uploaded_by, note)
+                   VALUES (?,?,1,?,?,?,?,?,?,?)""",
+                (resource_id, version_no, f["filename"],
+                 f["content_type"] or "application/octet-stream",
+                 len(body), body, iso(utcnow()), self.current_user["user_id"], note))
+            return None
+
+    class ResourceHandler(BaseAPIHandler):
+        """Relabel a resource, upload a new version over it, or remove it."""
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.EDITOR
+
+        def _load(self, conn, rid):
+            return conn.execute("SELECT * FROM resource WHERE resource_id=?", (rid,)).fetchone()
+
+        def post(self, rid):
+            """Upload a replacement document, keeping the previous version."""
+            conn = get_db()
+            try:
+                r = self._load(conn, rid)
+                if not r:
+                    return self.fail(404, "Not found")
+                if r["kind"] != "file":
+                    return self.fail(400, "This resource is a link, not a document.")
+                top = conn.execute(
+                    "SELECT COALESCE(MAX(version_no),0) AS m FROM resource_version "
+                    "WHERE resource_id=?", (rid,)).fetchone()
+                new_no = int(top["m"]) + 1
+                helper = ResourcesHandler._store_file
+                err = helper(self, conn, int(rid), new_no,
+                             note=self.get_body_argument("note", None))
+                if err:
+                    return self.fail(400, err)
+                audit.record_event(
+                    conn, self.current_user, audit.UPDATE,
+                    f"{r['entity_type']}_resource", rid,
+                    changes={"document": (f"version {new_no - 1}", f"version {new_no}")},
+                    summary=f"New version uploaded for '{r['label']}'",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                rows = resource_rows(conn, r["entity_type"], r["entity_id"])
+            finally:
+                conn.close()
+            self.write_json(rows_to_list(rows))
+
+        def put(self, rid):
+            data = self.get_json_body()
+            conn = get_db()
+            try:
+                r = self._load(conn, rid)
+                if not r:
+                    return self.fail(404, "Not found")
+                before = dict(r)
+                fields, vals = [], []
+                if "label" in data:
+                    if r["label_locked"]:
+                        return self.fail(400, "This resource's label is fixed by the "
+                                              "system and cannot be changed.")
+                    if not (data["label"] or "").strip():
+                        return self.fail(400, "A label is required.")
+                    fields.append("label=?")
+                    vals.append(data["label"].strip())
+                if fields:
+                    fields += ["updated_date=?", "updated_by=?"]
+                    vals += [iso(utcnow()), self.current_user["user_id"], rid]
+                    conn.execute(f"UPDATE resource SET {','.join(fields)} WHERE resource_id=?", vals)
+                if "url" in data and r["kind"] == "link":
+                    url = (data["url"] or "").strip()
+                    if not re.match(r'^https?://', url, re.I):
+                        return self.fail(400, "Links must start with http:// or https://")
+                    top = conn.execute(
+                        "SELECT COALESCE(MAX(version_no),0) AS m FROM resource_version "
+                        "WHERE resource_id=?", (rid,)).fetchone()
+                    conn.execute("UPDATE resource_version SET is_current=0 WHERE resource_id=?",
+                                 (rid,))
+                    conn.execute(
+                        """INSERT INTO resource_version
+                             (resource_id, version_no, is_current, url, uploaded_at, uploaded_by)
+                           VALUES (?,?,1,?,?,?)""",
+                        (rid, int(top["m"]) + 1, url, iso(utcnow()),
+                         self.current_user["user_id"]))
+                after = dict(self._load(conn, rid))
+                self.audit_update(conn, f"{r['entity_type']}_resource", rid, before, after,
+                                  fields=("label",))
+                conn.commit()
+                rows = resource_rows(conn, r["entity_type"], r["entity_id"])
+            finally:
+                conn.close()
+            self.write_json(rows_to_list(rows))
+
+        def delete(self, rid):
+            conn = get_db()
+            try:
+                r = self._load(conn, rid)
+                if not r:
+                    return self.fail(404, "Not found")
+                if r["label_locked"]:
+                    return self.fail(400, "This resource is maintained by the system "
+                                          "and cannot be removed.")
+                conn.execute("DELETE FROM resource_version WHERE resource_id=?", (rid,))
+                conn.execute("DELETE FROM resource WHERE resource_id=?", (rid,))
+                self.audit_delete(conn, f"{r['entity_type']}_resource", rid, dict(r))
+                conn.commit()
+                rows = resource_rows(conn, r["entity_type"], r["entity_id"])
+            finally:
+                conn.close()
+            self.write_json(rows_to_list(rows))
+
+    class ResourceFileHandler(BaseAPIHandler):
+        """Serve a stored document, inline for preview or as a download."""
+        READ_ROLE = permissions.VIEWER
+
+        def get(self, rid):
+            want_download = self.get_argument("download", "0") == "1"
+            version_id = self.get_argument("version", None)
+            conn = get_db()
+            try:
+                if version_id:
+                    row = conn.execute(
+                        "SELECT * FROM resource_version WHERE version_id=? AND resource_id=?",
+                        (version_id, rid)).fetchone()
+                else:
+                    row = conn.execute(
+                        "SELECT * FROM resource_version WHERE resource_id=? AND is_current=1",
+                        (rid,)).fetchone()
+                if not row or row["file_data"] is None:
+                    return self.fail(404, "No document stored for this resource.")
+                data = bytes(row["file_data"])
+                ctype = row["content_type"] or "application/octet-stream"
+                filename = row["filename"] or "document"
+            finally:
+                conn.close()
+
+            # Only ever render a narrow set of types inline. Anything else is
+            # sent as an attachment, so an uploaded HTML or script file can't be
+            # executed in the context of this site.
+            inline = (not want_download) and ctype in INLINE_CONTENT_TYPES
+            safe_name = re.sub(r'[^A-Za-z0-9._-]', '_', filename)
+            self.set_header("Content-Type", ctype if inline else "application/octet-stream")
+            self.set_header("Content-Disposition",
+                            f'{"inline" if inline else "attachment"}; filename="{safe_name}"')
+            self.set_header("X-Content-Type-Options", "nosniff")
+            self.set_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+            self.finish(data)
+
+    class ResourceVersionsHandler(BaseAPIHandler):
+        READ_ROLE = permissions.VIEWER
+
+        def get(self, rid):
+            conn = get_db()
+            rows = conn.execute(
+                """SELECT v.version_id, v.version_no, v.is_current, v.url, v.filename,
+                          v.content_type, v.size_bytes, v.uploaded_at, v.note,
+                          u.email AS uploaded_by_email
+                     FROM resource_version v
+                     LEFT JOIN app_user u ON u.user_id = v.uploaded_by
+                    WHERE v.resource_id=? ORDER BY v.version_no DESC""", (rid,)).fetchall()
+            conn.close()
+            self.write_json(rows_to_list(rows))
+
+    # -----------------------------------------------------------------------
+    # Schema upload (.sql) with revertible snapshots
+    # -----------------------------------------------------------------------
+    def capture_schema(conn, system_id):
+        """Everything currently stored for a system's schema, as plain dicts."""
+        tables = rows_to_list(conn.execute(
+            "SELECT * FROM schema_table WHERE system_id=? ORDER BY table_id",
+            (system_id,)).fetchall())
+        ids = [t["table_id"] for t in tables]
+        columns = []
+        if ids:
+            ph = ",".join("?" for _ in ids)
+            columns = rows_to_list(conn.execute(
+                f"SELECT * FROM schema_column WHERE table_id IN ({ph}) ORDER BY table_id, ordinal",
+                ids).fetchall())
+        return tables, columns
+
+    def write_schema(conn, system_id, tables, columns):
+        """Replace a system's schema with the supplied tables and columns."""
+        existing = [r["table_id"] for r in conn.execute(
+            "SELECT table_id FROM schema_table WHERE system_id=?", (system_id,)).fetchall()]
+        if existing:
+            ph = ",".join("?" for _ in existing)
+            conn.execute(f"DELETE FROM schema_column WHERE table_id IN ({ph})", existing)
+            conn.execute("DELETE FROM schema_table WHERE system_id=?", (system_id,))
+
+        now = iso(utcnow())
+        t_cols = ["table_id", "system_id", "schema_name", "table_name", "primary_key",
+                  "description", "x_pos", "y_pos", "data_classification", "contains_pii",
+                  "ferpa_protected", "data_owner_id", "data_steward_id",
+                  "retention_schedule", "access_restrictions", "legal_authority",
+                  "business_meaning", "notes", "created_date", "updated_date"]
+        for t in tables:
+            row = dict(t)
+            row["system_id"] = system_id
+            row.setdefault("created_date", now)
+            row["updated_date"] = now
+            conn.execute(
+                f"INSERT INTO schema_table ({','.join(t_cols)}) "
+                f"VALUES ({','.join('?' for _ in t_cols)})",
+                tuple(row.get(c) for c in t_cols))
+
+        c_cols = ["column_id", "table_id", "column_name", "ordinal", "data_type",
+                  "is_nullable", "is_identity", "is_pk", "is_fk", "default_value",
+                  "fk_target_schema", "fk_target_table", "fk_target_column",
+                  "fk_target_table_id", "fk_constraint", "data_classification",
+                  "contains_pii", "ferpa_protected", "data_owner_id", "data_steward_id",
+                  "retention_schedule", "access_restrictions", "legal_authority",
+                  "business_meaning", "notes", "created_date", "updated_date"]
+        for c in columns:
+            row = dict(c)
+            row.setdefault("created_date", now)
+            row["updated_date"] = now
+            conn.execute(
+                f"INSERT INTO schema_column ({','.join(c_cols)}) "
+                f"VALUES ({','.join('?' for _ in c_cols)})",
+                tuple(row.get(col) for col in c_cols))
+
+    class SchemaUploadHandler(BaseAPIHandler):
+        """Replace a data store's schema from an uploaded SQL Server script.
+
+        Governance already entered against a table or column is carried forward
+        by name, and the previous schema is snapshotted so the upload can be
+        reverted. One audit event summarises the change rather than thousands of
+        per-column rows.
+        """
+        READ_ROLE = permissions.ADMINISTRATOR
+        WRITE_ROLE = permissions.ADMINISTRATOR
+
+        def post(self, system_id):
+            uploaded = self.request.files.get("file")
+            if not uploaded:
+                return self.fail(400, "No .sql file was included.")
+            f = uploaded[0]
+            if len(f["body"]) > MAX_UPLOAD_BYTES:
+                return self.fail(400, f"That file is larger than "
+                                      f"{MAX_UPLOAD_BYTES//1024//1024} MB.")
+            try:
+                sql_text = f["body"].decode("utf-8", errors="replace")
+            except Exception:
+                return self.fail(400, "The file could not be read as text.")
+
+            conn = get_db()
+            try:
+                system = conn.execute("SELECT * FROM system WHERE system_id=?",
+                                      (system_id,)).fetchone()
+                if not system:
+                    return self.fail(404, "No such system.")
+
+                # Identifiers must be unique across the whole table, not just
+                # within this system: the parser's default TBL-0001 collides with
+                # whichever system already owns that id. Derive the prefix from
+                # the system so two systems can never clash.
+                token = re.sub(r'[^A-Za-z0-9]', '', system_id).upper()[-8:] or "SYS"
+                try:
+                    parsed = schema_import.parse_tsql(
+                        sql_text,
+                        table_prefix=f"{token}T",
+                        column_prefix=f"{token}C")
+                except schema_import.SchemaParseError as e:
+                    return self.fail(400, str(e))
+
+                # Belt and braces: if a generated id somehow exists under another
+                # system, fall back to a time-stamped prefix rather than failing
+                # mid-write with a constraint violation.
+                clash = conn.execute(
+                    "SELECT 1 FROM schema_table WHERE table_id = ? AND system_id <> ?",
+                    (parsed["tables"][0]["table_id"], system_id)).fetchone()
+                if clash:
+                    stamp = utcnow().strftime("%y%m%d%H%M%S")
+                    parsed = schema_import.parse_tsql(
+                        sql_text,
+                        table_prefix=f"{token}T{stamp}",
+                        column_prefix=f"{token}C{stamp}")
+
+                old_tables, old_columns = capture_schema(conn, system_id)
+                summary = schema_import.carry_governance(parsed, old_tables, old_columns)
+
+                conn.execute(
+                    """INSERT INTO schema_snapshot
+                         (system_id, created_at, created_by, source_filename, source_sql,
+                          snapshot_json, table_count, column_count, summary, is_current)
+                       VALUES (?,?,?,?,?,?,?,?,?,0)""",
+                    (system_id, iso(utcnow()), self.current_user["user_id"],
+                     f["filename"], sql_text,
+                     json.dumps({"tables": old_tables, "columns": old_columns}, default=str),
+                     len(old_tables), len(old_columns),
+                     f"Schema before upload of {f['filename']}"))
+
+                write_schema(conn, system_id, parsed["tables"], parsed["columns"])
+
+                message = (f"Schema replaced from {f['filename']}: "
+                           f"{summary['matched_tables']} table(s) matched, "
+                           f"{summary['new_tables']} added, "
+                           f"{summary['removed_tables']} removed; "
+                           f"{summary['carried_values']} governance value(s) carried forward")
+                audit.record_event(
+                    conn, self.current_user, audit.UPDATE, "system_schema", system_id,
+                    summary=message, ip_address=self.client_ip(),
+                    user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+
+            self.write_json({"ok": True, "summary": summary,
+                             "stats": parsed["stats"],
+                             "warnings": parsed.get("warnings", []),
+                             "message": message})
+
+    class SchemaSnapshotsHandler(BaseAPIHandler):
+        READ_ROLE = permissions.ADMINISTRATOR
+
+        def get(self, system_id):
+            conn = get_db()
+            rows = conn.execute(
+                """SELECT s.snapshot_id, s.created_at, s.source_filename, s.table_count,
+                          s.column_count, s.summary, u.email AS created_by_email
+                     FROM schema_snapshot s
+                     LEFT JOIN app_user u ON u.user_id = s.created_by
+                    WHERE s.system_id=? ORDER BY s.snapshot_id DESC""",
+                (system_id,)).fetchall()
+            conn.close()
+            self.write_json(rows_to_list(rows))
+
+    class SchemaRevertHandler(BaseAPIHandler):
+        READ_ROLE = permissions.ADMINISTRATOR
+        WRITE_ROLE = permissions.ADMINISTRATOR
+
+        def post(self, snapshot_id):
+            conn = get_db()
+            try:
+                snap = conn.execute("SELECT * FROM schema_snapshot WHERE snapshot_id=?",
+                                    (snapshot_id,)).fetchone()
+                if not snap:
+                    return self.fail(404, "Snapshot not found.")
+                payload = json.loads(snap["snapshot_json"] or "{}")
+                tables = payload.get("tables", [])
+                columns = payload.get("columns", [])
+                system_id = snap["system_id"]
+
+                # Snapshot the current state first, so a revert is itself revertible.
+                cur_t, cur_c = capture_schema(conn, system_id)
+                conn.execute(
+                    """INSERT INTO schema_snapshot
+                         (system_id, created_at, created_by, source_filename, source_sql,
+                          snapshot_json, table_count, column_count, summary, is_current)
+                       VALUES (?,?,?,?,?,?,?,?,?,0)""",
+                    (system_id, iso(utcnow()), self.current_user["user_id"],
+                     None, None,
+                     json.dumps({"tables": cur_t, "columns": cur_c}, default=str),
+                     len(cur_t), len(cur_c),
+                     f"Schema before reverting to snapshot {snapshot_id}"))
+
+                write_schema(conn, system_id, tables, columns)
+                message = (f"Schema reverted to the snapshot taken "
+                           f"{str(snap['created_at'])[:16].replace('T', ' ')} "
+                           f"({len(tables)} tables, {len(columns)} columns)")
+                audit.record_event(conn, self.current_user, audit.UPDATE,
+                                   "system_schema", system_id, summary=message,
+                                   ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"ok": True, "message": message})
+
+    # -----------------------------------------------------------------------
+    # Reverting an audited change
+    # -----------------------------------------------------------------------
+    # Only catalog data, and only field updates. Creates and deletes are not
+    # revertible yet, and schema uploads revert through their own snapshots.
+    REVERTIBLE_ENTITIES = {
+        "system": ("system", "system_id"),
+        "data_flow": ("data_flow", "flow_id"),
+        "data_element": ("data_element", "element_id"),
+        "contributor": ("contributor", "contributor_id"),
+        "schema_table": ("schema_table", "table_id"),
+        "schema_column": ("schema_column", "column_id"),
+    }
+
+    class AuditRevertHandler(BaseAPIHandler):
+        READ_ROLE = permissions.SUPERADMIN
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def post(self, event_id):
+            force = (self.get_json_body() or {}).get("force", False)
+            conn = get_db()
+            try:
+                event = conn.execute("SELECT * FROM audit_event WHERE event_id=?",
+                                     (event_id,)).fetchone()
+                if not event:
+                    return self.fail(404, "Audit entry not found.")
+                if event["action"] != audit.UPDATE:
+                    return self.fail(400, "Only updates can be reverted. Creations and "
+                                          "deletions are not revertible.")
+                target = REVERTIBLE_ENTITIES.get(event["entity_type"])
+                if not target:
+                    return self.fail(400, f"Changes to '{event['entity_type']}' cannot be "
+                                          f"reverted from here.")
+                table, pk = target
+                changes = conn.execute(
+                    "SELECT * FROM audit_field_change WHERE event_id=? ORDER BY change_id",
+                    (event_id,)).fetchall()
+                if not changes:
+                    return self.fail(400, "This entry records no field changes.")
+
+                row = conn.execute(f"SELECT * FROM {table} WHERE {pk}=?",
+                                   (event["entity_id"],)).fetchone()
+                if not row:
+                    return self.fail(404, "The record this entry refers to no longer exists.")
+                current = dict(row)
+
+                # If a field no longer holds the value this event set, something
+                # later changed it and reverting would silently discard that.
+                conflicts = []
+                for c in changes:
+                    field = c["field_name"]
+                    if field not in current:
+                        continue
+                    now_value = current.get(field)
+                    expected = c["new_value"]
+                    if (now_value is None and expected not in (None, "")) or \
+                       (now_value is not None and str(now_value) != str(expected)):
+                        conflicts.append({
+                            "field": field,
+                            "expected": expected,
+                            "current": None if now_value is None else str(now_value),
+                        })
+                if conflicts and not force:
+                    return self.fail(
+                        409,
+                        "Some of these fields have changed since this entry. Reverting "
+                        "will discard those newer changes.",
+                        conflicts=conflicts)
+
+                before = dict(current)
+                fields, vals = [], []
+                for c in changes:
+                    field = c["field_name"]
+                    if field not in current:
+                        continue
+                    fields.append(f"{field}=?")
+                    vals.append(c["old_value"])
+                if not fields:
+                    return self.fail(400, "None of these fields exist on the record.")
+                fields += ["updated_date=?", "updated_by=?"]
+                vals += [iso(utcnow()), self.current_user["user_id"], event["entity_id"]]
+                conn.execute(f"UPDATE {table} SET {','.join(fields)} WHERE {pk}=?", vals)
+
+                after = dict(conn.execute(f"SELECT * FROM {table} WHERE {pk}=?",
+                                          (event["entity_id"],)).fetchone())
+                # The revert is recorded as a new event; the original entry is
+                # never altered, so the log stays append-only.
+                audit.record_event(
+                    conn, self.current_user, audit.UPDATE, event["entity_type"],
+                    event["entity_id"],
+                    changes=audit.diff_records(before, after,
+                                               [c["field_name"] for c in changes]),
+                    summary=(f"Reverted change #{event_id} originally made by "
+                             f"{event['actor_email']} on "
+                             f"{str(event['occurred_at'])[:16].replace('T', ' ')}"
+                             + (" (discarding later changes)" if conflicts else "")),
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"ok": True, "reverted_event": int(event_id),
+                             "discarded_conflicts": conflicts})
+
     class AppStaticFileHandler(tornado.web.StaticFileHandler):
         """Serve static files, but never let the browser cache index.html.
 
@@ -2167,6 +3163,8 @@ if HAS_TORNADO:
 
     def make_app():
         return tornado.web.Application([
+            # Public
+            (r"/api/version", VersionHandler),
             # Authentication
             (r"/api/auth/login", AuthLoginHandler),
             (r"/api/auth/logout", AuthLogoutHandler),
@@ -2179,9 +3177,16 @@ if HAS_TORNADO:
             (r"/api/sessions/([^/]+)", UserSessionsHandler),
             (r"/api/preferences", PreferencesHandler),
             (r"/api/audit/export", AuditExportHandler),
+            (r"/api/audit/([0-9]+)/revert", AuditRevertHandler),
             (r"/api/audit", AuditHandler),
+            # Release notes
+            (r"/api/releases", ReleasesHandler),
+            (r"/api/releases/([^/]+)", ReleaseHandler),
+            (r"/api/whats-new", WhatsNewHandler),
             # Catalog
             (r"/api/systems", SystemsHandler),
+            (r"/api/systems/([^/]+)/schema/upload", SchemaUploadHandler),
+            (r"/api/systems/([^/]+)/schema/snapshots", SchemaSnapshotsHandler),
             (r"/api/systems/([^/]+)/schema", SystemSchemaHandler),
             (r"/api/systems/([^/]+)/position", PositionHandler),
             (r"/api/systems/([^/]+)", SystemHandler),
@@ -2192,6 +3197,12 @@ if HAS_TORNADO:
             (r"/api/flows/([^/]+)", FlowHandler),
             (r"/api/elements", ElementsHandler),
             (r"/api/elements/([^/]+)", ElementHandler),
+            (r"/api/schema/snapshots/([0-9]+)/revert", SchemaRevertHandler),
+            # Resources (documents and links)
+            (r"/api/resources/(system|data_flow)/([^/]+)", ResourcesHandler),
+            (r"/api/resources/([0-9]+)/file", ResourceFileHandler),
+            (r"/api/resources/([0-9]+)/versions", ResourceVersionsHandler),
+            (r"/api/resources/([0-9]+)", ResourceHandler),
             (r"/api/contributors", ContributorsHandler),
             (r"/api/contributors/([^/]+)", ContributorHandler),
             (r"/api/agreements", AgreementsHandler),
@@ -2224,6 +3235,7 @@ if __name__ == "__main__":
     seed_db()
     seed_schema()
     ensure_preferences()
+    ensure_releases()
     bootstrap_superadmin()
 
     port = int(os.environ.get("PORT", 8765))

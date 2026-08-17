@@ -22,3 +22,7 @@ venv/
 # OS / Office temp files
 .DS_Store
 ~$*
+
+# Node (only ever created by tooling containers)
+node_modules/
+package-lock.json
