@@ -122,6 +122,13 @@ append-only — nothing in the application can edit or remove an entry.
 SuperAdmins can filter by date range, user, action, and entity type, and export
 the filtered view to CSV.
 
+**Reverting a change.** A SuperAdmin can revert an individual update from the
+audit log, restoring the values as they were before it. If a field has changed
+since, the app warns and names the newer values before letting you proceed. The
+revert is written as a *new* audit entry — nothing is erased. Creations and
+deletions are not revertible, and schema uploads revert through their own saved
+versions instead.
+
 ### Not yet built
 Two-factor authentication and self-service password reset both need email
 delivery, which isn't configured yet. Their toggles appear in Preferences,
@@ -129,6 +136,20 @@ visibly locked, and the surrounding code is structured so they can be added
 without rework. When single sign-on (OIDC against a state identity provider)
 arrives, it replaces the sign-in step only — roles, permissions, and the audit
 trail stay exactly as they are.
+
+## Versioning and Releases
+
+The current version lives in `version.py` and appears in the bottom-right corner
+of every page, including the sign-in screen. Click it to open **Release Notes**.
+
+Release notes are stored in the database. A SuperAdmin writes them (markdown:
+`## heading`, `* bullet`, `**bold**`, `[link](url)`), saves them as a **draft**,
+and publishes when ready. Publishing shows the notes once to each user at their
+next sign-in — someone returning after several releases sees all of them in
+order, oldest first, with *Remind me later* and *Got it*.
+
+> **Releasing:** bump `version.py`, draft the notes, and get them reviewed before
+> publishing. See `CLAUDE.md`.
 
 ## What You Can Do
 
@@ -138,6 +159,35 @@ trail stay exactly as they are.
 - **Click a flow line** (the arrows between nodes) to see transformation steps, business rules, validations, data elements carried, and more
 - **Scroll to zoom** in and out
 - **Click and drag the background** to pan
+
+### Resources on systems and data flows
+Attach **documents or links** with your own label. PDFs, images, and text files
+preview in the app; Office documents show their details with a Download button
+(browsers can't render Word or Excel without a conversion service). To change a
+document, download it, edit, and upload it back — the previous version is kept
+and the change is recorded in the audit log. Links open in a new tab.
+
+Files are capped at 10 MB and stored in PostgreSQL for now, so they're covered by
+the database backups. See `CLAUDE.md` for the planned move to S3.
+
+### Manual Entry systems
+The **Manual Entry** system type (formerly *Manual Process*) tracks data typed or
+uploaded directly into a data store. Alongside the usual ownership fields it
+records the entry type (direct entry or file upload), who does the entering,
+what validates the data at entry, and how errors get corrected.
+
+Choosing a target data store **creates the inbound data flow automatically**, so
+the timing questions are only answered once; changing the target repoints that
+flow. Each Manual Entry system also gets a fixed **Data entry field list**
+resource slot for a sample file or list of field headers.
+
+### Uploading a database schema
+Administrators can upload a **SQL Server (T-SQL) schema script** to a Data Store
+system to refresh its tables and columns. Governance already entered is carried
+forward wherever the schema, table, and column names still match, so hand-entered
+classifications and stewards aren't lost. The previous schema is saved and can be
+restored, and the whole upload is recorded as a single audit entry rather than
+thousands of per-column rows.
 
 ### Catalog Views
 - **Systems** — table view of all systems with type, status, and PII flags
