@@ -16,9 +16,45 @@ making changes.
 3. **Show Ben a preview of the draft notes and explicitly ask for edits before
    publishing.** Publishing is what triggers the what's-new modal for every user,
    so notes should not go out unreviewed.
-4. Publish only after he has confirmed.
+4. Publish only after he has confirmed — flip the seed's `is_published` to `1`
+   (or publish in the app).
 
-### 2. Move uploaded files to S3 when object storage exists
+How the seed and the database relate, since it is easy to get wrong:
+
+- Release notes live in the **database**. `SEED_RELEASES` is what populates it.
+- A release that is still a **draft** is owned by the code: `ensure_releases()`
+  re-seeds its title, notes, and published flag from `SEED_RELEASES` on every
+  start. So edit drafts in the code, not in the app — an in-app edit to a draft
+  is overwritten at the next restart.
+- A release that is **published** is live and is never overwritten. An
+  administrator can edit published notes in the app and those edits survive
+  restarts and deploys.
+
+### 2. Keep the release checklist current — in BOTH formats
+
+`RELEASE_CHECKLIST.md` is the source of truth for how a release is done, and
+`RELEASE_CHECKLIST.docx` is a Word copy Ben ticks off by hand.
+
+**Whenever anything changes that affects the release process** — a new command,
+a new environment, a changed verification step, a new one-time setup item, a
+newly discovered failure mode worth adding to Troubleshooting — you must:
+
+1. Update `RELEASE_CHECKLIST.md`, and
+2. Regenerate the Word copy:
+
+   ```bash
+   pandoc RELEASE_CHECKLIST.md -o RELEASE_CHECKLIST.docx --toc --toc-depth=2
+   ```
+
+3. Tell Ben the Word version has been regenerated, and share it, so he replaces
+   whatever copy he is working from.
+
+Two formatting notes for the markdown, learned the hard way: keep list-item
+continuation content indented **2 spaces** (6 spaces makes pandoc render fenced
+code blocks as literal ``` characters), and check the result by converting to
+PDF and looking at the pages before declaring it done.
+
+### 3. Move uploaded files to S3 when object storage exists
 
 Uploaded documents (the Resources feature) and schema `.sql` files are currently
 stored **in PostgreSQL** as binary columns. That was a deliberate interim choice:
@@ -87,6 +123,14 @@ python3 tools/check_jsx.py    # fast structural scan; no network or Docker neede
 Run the Python one after every frontend edit (it works in the assistant's
 sandbox, where npm and PyPI are blocked). Run the shell one before committing.
 Neither proves the page *renders* — only that it compiles.
+
+## Accessibility
+
+`ACCESSIBILITY.md` records the WCAG contrast measurements for every system-type
+colour and what screen reader support exists. **Colours for system types must
+come from `TYPE_PALETTE` in `app.py`** — every entry has been verified against
+AA, so an arbitrary hex value would bypass that guarantee. The known gaps
+(focus trapping, no real screen reader testing) are listed there too.
 
 ## Not yet built
 

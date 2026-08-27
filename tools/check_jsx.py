@@ -102,7 +102,11 @@ def scan(code, line_offset=0):
             c = code[j]
             if c == "\n":
                 line += 1
-            elif c in "\"'" and depth >= 0:
+            elif c in "\"'" and not (c == "'" and j > 0
+                                     and code[j - 1].isalpha()
+                                     and j + 1 < n and code[j + 1].isalpha()):
+                # An apostrophe with letters either side is prose inside nested
+                # JSX ("Don't ask again"), not the start of a string.
                 q = c
                 j += 1
                 while j < n and code[j] != q:

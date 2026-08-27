@@ -1,0 +1,560 @@
+# Release Checklist — Data Lineage Tracker
+
+Everything needed to take a change from an idea to running in production, in
+order, with the exact commands. Written so someone who has never released this
+app can do it correctly.
+
+**This file is the source of truth.** A Word copy exists for ticking off by hand,
+but if the two ever disagree, believe this one.
+
+> **Where it says "Ask Claude"**, the exact wording changes each release (version
+> numbers, commit messages, release notes). Ask rather than guess — the wrong
+> version number is awkward to undo once published.
+
+---
+
+## Environments
+
+| Environment | Where | Database | Purpose |
+|---|---|---|---|
+| **Local** | Docker Desktop on your Mac | PostgreSQL in a Docker volume | Where all work happens |
+| **Test** | *not built yet* | — | See "Test environment" below |
+| **Production** | Render (auto-deploys from `main`) | Render PostgreSQL | What users see |
+
+Production URL: `https://data-lineage-tracker-7fa6.onrender.com`
+Repository: `github.com/bsilberglitt-lgm/data-lineage-tracker`
+
+**Project folder** — every command below assumes you are in it:
+
+```bash
+cd ~/Desktop/Desktop\ Folder/Ben\'s\ Folder/Claude\ Cowork/data-lineage-tracker
+```
+
+*(A different machine will have a different path. Everything after this step is
+identical.)*
+
+---
+
+## Part 1 — Before you start
+
+- [ ] **Docker Desktop is running.** Look for the whale in the menu bar. If it
+  won't start, see *Troubleshooting → Docker won't start*.
+
+- [ ] **You have disk space.** Docker fills up quietly and then fails in
+  confusing ways.
+
+  ```bash
+  df -h /System/Volumes/Data
+  docker system df
+  ```
+
+  Under ~10 GB free is worth clearing before you begin:
+
+  ```bash
+  docker system prune -a
+  ```
+
+- [ ] **You have the latest code.**
+
+  ```bash
+  git pull
+  ```
+
+- [ ] **Start the app.**
+
+  ```bash
+  docker compose up
+  ```
+
+  Leave this running; it streams the logs. Wait for
+  `Data Lineage Tracker running at http://localhost:8765`.
+  To run it in the background instead, use `docker compose up -d` and watch
+  with `docker compose logs -f app`.
+
+- [ ] **Sign in** at <http://localhost:8765> and confirm the app works *before*
+  you change anything. Knowing it was healthy at the start saves a lot of
+  confusion later.
+
+---
+
+## Part 2 — While developing
+
+### Which command applies after which change
+
+This trips people up constantly. Only the third one needs a rebuild.
+
+| What you changed | What to run |
+|---|---|
+| `static/index.html` (frontend only) | Nothing — hard-refresh the browser: **Cmd + Shift + R** |
+| Any `.py` file, or a migration | `docker compose restart app` |
+| `requirements.txt` or `Dockerfile` | `docker compose up --build` |
+
+**Why:** the project folder is mounted into the container, so the browser
+re-reads `index.html` on every request. But Python loads `app.py` once at
+startup, and migrations only run at startup.
+
+> **Symptom of forgetting this:** the page looks new but the API returns
+> **405 Method Not Allowed**, or a JSON parse error like
+> `Unexpected token '<'`. That means the frontend is new and the backend is old.
+> Confirm with <http://localhost:8765/api/version> — it must show the version
+> you expect.
+
+- [ ] **After any frontend edit**, check it still compiles:
+
+  ```bash
+  python3 tools/check_jsx.py
+  ```
+
+  A JSX syntax error produces a completely blank page with the reason hidden
+  in the browser console, so this check is worth running often. It takes
+  about a second.
+
+---
+
+## Part 3 — Pre-release verification
+
+Run all of these. They are ordered cheapest-first.
+
+- [ ] **1. JSX structural check**
+
+  ```bash
+  python3 tools/check_jsx.py
+  ```
+
+- [ ] **2. Real Babel compile** (authoritative — this is the compiler the
+  browser uses)
+
+  ```bash
+  ./tools/check_jsx.sh
+  ```
+
+  First run pulls a Node image and takes a minute. Expect
+  `OK — JSX compiles cleanly`.
+
+- [ ] **3. Automated end-to-end test** against local
+
+  ```bash
+  python3 selftest.py --email <your email>
+  ```
+
+  It prompts for your password (typing is hidden — no shell-quoting
+  problems). Expect **all checks passed**. Any failure blocks the release.
+
+- [ ] **4. Manual click-through.** *This is the step that catches what the
+  others cannot.* Every bug that has reached production so far was invisible
+  to the automated tests. See **Smoke test** below.
+
+- [ ] **5. Clean up Docker** after using the Babel check, which pulls an image
+  you only need occasionally:
+
+  ```bash
+  docker system prune -a
+  ```
+
+---
+
+## Smoke test (run every release)
+
+Sign in as a **SuperAdmin** and confirm each:
+
+- [ ] Sign-in page loads and the **version number** in the bottom-right corner
+  is correct
+- [ ] Lineage diagram renders; dragging a node from its **border** moves it;
+  clicking the **middle** opens the details panel
+- [ ] Systems, Data Flows, Data Elements, Contributors tables all load, and
+  **column sorting** works
+- [ ] Open one record, **edit and save** a field, confirm it persists after a
+  refresh
+- [ ] Schema drill-down opens on a system with a mapped schema; a table and a
+  field both open their governance panels
+- [ ] **Resources**: add a link and upload a document on one record; confirm the
+  title is clickable, a document offers a download prompt, and a description shows
+- [ ] **Audit Log** loads (shows "Loading…" then rows — *not* "no history"),
+  filters work, CSV export downloads
+- [ ] **Users**, **Preferences**, and **Release Notes** screens all load
+- [ ] **System types**: the diagram key is alphabetical, its information button
+  explains each type, and a SuperAdmin can edit them in Preferences
+- [ ] With a details panel open, clicking the diagram closes it (and the first
+  click does nothing else)
+- [ ] **Required fields**, in all three places a record can be edited — the Add
+  modals, a table row, and the details flyout: clear a required field, save, and
+  confirm it is refused with a red highlight, a "this field is required"
+  message, and the form scrolled back to the top so the summary is visible
+- [ ] **Delete**: a data flow can be deleted from its details panel (red button,
+  "are you sure" prompt), and a system still used by a flow refuses to delete
+  with an explanation rather than an error
+- [ ] Both deletions appear in the **Audit Log**
+- [ ] Sign out, and confirm you are returned to the sign-in page
+
+Then, in a **private/incognito window**, sign in as a **Viewer** test account:
+
+- [ ] No Edit or Delete buttons anywhere
+- [ ] No Administration section in the sidebar
+- [ ] Dragging a diagram node does nothing
+
+Finally:
+
+- [ ] **Test whatever changed in this release specifically.** Ask Claude for a
+  list of what to exercise if you're unsure.
+
+---
+
+## Part 4 — Version number and release notes
+
+- [ ] **Decide the version number.** Semantic versioning, staying on `0.x` while
+  in beta:
+  - **MINOR** (`0.2.0` → `0.3.0`) — new features
+  - **PATCH** (`0.2.0` → `0.2.1`) — bug fixes only
+
+- [ ] **Ask Claude** to bump `version.py` and draft the release notes into
+  `SEED_RELEASES` in `app.py` **as a draft** (`is_published = 0`).
+
+- [ ] **Read the draft notes and edit them.** They are written for users, not
+  developers. This is your review step and it is deliberate — publishing is
+  what shows the notes to everyone.
+
+- [ ] **Approve the notes**, then ask Claude to set that release's
+  `is_published` to `1` in `SEED_RELEASES`. It then goes live automatically
+  when production starts up with the new code — no separate publishing step.
+
+- [ ] Restart and confirm the new version appears:
+
+  ```bash
+  docker compose restart app
+  ```
+
+  Then check <http://localhost:8765/api/version>, and open the release notes to
+  read them the way a user will see them.
+
+> **Important:** release notes live in the **database**, not the code, and the
+> two are kept in step by one rule:
+>
+> - While a release is a **draft**, the code owns it — the notes are re-seeded
+>   from `SEED_RELEASES` every time the app starts, in every environment. So
+>   **edit drafts in the code**; an edit typed into the app is overwritten at the
+>   next restart.
+> - Once a release is **published**, it is live and the code never touches it
+>   again. Editing published notes in the app is safe and permanent.
+
+---
+
+## Part 5 — Deploy to production
+
+- [ ] **Back up the production database.** Do this every time a release contains
+  a migration, and when in doubt assume it does.
+
+  Render dashboard → your **PostgreSQL instance** → **Recovery** →
+  **Create export** → download the `.dir.tar.gz` when it appears.
+
+  *(Paid Render Postgres also keeps continuous point-in-time recovery, but a
+  downloaded copy is the one that survives anything happening to the
+  account.)*
+
+- [ ] **Check production environment variables.** Render → your **web service**
+  → **Environment**:
+  - `DATABASE_URL` — present, pointing at the Internal Database URL
+  - `BOOTSTRAP_SUPERADMIN_EMAIL` — present
+  - `BOOTSTRAP_SUPERADMIN_RESET` — **must not be set.** If it is, every
+    deploy resets the SuperAdmin password. Delete it before deploying.
+
+- [ ] **Commit and push.** Ask Claude for the commit message, or write one
+  summarising the release.
+
+  ```bash
+  git add -A
+  git status                    # read this — nothing unexpected should be listed
+  git commit -m "<message>"
+  git push
+  ```
+
+  `.env`, `lineage.db`, `node_modules` and generated spreadsheets are
+  excluded by `.gitignore`. If `git status` shows any of them, stop and ask.
+
+- [ ] **Watch the deploy.** Render → web service → **Logs**. You are looking
+  for, in order:
+
+  ```
+  Running database migrations...
+  INFO  [alembic.runtime.migration] Running upgrade ...
+  Preferences: added N new setting(s)
+  Release notes: seeded N version(s)
+  Data Lineage Tracker running at http://localhost:10000
+  ```
+
+  A traceback here means the deploy failed — go to **Rollback**.
+
+---
+
+## Part 6 — Verify production
+
+- [ ] **Confirm the new code is live:** open
+  `https://<your-app>.onrender.com/api/version` and check the version
+  matches what you just released.
+
+- [ ] **Run the automated test against production:**
+
+  ```bash
+  python3 selftest.py https://<your-app>.onrender.com --email <your email>
+  ```
+
+  It creates a temporary Viewer account to prove roles are enforced, then
+  deactivates it. Expect all checks passed.
+
+- [ ] **Repeat the smoke test** against production. Migrations and real
+  PostgreSQL behave differently from local in ways tests don't always catch.
+
+- [ ] **Hard-refresh** the browser (**Cmd + Shift + R**) the first time. The app
+  sends no-cache headers, but a copy cached before those headers existed can
+  still linger.
+
+---
+
+## Part 7 — Confirm the release notes
+
+If you set `is_published = 1` before deploying (Part 4), the notes are already
+live — this part is confirmation, not work.
+
+- [ ] In **production**, open **Release Notes** from the sidebar and check the
+  new version is there, is **not** marked Draft, and reads correctly.
+- [ ] Sign out and back in to confirm the what's-new modal appears.
+
+Publishing is what triggers that modal for every user at their next sign-in.
+Users who missed several releases see them all, oldest first.
+
+If you deliberately left the release as a draft, publish it here instead:
+
+- [ ] Find the new version, marked **Draft**, and click **Publish**.
+
+  Don't edit a draft's wording in the app — drafts are re-seeded from the code
+  at every startup, so the change would be lost. Change it in `SEED_RELEASES`
+  and deploy. Once published, in-app edits are safe.
+
+---
+
+## Part 8 — After the release
+
+- [ ] Note anything that went wrong, and **ask Claude to update this checklist**
+  so the next release doesn't repeat it.
+- [ ] Stop the local stack if you're done: `docker compose down`
+  *(use `docker compose down -v` only if you want to erase local data and
+  start from seed).*
+
+---
+
+## Hotfix path (urgent production fix)
+
+For a broken production feature where waiting isn't reasonable. Skips depth, not
+safety.
+
+- [ ] Confirm the problem is real in production, and capture the error —
+  browser console, plus Render logs:
+
+  ```
+  Render → web service → Logs
+  ```
+
+- [ ] Fix locally, then run the **minimum** checks:
+
+  ```bash
+  python3 tools/check_jsx.py          # if the frontend changed
+  docker compose restart app          # if any .py changed
+  python3 selftest.py --email <your email>
+  ```
+
+- [ ] Click through **just the affected feature** plus sign-in.
+
+- [ ] Bump the **PATCH** version (`0.2.0` → `0.2.1`). Ask Claude.
+
+- [ ] **Back up the database anyway** if the fix touches a migration. Skipping
+  this is the one shortcut that can't be undone.
+
+- [ ] Commit, push, verify `/api/version`, and test the fixed feature in
+  production.
+
+- [ ] Write the release notes **afterwards** rather than before, and publish
+  when convenient.
+
+---
+
+## Rollback — when a deploy goes wrong
+
+Work down this list; the first that applies is usually enough.
+
+### The app is broken but the data is fine
+
+Render → web service → **Deploys** → find the last good deploy →
+**Rollback to this deploy**. This reverts code only, in a couple of minutes.
+
+> **Careful:** if the bad deploy ran a migration, rolling back the code does
+> **not** roll back the database. Old code against a new schema usually still
+> works (columns are added, rarely removed), but if it doesn't, restore the
+> database as well.
+
+### The data is wrong
+
+Render → **PostgreSQL instance** → **Recovery**:
+
+- **Point-in-time recovery** — restore to a moment before the deploy. Creates a
+  *new* database instance, so you can inspect it before switching over. Then
+  update `DATABASE_URL` on the web service to point at it.
+- **Restore from your export** — the `.dir.tar.gz` you downloaded in Part 5.
+
+### A schema upload went wrong
+
+No database restore needed. In the app: open the system → **Database Schema** →
+**Previous versions** → **Revert to this**. The current schema is saved first,
+so the revert is itself reversible.
+
+### A single field was changed by mistake
+
+In the app: **Audit Log** → find the entry → **Revert**. Restores the values from
+before that change, and records the revert as a new entry. Only works for
+updates, and it warns you if the field has changed since.
+
+### Nothing else worked
+
+The downloaded export plus the code in git is always enough to rebuild from
+scratch. Ask Claude to walk through it.
+
+---
+
+## Test environment *(not built yet)*
+
+When a test environment is added, the flow becomes:
+**local → test → production**, with Part 5 and Part 6 run twice.
+
+Steps to fill in when it exists:
+
+- [ ] How test gets deployed (branch? manual? auto?)
+- [ ] Test environment URL
+- [ ] Whether it uses a copy of production data or seed data
+- [ ] Who signs off before promoting to production
+
+Ask Claude to update this section — and the Word copy — when the environment is
+set up.
+
+---
+
+## Appendix A — One-time setup on a new machine
+
+Only needed once per computer.
+
+- [ ] **Git identity** — without this, `git commit` fails with
+  *"Author identity unknown"*:
+
+  ```bash
+  git config --global user.name "Your Name"
+  git config --global user.email "you@example.gov"
+  ```
+
+- [ ] **Docker Desktop** — install from
+  [docker.com](https://www.docker.com/products/docker-desktop/), choosing
+  the build for your chip ( → About This Mac).
+
+- [ ] **Cap Docker's disk usage** — Docker Desktop → **Settings** →
+  **Resources** → set the disk image size to around **10 GB**. This project
+  uses 1–2 GB; the cap stops runaway growth filling your drive.
+
+- [ ] **Python certificates** — needed for `selftest.py` to reach an HTTPS URL,
+  otherwise it fails with `CERTIFICATE_VERIFY_FAILED`:
+
+  ```bash
+  /Applications/Python\ 3.14/Install\ Certificates.command
+  ```
+
+  *(Adjust the version to the Python you have.)*
+
+- [ ] **Create `.env`** in the project folder (it is gitignored, never
+  committed):
+
+  ```
+  BOOTSTRAP_SUPERADMIN_EMAIL=you@example.gov
+  BOOTSTRAP_SUPERADMIN_FIRST_NAME=Your
+  BOOTSTRAP_SUPERADMIN_LAST_NAME=Name
+  BOOTSTRAP_SUPERADMIN_PASSWORD=
+  ```
+
+  Leaving the password blank makes the app generate a strong one and print
+  it to the logs once on first run.
+
+- [ ] **First run**:
+
+  ```bash
+  docker compose up --build
+  ```
+
+  Watch for the `Initial SuperAdmin created` banner and copy the password.
+  If it scrolls past:
+
+  ```bash
+  docker compose logs app | grep -A6 "Initial SuperAdmin"
+  ```
+
+---
+
+## Appendix B — Troubleshooting
+
+**Blank page in the browser**
+JSX failed to compile. Run `python3 tools/check_jsx.py`, then
+`./tools/check_jsx.sh`. Also check the browser console (**Cmd + Option + J**).
+If it mentions `import`, the Babel version pin in `static/index.html` has been
+disturbed — it must stay pinned.
+
+**405 Method Not Allowed, or `Unexpected token '<'`**
+The backend is running old code. `docker compose restart app`, then confirm at
+`/api/version`.
+
+**`docker compose restart app` prints nothing**
+That's normal — it doesn't stream logs. Use `docker compose logs --tail=20 app`,
+or `docker compose logs -f app` to follow.
+
+**`CERTIFICATE_VERIFY_FAILED` running selftest against HTTPS**
+Run the Python certificate installer (Appendix A). As a stopgap, add
+`--insecure` to the selftest command.
+
+**`fatal: Author identity unknown`**
+Set your git identity (Appendix A).
+
+**`Unable to create '.git/index.lock': File exists`**
+A stale lock from an interrupted git command. With no git process running:
+
+```bash
+rm -f .git/index.lock
+```
+
+**Terminal shows `>` and won't run your command**
+The shell is waiting for you to finish a multi-line command — usually a stray
+trailing `\` or an unclosed quote. Press **Ctrl + C** and retype.
+
+**Docker won't start**
+1. Check space: `df -h /System/Volumes/Data`
+2. Check Docker's own usage: `du -sh ~/Library/Containers/com.docker.docker`
+3. Force-quit stuck processes: `sudo pkill -9 -i -f docker`, then
+   `open -a Docker`
+4. Still stuck: `sudo rm -rf /Applications/Docker.app` and reinstall. Nothing in
+   this project depends on Docker's internal state, so a reinstall is safe — it
+   only costs the download.
+
+**Local database is in a strange state**
+Erase it and start from seed. Local data is disposable; production is unaffected:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+---
+
+## What each verification actually proves
+
+Worth understanding, because it explains why the manual step can't be skipped.
+
+| Check | Proves | Does **not** prove |
+|---|---|---|
+| `tools/check_jsx.py` | The JSX is structurally sound | That it compiles or renders |
+| `tools/check_jsx.sh` | Babel compiles the page | That it renders correctly |
+| `selftest.py` | API, permissions, audit trail all work | That any screen displays properly |
+| Click-through | The app works for a person | Nothing beyond what you clicked |
+
+Every bug that has reached production in this project got past the first three
+and was caught by the fourth.
