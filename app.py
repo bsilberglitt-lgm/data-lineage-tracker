@@ -34,6 +34,20 @@ from version import VERSION  # noqa: E402
 # provision. See CLAUDE.md: this moves to S3 when object storage is set up.
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
+# Colours a SuperAdmin may choose for a system type. Every combination has been
+# checked against WCAG 2.1 AA — text on fill exceeds 4.5:1 and the border
+# exceeds 3:1 against the canvas. See ACCESSIBILITY.md for the measurements.
+TYPE_PALETTE = {
+    "blue":    {"fill": "#dce9fb", "stroke": "#2f6fd0", "text": "#123a6b", "label": "Blue"},
+    "green":   {"fill": "#c9e6d2", "stroke": "#116039", "text": "#0d3d22", "label": "Green"},
+    "purple":  {"fill": "#e8daef", "stroke": "#7d3c98", "text": "#5b2c6f", "label": "Purple"},
+    "orange":  {"fill": "#fce5cd", "stroke": "#b35c00", "text": "#7a3e00", "label": "Orange"},
+    "teal":    {"fill": "#d3efee", "stroke": "#0f6f6a", "text": "#0a4a47", "label": "Teal"},
+    "slate":   {"fill": "#e2e6ea", "stroke": "#4a5764", "text": "#333f4a", "label": "Slate"},
+    "magenta": {"fill": "#fadcec", "stroke": "#a3216b", "text": "#6e1748", "label": "Magenta"},
+    "olive":   {"fill": "#e6ecc9", "stroke": "#5f6d18", "text": "#414a10", "label": "Olive"},
+}
+
 # Files a browser can display inline. Everything else is offered as a download
 # only — browsers cannot render Office formats without a conversion service.
 INLINE_CONTENT_TYPES = {
@@ -76,6 +90,35 @@ def run_migrations():
     cfg = Config(str(PROJECT_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(PROJECT_DIR / "alembic"))
     command.upgrade(cfg, "head")
+
+# Fields the record cannot do without. The database marks these NOT NULL, but an
+# empty string satisfies that constraint — so blanking a name in the UI would
+# save successfully and leave an unnamed record behind. These are checked here.
+REQUIRED_FIELDS = {
+    "system": [("name", "Name"), ("system_type", "Type"), ("managed_by", "Managed By")],
+    "data_flow": [("name", "Name"), ("source_system_id", "Source System"),
+                  ("destination_system_id", "Destination System"),
+                  ("frequency", "Frequency"), ("transfer_method", "Transfer Method"),
+                  ("format", "Format")],
+    "data_element": [("name", "Name"), ("definition", "Definition")],
+    "contributor": [("name", "Name"), ("organization_unit", "Organization Unit")],
+}
+
+
+def missing_required(entity, incoming, existing=None):
+    """Return the labels of required fields that would end up blank.
+
+    ``incoming`` is the submitted payload and ``existing`` the current row, so a
+    field simply left out of a partial update keeps its value.
+    """
+    existing = existing or {}
+    gaps = []
+    for key, label in REQUIRED_FIELDS.get(entity, []):
+        value = incoming.get(key, existing.get(key))
+        if value is None or str(value).strip() == "":
+            gaps.append(label)
+    return gaps
+
 
 def row_to_dict(row):
     return dict(row) if row else None
@@ -177,7 +220,7 @@ def seed_db():
          "SIF 3.x with state extensions", "District staff with SIS access", "FERPA restrictions apply"),
         ("SYS-002", "CONNECT Integration Platform",
          "SIF-based integration middleware that receives data from district SIS platforms and routes it to the state ODS. Performs initial validation and SIF XML processing.",
-         "ETL Process", "SIF Association / State-developed", "SIF Agent / Middleware", "Production",
+         "Data Store", "SIF Association / State-developed", "SIF Agent / Middleware", "Production",
          "Data Management Division", "CON-001", "Department of Education", 1, 1, "Active",
          "Uses SIF 3.x data model with state-specific extensions", 400, 250,
          "Confidential", "Role-based access", "AES-256", "TLS 1.2", "2025-06-15", 1,
@@ -648,6 +691,31 @@ BACKFILL_TABLES = [
 
 
 # ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+# A small general-purpose alert mechanism. The first use is telling someone
+# their change was reverted, but the shape is deliberately generic so later
+# alerts can reuse it without another table.
+
+def notify_user(conn, user_id, kind, title, body=None, detail=None,
+                entity_type=None, entity_id=None, related_event_id=None,
+                from_email=None):
+    """Queue an in-app alert. Silently does nothing without a recipient."""
+    if not user_id:
+        return None
+    row = conn.execute(
+        """INSERT INTO notification
+             (user_id, kind, title, body, detail_json, entity_type, entity_id,
+              related_event_id, created_at, created_by_email)
+           VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING notification_id""",
+        (user_id, kind, title, body,
+         json.dumps(detail, default=str) if detail else None,
+         entity_type, str(entity_id) if entity_id is not None else None,
+         related_event_id, iso(utcnow()), from_email)).fetchone()
+    return row["notification_id"]
+
+
+# ---------------------------------------------------------------------------
 # Release notes
 # ---------------------------------------------------------------------------
 # Notes for versions that shipped before release tracking existed are seeded
@@ -681,7 +749,7 @@ SEED_RELEASES = [
 * Preferences screen for global settings
 * Renamed *Stakeholders* to **Contributors**
 """),
-    (VERSION, "Releases, resources, and manual entry", None, 0, 300, """\
+    ("0.2.0", "Releases, resources, and manual entry", None, 1, 300, """\
 ## What's new in this release
 
 * **Version numbering and release notes** — the version appears in the corner
@@ -698,7 +766,61 @@ SEED_RELEASES = [
 * Contributors now show by name rather than by ID
 * Sortable tables, and a fix for the audit log appearing empty while loading
 """),
+    (VERSION, "Resources, system types, and alerts", None, 1, 400, """\
+## What's new in this release
+
+**Resources are easier to read**
+
+* Documents and links now show as a clickable title rather than a long file name
+  or web address. Clicking a link opens it in a new tab; clicking a document
+  offers to download it, and you can turn that prompt off.
+* Each resource can have a short description.
+
+**Improvements to System Types**
+
+* *ETL Process* and *Internal* have been retired. CONNECT is now a Data Store.
+* A SuperAdmin can edit the list of system types, their descriptions, and their
+  colours in Preferences.
+* The diagram key has an information button explaining what each type means.
+* Choosing a type is now required when creating a system.
+
+**Diagram**
+
+* Sources are blue and destinations are green. Every colour has been checked
+  for contrast against accessibility standards.
+* Click a data flow's number to open its details — an easier target than the line.
+* With a details panel open, clicking the diagram closes it.
+* The PII tag has been removed from the diagram; it still appears in the details
+  panel and the catalogs.
+
+**Elsewhere**
+
+* Forms now say which required fields are missing instead of quietly refusing
+  to save, and scroll back to the top so you can see what needs attention.
+  This applies everywhere a record can be edited — the Add windows, the tables,
+  and the details panel.
+* Systems and data flows can be deleted from the details panel, after a
+  confirmation. A system still used by a data flow is kept until the flow is
+  removed first.
+* Editors can upload a database schema; reverting one remains with SuperAdmins.
+* Uploading a schema refreshes the diagram straight away.
+* Ownership fields and the "Other" timing note can be filled in when a data flow
+  is first created.
+* System dropdowns are sorted by name.
+* If someone reverts a change you made, you are told at your next sign-in.
+"""),
 ]
+
+
+def get_system_types(conn=None):
+    """The configured system types, in display order."""
+    own = conn is None
+    conn = conn or get_db()
+    rows = conn.execute(
+        "SELECT * FROM system_type ORDER BY sort_order, type_name").fetchall()
+    if own:
+        conn.close()
+    return rows_to_list(rows)
 
 
 def ensure_releases(conn=None):
@@ -706,11 +828,26 @@ def ensure_releases(conn=None):
     own = conn is None
     conn = conn or get_db()
     now = iso(utcnow())
-    existing = {r["version"] for r in
-                conn.execute("SELECT version FROM app_release").fetchall()}
+    existing = {r["version"]: r["is_published"] for r in
+                conn.execute(
+                    "SELECT version, is_published FROM app_release").fetchall()}
     added = 0
+    refreshed = 0
     for ver, title, released, published, sort_key, notes in SEED_RELEASES:
         if ver in existing:
+            # A release that is still a draft is owned by the code: re-seed it so
+            # wording changes reach every environment, and so approving a draft
+            # here is what publishes it. A release that has already been
+            # published is live and is never overwritten — an administrator may
+            # have edited it in the app, and those edits must survive a restart.
+            if not existing[ver]:
+                conn.execute(
+                    """UPDATE app_release
+                          SET title=?, notes=?, is_published=?, sort_key=?,
+                              updated_date=?
+                        WHERE version=? AND is_published=0""",
+                    (title, notes, published, sort_key, now, ver))
+                refreshed += 1
             continue
         conn.execute(
             """INSERT INTO app_release
@@ -733,6 +870,9 @@ def ensure_releases(conn=None):
         conn.close()
     if added:
         print(f"Release notes: seeded {added} version(s)", flush=True)
+    if refreshed:
+        print(f"Release notes: refreshed {refreshed} draft(s) from the code",
+              flush=True)
 
 
 def reset_superadmin_if_requested(conn):
@@ -1138,6 +1278,16 @@ if HAS_TORNADO:
             else:
                 num = 1
             sid = f"SYS-{num:03d}"
+            # The type is required and must be one that exists; there is no
+            # default, so a missing type is a client error rather than a guess.
+            stype = (data.get('system_type') or '').strip()
+            valid = {t["type_name"] for t in get_system_types(conn)}
+            if not stype:
+                conn.close()
+                return self.fail(400, "A system type is required.")
+            if stype not in valid:
+                conn.close()
+                return self.fail(400, f"'{stype}' is not a known system type.")
             now = datetime.datetime.now().isoformat()
             conn.execute("""INSERT INTO system (system_id,name,description,system_type,vendor,technology,
                 environment,managed_by,owner_id,organization,contains_pii,ferpa_protected,status,notes,
@@ -1150,7 +1300,7 @@ if HAS_TORNADO:
                 entry_type,entered_by,entry_validation,entry_error_correction,target_system_id,
                 created_date,updated_date)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (sid, data.get('name',''), data.get('description',''), data.get('system_type','Internal'),
+                (sid, data.get('name',''), data.get('description',''), stype,
                  data.get('vendor',''), data.get('technology',''), data.get('environment','Production'),
                  data.get('managed_by',''), data.get('owner_id'), data.get('organization',''),
                  data.get('contains_pii',0), data.get('ferpa_protected',0), data.get('status','Active'),
@@ -1213,6 +1363,11 @@ if HAS_TORNADO:
                 conn.close()
                 return self.fail(404, "Not found")
             before = dict(before)
+            gaps = missing_required("system", data, before)
+            if gaps:
+                conn.close()
+                return self.fail(400, f"These fields are required: {', '.join(gaps)}.",
+                                 missing=gaps)
             fields = []
             vals = []
             for key in self.SYSTEM_FIELDS:
@@ -1254,7 +1409,13 @@ if HAS_TORNADO:
                                       f"Delete or repoint those flows first.")
             conn.execute("DELETE FROM schema_column WHERE table_id IN "
                          "(SELECT table_id FROM schema_table WHERE system_id=?)", (sid,))
+            conn.execute("DELETE FROM schema_snapshot WHERE system_id=?", (sid,))
             conn.execute("DELETE FROM schema_table WHERE system_id=?", (sid,))
+            conn.execute("DELETE FROM resource_version WHERE resource_id IN "
+                         "(SELECT resource_id FROM resource "
+                         " WHERE entity_type='system' AND entity_id=?)", (sid,))
+            conn.execute("DELETE FROM resource WHERE entity_type='system' AND entity_id=?",
+                         (sid,))
             conn.execute("DELETE FROM system WHERE system_id=?", (sid,))
             self.audit_delete(conn, "system", sid, dict(before))
             conn.commit()
@@ -1354,6 +1515,11 @@ if HAS_TORNADO:
                 conn.close()
                 return self.fail(404, "Not found")
             before = dict(before)
+            gaps = missing_required("data_flow", data, before)
+            if gaps:
+                conn.close()
+                return self.fail(400, f"These fields are required: {', '.join(gaps)}.",
+                                 missing=gaps)
             fields = []
             vals = []
             for key in self.FLOW_FIELDS:
@@ -1388,6 +1554,28 @@ if HAS_TORNADO:
             else:
                 self.set_status(404)
                 self.write_json({"error": "Not found"})
+
+        def delete(self, fid):
+            conn = get_db()
+            try:
+                before = conn.execute("SELECT * FROM data_flow WHERE flow_id=?",
+                                      (fid,)).fetchone()
+                if not before:
+                    return self.fail(404, "Not found")
+                # Its links to data elements and any attached resources go with
+                # it; nothing else references a flow.
+                conn.execute("DELETE FROM flow_element WHERE flow_id=?", (fid,))
+                conn.execute("DELETE FROM resource_version WHERE resource_id IN "
+                             "(SELECT resource_id FROM resource "
+                             " WHERE entity_type='data_flow' AND entity_id=?)", (fid,))
+                conn.execute("DELETE FROM resource WHERE entity_type='data_flow' "
+                             "AND entity_id=?", (fid,))
+                conn.execute("DELETE FROM data_flow WHERE flow_id=?", (fid,))
+                self.audit_delete(conn, "data_flow", fid, dict(before))
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"deleted": fid})
 
     # -- Data Elements --
     class ElementsHandler(BaseAPIHandler):
@@ -1428,6 +1616,11 @@ if HAS_TORNADO:
                 conn.close()
                 return self.fail(404, "Not found")
             before = dict(before)
+            gaps = missing_required("data_element", data, before)
+            if gaps:
+                conn.close()
+                return self.fail(400, f"These fields are required: {', '.join(gaps)}.",
+                                 missing=gaps)
             fields = []
             vals = []
             for key in self.ELEMENT_FIELDS:
@@ -1460,6 +1653,8 @@ if HAS_TORNADO:
                 self.write_json({"error": "Not found"})
 
     # -- Contributors (formerly "stakeholders") --
+    MAX_DESCRIPTION = 500
+
     CONTRIBUTOR_FIELDS = (
         'name', 'title', 'organization_unit', 'email', 'phone', 'role_type',
         'notes', 'governance_role', 'governance_responsibilities',
@@ -1529,6 +1724,10 @@ if HAS_TORNADO:
                 if not before:
                     return self.fail(404, "Not found")
                 before = dict(before)
+                gaps = missing_required("contributor", data, before)
+                if gaps:
+                    return self.fail(400, f"These fields are required: "
+                                          f"{', '.join(gaps)}.", missing=gaps)
                 fields, vals = [], []
                 for key in CONTRIBUTOR_FIELDS:
                     if key in data:
@@ -2569,7 +2768,8 @@ if HAS_TORNADO:
         """Resources with their current version, never selecting the file bytes."""
         return conn.execute(
             """SELECT r.resource_id, r.entity_type, r.entity_id, r.label, r.kind,
-                      r.label_locked, r.sort_order, r.created_date, r.updated_date,
+                      r.label_locked, r.sort_order, r.description,
+                      r.created_date, r.updated_date,
                       v.version_id, v.version_no, v.url, v.filename, v.content_type,
                       v.size_bytes, v.uploaded_at, v.uploaded_by, v.note,
                       u.email AS uploaded_by_email,
@@ -2608,13 +2808,18 @@ if HAS_TORNADO:
             uploaded = self.request.files.get("file")
             if uploaded:
                 label = (self.get_body_argument("label", "") or "").strip()
+                description = (self.get_body_argument("description", "") or "").strip()
                 kind = "file"
             else:
                 data = self.get_json_body()
                 label = (data.get("label") or "").strip()
+                description = (data.get("description") or "").strip()
                 kind = data.get("kind") or "link"
             if not label:
                 return self.fail(400, "A label is required.")
+            if len(description) > MAX_DESCRIPTION:
+                return self.fail(400, f"The description must be "
+                                      f"{MAX_DESCRIPTION} characters or fewer.")
 
             conn = get_db()
             try:
@@ -2628,10 +2833,11 @@ if HAS_TORNADO:
                     (entity_type, entity_id)).fetchone()
                 created = conn.execute(
                     """INSERT INTO resource
-                         (entity_type, entity_id, label, kind, sort_order,
+                         (entity_type, entity_id, label, kind, sort_order, description,
                           created_date, updated_date, created_by, updated_by)
-                       VALUES (?,?,?,?,?,?,?,?,?) RETURNING resource_id""",
+                       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING resource_id""",
                     (entity_type, entity_id, label, kind, int(top["m"]) + 10,
+                     (description or None)[:MAX_DESCRIPTION] if description else None,
                      now, now, self.current_user["user_id"],
                      self.current_user["user_id"])).fetchone()
                 rid = created["resource_id"]
@@ -2733,6 +2939,13 @@ if HAS_TORNADO:
                     return self.fail(404, "Not found")
                 before = dict(r)
                 fields, vals = [], []
+                if "description" in data:
+                    desc = (data["description"] or "").strip()
+                    if len(desc) > MAX_DESCRIPTION:
+                        return self.fail(400, f"The description must be "
+                                              f"{MAX_DESCRIPTION} characters or fewer.")
+                    fields.append("description=?")
+                    vals.append(desc or None)
                 if "label" in data:
                     if r["label_locked"]:
                         return self.fail(400, "This resource's label is fixed by the "
@@ -2762,7 +2975,7 @@ if HAS_TORNADO:
                          self.current_user["user_id"]))
                 after = dict(self._load(conn, rid))
                 self.audit_update(conn, f"{r['entity_type']}_resource", rid, before, after,
-                                  fields=("label",))
+                                  fields=("label", "description"))
                 conn.commit()
                 rows = resource_rows(conn, r["entity_type"], r["entity_id"])
             finally:
@@ -2905,8 +3118,8 @@ if HAS_TORNADO:
         reverted. One audit event summarises the change rather than thousands of
         per-column rows.
         """
-        READ_ROLE = permissions.ADMINISTRATOR
-        WRITE_ROLE = permissions.ADMINISTRATOR
+        READ_ROLE = permissions.EDITOR
+        WRITE_ROLE = permissions.EDITOR
 
         def post(self, system_id):
             uploaded = self.request.files.get("file")
@@ -2989,7 +3202,7 @@ if HAS_TORNADO:
                              "message": message})
 
     class SchemaSnapshotsHandler(BaseAPIHandler):
-        READ_ROLE = permissions.ADMINISTRATOR
+        READ_ROLE = permissions.EDITOR
 
         def get(self, system_id):
             conn = get_db()
@@ -3004,8 +3217,10 @@ if HAS_TORNADO:
             self.write_json(rows_to_list(rows))
 
     class SchemaRevertHandler(BaseAPIHandler):
-        READ_ROLE = permissions.ADMINISTRATOR
-        WRITE_ROLE = permissions.ADMINISTRATOR
+        # Reverting discards work, so it stays with SuperAdmins even though
+        # uploading is now open to Editors.
+        READ_ROLE = permissions.EDITOR
+        WRITE_ROLE = permissions.SUPERADMIN
 
         def post(self, snapshot_id):
             conn = get_db()
@@ -3036,6 +3251,24 @@ if HAS_TORNADO:
                 message = (f"Schema reverted to the snapshot taken "
                            f"{str(snap['created_at'])[:16].replace('T', ' ')} "
                            f"({len(tables)} tables, {len(columns)} columns)")
+
+                # Tell whoever uploaded the schema being undone, unless that is
+                # the person doing the reverting.
+                undone = conn.execute(
+                    "SELECT created_by, source_filename FROM schema_snapshot "
+                    "WHERE system_id=? AND snapshot_id > ? ORDER BY snapshot_id LIMIT 1",
+                    (system_id, snapshot_id)).fetchone()
+                uploader = (undone or {}).get("created_by")
+                if uploader and uploader != self.current_user["user_id"]:
+                    sysname = conn.execute("SELECT name FROM system WHERE system_id=?",
+                                           (system_id,)).fetchone()["name"]
+                    notify_user(
+                        conn, uploader, "schema_reverted",
+                        f"A schema you uploaded was reverted",
+                        body=(f"The schema you uploaded for {sysname} has been "
+                              f"rolled back to an earlier version."),
+                        entity_type="system", entity_id=system_id,
+                        from_email=self.current_user["email"])
                 audit.record_event(conn, self.current_user, audit.UPDATE,
                                    "system_schema", system_id, summary=message,
                                    ip_address=self.client_ip(), user_agent=self.user_agent())
@@ -3141,11 +3374,205 @@ if HAS_TORNADO:
                              f"{str(event['occurred_at'])[:16].replace('T', ' ')}"
                              + (" (discarding later changes)" if conflicts else "")),
                     ip_address=self.client_ip(), user_agent=self.user_agent())
+                # Let the original author know their change was undone. Skipped
+                # when someone reverts their own change.
+                original_author = event["actor_user_id"]
+                if original_author and original_author != self.current_user["user_id"]:
+                    fields = [{"field": c["field_name"],
+                               "reverted_from": c["new_value"],
+                               "restored_to": c["old_value"]} for c in changes]
+                    notify_user(
+                        conn, original_author, "change_reverted",
+                        "A change you made was reverted",
+                        body=(f"Your change to {event['entity_type']} "
+                              f"{event['entity_id']} on "
+                              f"{str(event['occurred_at'])[:16].replace('T', ' ')} "
+                              f"was reverted by {self.current_user['email']}."),
+                        detail={"fields": fields},
+                        entity_type=event["entity_type"],
+                        entity_id=event["entity_id"],
+                        related_event_id=int(event_id),
+                        from_email=self.current_user["email"])
                 conn.commit()
             finally:
                 conn.close()
             self.write_json({"ok": True, "reverted_event": int(event_id),
                              "discarded_conflicts": conflicts})
+
+    # -----------------------------------------------------------------------
+    # System types (everyone reads; SuperAdmin edits)
+    # -----------------------------------------------------------------------
+    class SystemTypesHandler(BaseAPIHandler):
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def get(self):
+            conn = get_db()
+            try:
+                types = get_system_types(conn)
+                counts = {r["system_type"]: r["n"] for r in conn.execute(
+                    "SELECT system_type, COUNT(*) AS n FROM system "
+                    "GROUP BY system_type").fetchall()}
+            finally:
+                conn.close()
+            for t in types:
+                t["in_use"] = counts.get(t["type_name"], 0)
+            self.write_json({"types": types, "palette": TYPE_PALETTE})
+
+        def post(self):
+            data = self.get_json_body()
+            name = (data.get("type_name") or "").strip()
+            if not name:
+                return self.fail(400, "A type name is required.")
+            swatch = TYPE_PALETTE.get(data.get("palette") or "slate",
+                                      TYPE_PALETTE["slate"])
+            conn = get_db()
+            try:
+                if conn.execute("SELECT 1 FROM system_type WHERE type_name=?",
+                                (name,)).fetchone():
+                    return self.fail(409, f"A type called '{name}' already exists.")
+                top = conn.execute(
+                    "SELECT COALESCE(MAX(sort_order),0) AS m FROM system_type").fetchone()
+                now = iso(utcnow())
+                conn.execute(
+                    """INSERT INTO system_type
+                         (type_name, description, fill_color, stroke_color,
+                          text_color, sort_order, created_date, updated_date, updated_by)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (name, data.get("description"), swatch["fill"], swatch["stroke"],
+                     swatch["text"], int(top["m"]) + 10, now, now,
+                     self.current_user["user_id"]))
+                self.audit_create(conn, "system_type", name,
+                                  {"type_name": name,
+                                   "description": data.get("description")})
+                conn.commit()
+                types = get_system_types(conn)
+            finally:
+                conn.close()
+            self.set_status(201)
+            self.write_json({"types": types, "palette": TYPE_PALETTE})
+
+    class SystemTypeHandler(BaseAPIHandler):
+        READ_ROLE = permissions.SUPERADMIN
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def put(self, type_name):
+            data = self.get_json_body()
+            conn = get_db()
+            try:
+                before = conn.execute("SELECT * FROM system_type WHERE type_name=?",
+                                      (type_name,)).fetchone()
+                if not before:
+                    return self.fail(404, "Not found")
+                before = dict(before)
+                new_name = (data.get("type_name") or type_name).strip()
+
+                fields, vals = [], []
+                if "description" in data:
+                    fields.append("description=?")
+                    vals.append(data["description"])
+                if data.get("palette") in TYPE_PALETTE:
+                    sw = TYPE_PALETTE[data["palette"]]
+                    fields += ["fill_color=?", "stroke_color=?", "text_color=?"]
+                    vals += [sw["fill"], sw["stroke"], sw["text"]]
+                if fields:
+                    fields += ["updated_date=?", "updated_by=?"]
+                    vals += [iso(utcnow()), self.current_user["user_id"], type_name]
+                    conn.execute(
+                        f"UPDATE system_type SET {','.join(fields)} WHERE type_name=?",
+                        vals)
+
+                renamed = 0
+                if new_name != type_name:
+                    if conn.execute("SELECT 1 FROM system_type WHERE type_name=?",
+                                    (new_name,)).fetchone():
+                        return self.fail(409, f"A type called '{new_name}' already exists.")
+                    # Systems store the type by name, so a rename has to carry
+                    # across to every system using it or they would be orphaned.
+                    renamed = conn.execute(
+                        "SELECT COUNT(*) FROM system WHERE system_type=?",
+                        (type_name,)).fetchone()[0]
+                    conn.execute("UPDATE system_type SET type_name=? WHERE type_name=?",
+                                 (new_name, type_name))
+                    conn.execute("UPDATE system SET system_type=? WHERE system_type=?",
+                                 (new_name, type_name))
+
+                after = dict(conn.execute("SELECT * FROM system_type WHERE type_name=?",
+                                          (new_name,)).fetchone())
+                self.audit_update(
+                    conn, "system_type", new_name, before, after,
+                    fields=("type_name", "description", "fill_color", "stroke_color"))
+                if renamed:
+                    audit.record_event(
+                        conn, self.current_user, audit.UPDATE, "system", None,
+                        summary=(f"System type renamed '{type_name}' -> '{new_name}'; "
+                                 f"{renamed} system(s) updated"),
+                        ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                types = get_system_types(conn)
+            finally:
+                conn.close()
+            self.write_json({"types": types, "palette": TYPE_PALETTE,
+                             "renamed_systems": renamed})
+
+        def delete(self, type_name):
+            conn = get_db()
+            try:
+                before = conn.execute("SELECT * FROM system_type WHERE type_name=?",
+                                      (type_name,)).fetchone()
+                if not before:
+                    return self.fail(404, "Not found")
+                in_use = conn.execute("SELECT COUNT(*) FROM system WHERE system_type=?",
+                                      (type_name,)).fetchone()[0]
+                if in_use:
+                    return self.fail(
+                        409, f"{in_use} system(s) use the '{type_name}' type. "
+                             f"Change them to another type first.")
+                if conn.execute("SELECT COUNT(*) FROM system_type").fetchone()[0] <= 1:
+                    return self.fail(409, "At least one system type must remain.")
+                conn.execute("DELETE FROM system_type WHERE type_name=?", (type_name,))
+                self.audit_delete(conn, "system_type", type_name, dict(before))
+                conn.commit()
+                types = get_system_types(conn)
+            finally:
+                conn.close()
+            self.write_json({"types": types, "palette": TYPE_PALETTE})
+
+    # -----------------------------------------------------------------------
+    # Notifications
+    # -----------------------------------------------------------------------
+    class NotificationsHandler(BaseAPIHandler):
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.VIEWER
+        allow_when_password_expired = True
+
+        def get(self):
+            conn = get_db()
+            rows = conn.execute(
+                "SELECT * FROM notification WHERE user_id=? AND seen_at IS NULL "
+                "ORDER BY created_at ASC, notification_id ASC",
+                (self.current_user["user_id"],)).fetchall()
+            conn.close()
+            out = []
+            for r in rows_to_list(rows):
+                if r.get("detail_json"):
+                    try:
+                        r["detail"] = json.loads(r["detail_json"])
+                    except ValueError:
+                        r["detail"] = None
+                    r.pop("detail_json", None)
+                out.append(r)
+            self.write_json({"unseen": out})
+
+        def post(self):
+            """Mark everything currently unseen as seen ("Got it")."""
+            conn = get_db()
+            conn.execute("UPDATE notification SET seen_at=? "
+                         "WHERE user_id=? AND seen_at IS NULL",
+                         (iso(utcnow()), self.current_user["user_id"]))
+            conn.commit()
+            conn.close()
+            self.write_json({"ok": True})
 
     class AppStaticFileHandler(tornado.web.StaticFileHandler):
         """Serve static files, but never let the browser cache index.html.
@@ -3176,6 +3603,9 @@ if HAS_TORNADO:
             (r"/api/sessions", UserSessionsHandler),
             (r"/api/sessions/([^/]+)", UserSessionsHandler),
             (r"/api/preferences", PreferencesHandler),
+            (r"/api/system-types", SystemTypesHandler),
+            (r"/api/system-types/([^/]+)", SystemTypeHandler),
+            (r"/api/notifications", NotificationsHandler),
             (r"/api/audit/export", AuditExportHandler),
             (r"/api/audit/([0-9]+)/revert", AuditRevertHandler),
             (r"/api/audit", AuditHandler),
