@@ -221,6 +221,9 @@ Sign in as a **SuperAdmin** and confirm each:
     there — then change a field's governance and confirm **Current
     Architecture's schema is unchanged**
   - **Then switch back to Current Architecture and confirm nothing changed**
+- [ ] **Help**: the **?** beside the version number opens the panel; search
+  finds an article; opening it on the diagram and inside a scenario suggests
+  different articles first; a Viewer does not see the administration article
 - [ ] Sign out, and confirm you are returned to the sign-in page
 
 Then, in a **private/incognito window**, sign in as a **Viewer** test account:

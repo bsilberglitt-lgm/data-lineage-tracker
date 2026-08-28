@@ -28,6 +28,7 @@ import permissions  # noqa: E402
 import audit  # noqa: E402
 import schema_import  # noqa: E402
 import scenarios  # noqa: E402
+import help_articles  # noqa: E402
 from version import VERSION  # noqa: E402
 
 # Uploaded files are held in PostgreSQL for now, so they are covered by the
@@ -873,7 +874,7 @@ SEED_RELEASES = [
 * System dropdowns are sorted by name.
 * If someone reverts a change you made, you are told at your next sign-in.
 """),
-    (VERSION, "Scenario planning", None, 1, 500, """\
+    ("0.3.0", "Scenario planning", None, 1, 500, """\
 ## What's new in this release
 
 **Scenario Planning**
@@ -905,6 +906,26 @@ SEED_RELEASES = [
 * Adding a data flow without choosing an owner no longer fails with an error.
 * Secondary text throughout the app is darker, to meet accessibility contrast
   requirements.
+"""),
+    (VERSION, "Help when you need it", None, 1, 600, """\
+## What's new in this release
+
+**A help menu**
+
+* There is now a **?** button next to the version number in the bottom corner.
+  It opens a short set of help articles you can search by keyword.
+* The panel knows which screen you are on and puts the relevant articles first,
+  so opening it inside a scenario offers the scenario guides straight away.
+* Articles cover the basics — what the application tracks, reading the lineage
+  diagram, finding and editing records — as well as governance inheritance,
+  database schemas, and a deep dive into how scenario planning works.
+* If you have not explored **scenario planning** yet, the two scenario articles
+  are the quickest way in.
+
+**Fixes**
+
+* Release notes and help articles now wrap properly instead of breaking
+  sentences across lines.
 """),
 ]
 
@@ -4143,6 +4164,48 @@ if HAS_TORNADO:
             self.write_json({"types": types, "palette": TYPE_PALETTE})
 
     # -----------------------------------------------------------------------
+    # Help / knowledge base
+    # -----------------------------------------------------------------------
+    class HelpHandler(BaseAPIHandler):
+        """The articles this reader may see.
+
+        Everything is returned in one response and searched in the browser.
+        With a handful of short articles that is faster than a request per
+        keystroke, and it means search keeps working while the panel is open
+        even on a slow connection.
+
+        Articles currently come from ``help_articles.py``. If they later move
+        into a table, only that module changes — this endpoint and the panel
+        stay as they are.
+        """
+        READ_ROLE = permissions.VIEWER
+        # Reading help must never be blocked by a pending password change:
+        # "how do I change my password" is exactly what someone needs then.
+        allow_when_password_expired = True
+
+        def get(self):
+            role = self.current_user["role"]
+            screen = self.get_argument("screen", None)
+            relevant, rest = help_articles.list_articles(role, screen)
+            self.write_json({
+                "for_this_screen": [help_articles.public(a) for a in relevant],
+                "articles": [help_articles.public(a, include_body=True)
+                             for a in relevant + rest],
+            })
+
+    class HelpArticleHandler(BaseAPIHandler):
+        """One article, for linking straight to it."""
+        READ_ROLE = permissions.VIEWER
+        allow_when_password_expired = True
+
+        def get(self, article_id):
+            article = help_articles.get_article(article_id,
+                                                self.current_user["role"])
+            if not article:
+                return self.fail(404, "That help article was not found.")
+            self.write_json(help_articles.public(article, include_body=True))
+
+    # -----------------------------------------------------------------------
     # Scenarios
     # -----------------------------------------------------------------------
     def scenario_payload(conn, row, user):
@@ -4692,6 +4755,8 @@ if HAS_TORNADO:
             (r"/api/system-types/([^/]+)", SystemTypeHandler),
             # Scenarios. The member route is listed before the single-scenario
             # route so "/api/scenarios/3/members/7" is not swallowed by it.
+            (r"/api/help", HelpHandler),
+            (r"/api/help/([a-z0-9-]+)", HelpArticleHandler),
             (r"/api/scenarios", ScenariosHandler),
             (r"/api/scenarios/([^/]+)/members/([^/]+)", ScenarioMembersHandler),
             (r"/api/scenarios/([^/]+)/members", ScenarioMembersHandler),
