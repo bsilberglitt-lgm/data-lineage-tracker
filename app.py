@@ -27,6 +27,7 @@ import auth  # noqa: E402
 import permissions  # noqa: E402
 import audit  # noqa: E402
 import schema_import  # noqa: E402
+import scenarios  # noqa: E402
 from version import VERSION  # noqa: E402
 
 # Uploaded files are held in PostgreSQL for now, so they are covered by the
@@ -118,6 +119,69 @@ def missing_required(entity, incoming, existing=None):
         if value is None or str(value).strip() == "":
             gaps.append(label)
     return gaps
+
+
+# Optional foreign keys. Blanking one of these in a form must store NULL, not
+# an empty string, or PostgreSQL rejects it against the referenced table.
+FK_FIELDS = {"owner_id", "data_steward_id", "data_owner_id", "agreement_id",
+             "target_system_id", "source_of_truth", "contributor_id"}
+
+
+def fk(value):
+    """Normalise an optional foreign key coming from a form.
+
+    A dropdown left on "none" submits an empty string, not null. PostgreSQL
+    rejects that against a foreign key and the request dies as a 500 — which is
+    how leaving Owner blank on Add Data Flow produced an unexplained error.
+    Anything blank becomes NULL, which is what "not set" is supposed to mean.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def change_state_for_new(handler, data):
+    """The change state a newly created record should carry.
+
+    New things in a scenario are proposals by default — that is what someone
+    doing scenario planning almost always means, and the checkbox can be
+    cleared to say "assume this already exists". Outside a scenario there is
+    nothing to propose *to*, so the live diagram only ever holds ``unchanged``.
+    """
+    if handler.scenario_id is None:
+        return scenarios.UNCHANGED
+    proposed = data.get("proposed", True)
+    if isinstance(proposed, str):
+        proposed = proposed.strip().lower() in ("1", "true", "yes", "on")
+    return scenarios.PROPOSED if proposed else scenarios.UNCHANGED
+
+
+def reject_proposed_on_live(handler, data):
+    """Guard: 'proposed' is meaningless outside a scenario, so refuse it.
+
+    Silently ignoring it would let the frontend drift into sending a flag that
+    does nothing, which is how a checkbox ends up looking saved but isn't.
+    """
+    if handler.scenario_id is None and data.get("proposed"):
+        return ("Only records inside a scenario can be marked as proposed. "
+                "Current Architecture describes what exists today.")
+    return None
+
+
+def mark_modified(conn, table, pk_column, pk_value, scenario_id):
+    """Flag a copied record as edited, so a scenario reads as a change set.
+
+    Only rows copied from live become ``modified``. Something ``proposed`` in
+    this scenario stays proposed however often it is edited — it is still new
+    — and something ``removed`` stays removed.
+    """
+    if scenario_id is None:
+        return
+    conn.execute(
+        f"""UPDATE {table} SET change_state=?
+             WHERE {pk_column}=? AND scenario_id=? AND change_state=?""",
+        (scenarios.MODIFIED, pk_value, scenario_id, scenarios.UNCHANGED))
 
 
 def row_to_dict(row):
@@ -766,7 +830,7 @@ SEED_RELEASES = [
 * Contributors now show by name rather than by ID
 * Sortable tables, and a fix for the audit log appearing empty while loading
 """),
-    (VERSION, "Resources, system types, and alerts", None, 1, 400, """\
+    ("0.2.1", "Resources, system types, and alerts", None, 1, 400, """\
 ## What's new in this release
 
 **Resources are easier to read**
@@ -808,6 +872,39 @@ SEED_RELEASES = [
   is first created.
 * System dropdowns are sorted by name.
 * If someone reverts a change you made, you are told at your next sign-in.
+"""),
+    (VERSION, "Scenario planning", None, 1, 500, """\
+## What's new in this release
+
+**Scenario Planning**
+
+* The live diagram is now called Current Architecture. Alongside users with edit
+  permissions can create scenarios: private copies used to plan a change before
+  anyone builds it. Nothing you do in a scenario affects Current Architecture.
+* Start a scenario from Current Architecture, from another scenario, or from a
+  blank page. Then add proposed systems and data flows, edit what is already
+  there, move things around, or retire something.
+* Scenarios are private to the people invited to them. You choose who can view
+  and who can edit, and that choice applies only inside that scenario — a
+  colleague who can only view elsewhere can be an editor here.
+* Move a scenario through statuses: Draft, Under review, Approved and Archived.
+  Only a Draft can be edited; the rest are read-only until returned to Draft.
+* Hide the parts of the diagram a scenario is not focused on, to make it easier
+  to read.
+* Manage scenario button allows owner to easily modify name, status, and invite
+  new collaborators after a scenario has already been created.
+
+**Elsewhere**
+
+* **Zoom controls** on the lineage diagram and the schema view: buttons to zoom
+  in and out a step at a time, and the current percentage, which you can click
+  to return to 100%.
+
+**Fixes**
+
+* Adding a data flow without choosing an owner no longer fails with an error.
+* Secondary text throughout the app is darker, to meet accessibility contrast
+  requirements.
 """),
 ]
 
@@ -906,10 +1003,12 @@ def reset_superadmin_if_requested(conn):
     if row:
         conn.execute(
             """UPDATE app_user
-                  SET password_hash=?, must_change_password=1, is_active=1,
+                  SET password_hash=?, must_change_password=?, is_active=1,
                       role=?, updated_date=?
                 WHERE user_id=?""",
-            (auth.hash_password(password), permissions.SUPERADMIN, now, row["user_id"]))
+            (auth.hash_password(password),
+             0 if skip_forced_password_change() else 1,
+             permissions.SUPERADMIN, now, row["user_id"]))
         conn.execute("UPDATE user_session SET revoked_at=? WHERE user_id=? "
                      "AND revoked_at IS NULL", (now, row["user_id"]))
         user_id = row["user_id"]
@@ -919,12 +1018,13 @@ def reset_superadmin_if_requested(conn):
             """INSERT INTO app_user
                  (email, first_name, last_name, password_hash, role, is_active,
                   must_change_password, created_date, updated_date)
-               VALUES (?,?,?,?,?,1,1,?,?)
+               VALUES (?,?,?,?,?,1,?,?,?)
                RETURNING user_id""",
             (email,
              os.environ.get("BOOTSTRAP_SUPERADMIN_FIRST_NAME", "System"),
              os.environ.get("BOOTSTRAP_SUPERADMIN_LAST_NAME", "Administrator"),
-             auth.hash_password(password), permissions.SUPERADMIN, now, now)).fetchone()
+             auth.hash_password(password), permissions.SUPERADMIN,
+             0 if skip_forced_password_change() else 1, now, now)).fetchone()
         user_id = created["user_id"]
         what = "created"
 
@@ -939,6 +1039,46 @@ def reset_superadmin_if_requested(conn):
     print("  You must change it at next sign-in.", flush=True)
     print("  >> Now REMOVE BOOTSTRAP_SUPERADMIN_RESET from the environment. <<", flush=True)
     print("=" * 68 + "\n", flush=True)
+
+
+_SKIP_WARNED = False
+
+
+def _warn_skip_enabled():
+    """Say loudly, once, that the forced password change is switched off."""
+    global _SKIP_WARNED
+    _SKIP_WARNED = True
+    where = os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID")
+    print("\n  BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE is on: the SuperAdmin "
+          "will NOT be\n  asked to change the password from the environment "
+          "variable.", flush=True)
+    if where:
+        print("  This looks like a deployed environment. Remove this variable "
+              "unless you\n  are certain you want it.\n", flush=True)
+    else:
+        print("  Intended for local development only.\n", flush=True)
+
+
+def skip_forced_password_change():
+    """Whether a bootstrapped or reset SuperAdmin may keep its given password.
+
+    Off by default, and it should stay off anywhere real. A temporary password
+    typed into an environment variable has been seen by whoever set it and may
+    sit in a shell history or a `.env` file, which is why the normal behaviour
+    is to force a change at first sign-in.
+
+    On a local machine, where the database is routinely thrown away and
+    recreated, that prompt appears every time and protects nothing — the
+    password is already in `.env` on the same disk. Setting
+    ``BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE=true`` there is a reasonable
+    trade; setting it on a deployed environment is not.
+    """
+    value = str(os.environ.get("BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE", "")) \
+        .strip().lower()
+    on = value in ("1", "true", "yes", "on")
+    if on and not _SKIP_WARNED:
+        _warn_skip_enabled()
+    return on
 
 
 def bootstrap_superadmin():
@@ -973,12 +1113,13 @@ def bootstrap_superadmin():
             """INSERT INTO app_user
                  (email, first_name, last_name, password_hash, role, is_active,
                   must_change_password, created_date, updated_date)
-               VALUES (?,?,?,?,?,1,1,?,?)
+               VALUES (?,?,?,?,?,1,?,?,?)
                RETURNING user_id""",
             (email,
              os.environ.get("BOOTSTRAP_SUPERADMIN_FIRST_NAME", "System"),
              os.environ.get("BOOTSTRAP_SUPERADMIN_LAST_NAME", "Administrator"),
-             auth.hash_password(password), permissions.SUPERADMIN, now, now),
+             auth.hash_password(password), permissions.SUPERADMIN,
+             0 if skip_forced_password_change() else 1, now, now),
         ).fetchone()
         user_id = row["user_id"]
         conn.commit()
@@ -1042,10 +1183,15 @@ if HAS_TORNADO:
         # pending (otherwise the user could never clear the flag).
         allow_when_password_expired = False
         SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+        # Whether this endpoint understands ``?scenario=N``. Off by default so
+        # an endpoint that has not been scoped cannot be handed a scenario and
+        # silently operate on live data instead.
+        SCENARIO_AWARE = False
 
         def initialize(self):
             self.current_session = None
             self.current_user = None
+            self.scenario_id = None
 
         def set_default_headers(self):
             self.set_header("Content-Type", "application/json")
@@ -1202,7 +1348,27 @@ if HAS_TORNADO:
                 return self.fail(403, "Password change required",
                                  must_change_password=True)
 
+            # Which view is this request about? NULL/absent means the live
+            # diagram; anything else is a scenario.
+            self.scenario_id = None
+            if self.SCENARIO_AWARE:
+                raw = self.get_argument("scenario", None)
+                if raw not in (None, "", "live"):
+                    try:
+                        self.scenario_id = int(raw)
+                    except ValueError:
+                        return self.fail(404, "Scenario not found.")
+
             required = self.READ_ROLE if method in self.SAFE_METHODS else self.WRITE_ROLE
+            if self.scenario_id is not None and method not in self.SAFE_METHODS:
+                # Inside a scenario, authority comes from scenario membership
+                # rather than the system role — that is the whole point of
+                # being able to invite a Viewer as an editor. The check is not
+                # skipped, it moves: every scenario write calls
+                # ``access(...).require_write()`` before touching anything, and
+                # a non-member gets a 404 there. Live writes are unaffected,
+                # because this branch needs an explicit scenario id.
+                required = permissions.VIEWER
             if not permissions.at_least(self.current_user["role"], required):
                 self.record_permission_denied(required)
                 return self.fail(
@@ -1224,22 +1390,64 @@ if HAS_TORNADO:
             finally:
                 conn.close()
 
+        # -- scenario helpers -------------------------------------------------
+        def scenario_access(self, conn, write=False, manage=False):
+            """Resolve this request's rights, raising the right HTTP error.
+
+            Call this before reading or writing anything scoped. It returns an
+            ``Access`` whose ``scenario_id`` is what every query must scope on.
+            """
+            acc = scenarios.access(conn, self.current_user, self.scenario_id)
+            if manage:
+                acc.require_manage()
+            elif write:
+                acc.require_write()
+            else:
+                acc.require_read()
+            return acc
+
+        def scope_sql(self, alias=None, table=None, respect_hidden=False):
+            """``(clause, params)`` restricting a query to this request's view.
+
+            ``respect_hidden`` additionally drops records the scenario has
+            tidied away, unless the caller asked to see everything. Reads that
+            feed the diagram and the catalogs pass it; anything that must
+            consider the whole scenario deliberately does not.
+            """
+            if table in scenarios.COPY_ON_WRITE_TABLES:
+                clause, params = scenarios.visible_scope(
+                    self.scenario_id, alias, table)
+            else:
+                clause, params = scenarios.scope(self.scenario_id, alias)
+            if respect_hidden and self.scenario_id is not None:
+                extra, _ = scenarios.hidden_clause(self.include_hidden, alias)
+                clause += extra
+            return clause, params
+
+        @property
+        def include_hidden(self):
+            """Whether this request asked to see hidden records too."""
+            return self.get_argument("include_hidden", "") in ("1", "true", "yes")
+
         # -- auditing helpers -------------------------------------------------
         def audit_create(self, conn, entity_type, entity_id, values):
             return audit.record_create(
                 conn, self.current_user, entity_type, entity_id, values,
+                scenario_id=self.scenario_id,
                 ip_address=self.client_ip(), user_agent=self.user_agent())
 
         def audit_update(self, conn, entity_type, entity_id, before, after,
                          fields=None):
             return audit.record_update(
                 conn, self.current_user, entity_type, entity_id, before, after,
-                fields=fields, ip_address=self.client_ip(),
+                fields=fields, scenario_id=self.scenario_id,
+                ip_address=self.client_ip(),
                 user_agent=self.user_agent())
 
         def audit_delete(self, conn, entity_type, entity_id, before):
             return audit.record_delete(
                 conn, self.current_user, entity_type, entity_id, before,
+                scenario_id=self.scenario_id,
                 ip_address=self.client_ip(), user_agent=self.user_agent())
 
         def stamp_author(self, conn, table, pk_column, pk_value, creating=False):
@@ -1258,26 +1466,52 @@ if HAS_TORNADO:
 
     # -- Systems --
     class SystemsHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def get(self):
             conn = get_db()
-            rows = conn.execute(
-                """SELECT s.*,
-                          (SELECT COUNT(*) FROM schema_table st
-                           WHERE st.system_id = s.system_id) AS schema_table_count
-                   FROM system s ORDER BY s.system_id""").fetchall()
+            try:
+                self.scenario_access(conn)
+                where, params = self.scope_sql("s", respect_hidden=True)
+                rows = conn.execute(
+                    f"""SELECT s.*,
+                              (SELECT COUNT(*) FROM schema_table st
+                               WHERE st.system_id = COALESCE(
+                                 (SELECT s2.system_id FROM schema_table s2
+                                   WHERE s2.system_id = s.system_id LIMIT 1),
+                                 s.origin_id, s.system_id)) AS schema_table_count
+                       FROM system s WHERE {where} ORDER BY s.system_id""",
+                    params).fetchall()
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
             conn.close()
             self.write_json(rows_to_list(rows))
 
         def post(self):
             data = self.get_json_body()
             conn = get_db()
-            # Auto-generate ID
-            last = conn.execute("SELECT system_id FROM system ORDER BY system_id DESC LIMIT 1").fetchone()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            complaint = reject_proposed_on_live(self, data)
+            if complaint:
+                conn.close()
+                return self.fail(400, complaint)
+            # Auto-generate ID, numbered within this view so a scenario cannot
+            # collide with live or with another scenario.
+            where, params = self.scope_sql("s")
+            last = conn.execute(
+                f"SELECT system_id FROM system s WHERE {where} "
+                "ORDER BY system_id DESC LIMIT 1", params).fetchone()
             if last:
-                num = int(re.search(r'\d+', last['system_id']).group()) + 1
+                num = int(re.search(r'\d+',
+                                    scenarios.base_id(last['system_id'])).group()) + 1
             else:
                 num = 1
-            sid = f"SYS-{num:03d}"
+            sid = scenarios.scoped_id(self.scenario_id, f"SYS-{num:03d}")
             # The type is required and must be one that exists; there is no
             # default, so a missing type is a client error rather than a guess.
             stype = (data.get('system_type') or '').strip()
@@ -1298,24 +1532,25 @@ if HAS_TORNADO:
                 disaster_recovery,data_standards,
                 authorized_users,data_sharing_restrictions,
                 entry_type,entered_by,entry_validation,entry_error_correction,target_system_id,
-                created_date,updated_date)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_date,updated_date,scenario_id,change_state)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (sid, data.get('name',''), data.get('description',''), stype,
                  data.get('vendor',''), data.get('technology',''), data.get('environment','Production'),
-                 data.get('managed_by',''), data.get('owner_id'), data.get('organization',''),
+                 data.get('managed_by',''), fk(data.get('owner_id')), data.get('organization',''),
                  data.get('contains_pii',0), data.get('ferpa_protected',0), data.get('status','Active'),
                  data.get('notes',''), data.get('x_pos',400), data.get('y_pos',300),
                  data.get('data_classification'), data.get('access_method'),
                  data.get('encryption_at_rest'), data.get('encryption_in_transit'),
                  data.get('last_security_review'), data.get('has_audit_trail',0),
-                 data.get('data_steward_id'), data.get('retention_schedule'),
+                 fk(data.get('data_steward_id')), data.get('retention_schedule'),
                  data.get('destruction_method'), data.get('backup_frequency'),
                  data.get('disaster_recovery'), data.get('data_standards'),
                  data.get('authorized_users'), data.get('data_sharing_restrictions'),
                  data.get('entry_type'), data.get('entered_by'),
                  data.get('entry_validation'), data.get('entry_error_correction'),
-                 data.get('target_system_id') or None,
-                 now, now))
+                 fk(data.get('target_system_id')),
+                 now, now, self.scenario_id,
+                 change_state_for_new(self, data)))
             self.stamp_author(conn, "system", "system_id", sid, creating=True)
             row = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
             self.audit_create(conn, "system", sid, dict(row))
@@ -1328,13 +1563,28 @@ if HAS_TORNADO:
             self.write_json(row_to_dict(row))
 
     class SystemHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def get(self, sid):
             conn = get_db()
+            try:
+                self.scenario_access(conn)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            # Scoping the lookup, rather than fetching by id alone, is what
+            # stops someone in one scenario reading a record from another by
+            # guessing its identifier.
+            where, params = self.scope_sql("s")
             row = conn.execute(
-                """SELECT s.*,
+                f"""SELECT s.*,
                           (SELECT COUNT(*) FROM schema_table st
-                           WHERE st.system_id = s.system_id) AS schema_table_count
-                   FROM system s WHERE s.system_id=?""", (sid,)).fetchone()
+                           WHERE st.system_id = COALESCE(
+                             (SELECT s2.system_id FROM schema_table s2
+                               WHERE s2.system_id = s.system_id LIMIT 1),
+                             s.origin_id, s.system_id)) AS schema_table_count
+                   FROM system s WHERE s.system_id=? AND {where}""",
+                (sid,) + params).fetchone()
             conn.close()
             if row:
                 self.write_json(row_to_dict(row))
@@ -1358,7 +1608,19 @@ if HAS_TORNADO:
             data = self.get_json_body()
             conn = get_db()
             now = datetime.datetime.now().isoformat()
-            before = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            complaint = reject_proposed_on_live(self, data)
+            if complaint:
+                conn.close()
+                return self.fail(400, complaint)
+            where, params = self.scope_sql()
+            before = conn.execute(
+                f"SELECT * FROM system WHERE system_id=? AND {where}",
+                (sid,) + params).fetchone()
             if not before:
                 conn.close()
                 return self.fail(404, "Not found")
@@ -1373,7 +1635,7 @@ if HAS_TORNADO:
             for key in self.SYSTEM_FIELDS:
                 if key in data:
                     fields.append(f"{key}=?")
-                    vals.append(data[key])
+                    vals.append(fk(data[key]) if key in FK_FIELDS else data[key])
             if fields:
                 fields.append("updated_date=?")
                 fields.append("updated_by=?")
@@ -1381,6 +1643,13 @@ if HAS_TORNADO:
                 vals.append(self.current_user["user_id"])
                 vals.append(sid)
                 conn.execute(f"UPDATE system SET {','.join(fields)} WHERE system_id=?", vals)
+            if "proposed" in data and self.scenario_id is not None:
+                conn.execute(
+                    "UPDATE system SET change_state=? WHERE system_id=? AND scenario_id=?",
+                    (scenarios.PROPOSED if data["proposed"] else scenarios.UNCHANGED,
+                     sid, self.scenario_id))
+            elif fields:
+                mark_modified(conn, "system", "system_id", sid, self.scenario_id)
             row = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
             # Position changes are excluded from the audit: dragging a node is a
             # layout preference, and logging it would bury real governance edits.
@@ -1396,13 +1665,46 @@ if HAS_TORNADO:
 
         def delete(self, sid):
             conn = get_db()
-            before = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            where, params = self.scope_sql()
+            before = conn.execute(
+                f"SELECT * FROM system WHERE system_id=? AND {where}",
+                (sid,) + params).fetchone()
             if not before:
                 conn.close()
                 return self.fail(404, "Not found")
+
+            # Inside a scenario, retiring something that exists today is a
+            # different statement from deleting something you invented here.
+            # "Removed" keeps it on the diagram, struck through, so the plan
+            # reads as "we retire these, we add those" rather than as a gap.
+            if self.scenario_id is not None and \
+                    self.get_argument("mode", "") == "remove":
+                if before["change_state"] == scenarios.PROPOSED:
+                    conn.close()
+                    return self.fail(
+                        400, "This system only exists in the scenario, so there "
+                             "is nothing to retire. Delete it instead.")
+                conn.execute(
+                    "UPDATE system SET change_state=? WHERE system_id=? AND scenario_id=?",
+                    (scenarios.REMOVED, sid, self.scenario_id))
+                self.audit_update(conn, "system", sid, dict(before),
+                                  {**dict(before), "change_state": scenarios.REMOVED},
+                                  fields=["change_state"])
+                conn.commit()
+                conn.close()
+                return self.write_json({"system_id": sid,
+                                        "change_state": scenarios.REMOVED})
+
+            flow_where, flow_params = self.scope_sql()
             flows = conn.execute(
-                "SELECT COUNT(*) FROM data_flow WHERE source_system_id=? "
-                "OR destination_system_id=?", (sid, sid)).fetchone()[0]
+                f"SELECT COUNT(*) FROM data_flow WHERE (source_system_id=? "
+                f"OR destination_system_id=?) AND {flow_where}",
+                (sid, sid) + flow_params).fetchone()[0]
             if flows:
                 conn.close()
                 return self.fail(409, f"This system is used by {flows} data flow(s). "
@@ -1424,25 +1726,48 @@ if HAS_TORNADO:
 
     # -- Data Flows --
     class FlowsHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def get(self):
             conn = get_db()
-            rows = conn.execute("""SELECT f.*, s1.name as source_name, s2.name as dest_name
+            try:
+                self.scenario_access(conn)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            where, params = self.scope_sql("f", respect_hidden=True)
+            rows = conn.execute(
+                f"""SELECT f.*, s1.name as source_name, s2.name as dest_name
                 FROM data_flow f
                 JOIN system s1 ON f.source_system_id=s1.system_id
                 JOIN system s2 ON f.destination_system_id=s2.system_id
-                ORDER BY f.flow_id""").fetchall()
+                WHERE {where}
+                ORDER BY f.flow_id""", params).fetchall()
             conn.close()
             self.write_json(rows_to_list(rows))
 
         def post(self):
             data = self.get_json_body()
             conn = get_db()
-            last = conn.execute("SELECT flow_id FROM data_flow ORDER BY flow_id DESC LIMIT 1").fetchone()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            complaint = reject_proposed_on_live(self, data)
+            if complaint:
+                conn.close()
+                return self.fail(400, complaint)
+            where, params = self.scope_sql()
+            last = conn.execute(
+                f"SELECT flow_id FROM data_flow WHERE {where} "
+                "ORDER BY flow_id DESC LIMIT 1", params).fetchone()
             if last:
-                num = int(re.search(r'\d+', last['flow_id']).group()) + 1
+                num = int(re.search(r'\d+',
+                                    scenarios.base_id(last['flow_id'])).group()) + 1
             else:
                 num = 1
-            fid = f"PL-{num:03d}"
+            fid = scenarios.scoped_id(self.scenario_id, f"PL-{num:03d}")
             now = datetime.datetime.now().isoformat()
             conn.execute("""INSERT INTO data_flow (flow_id,name,description,source_system_id,
                 destination_system_id,direction,frequency,transfer_method,format,transformation_steps,
@@ -1451,8 +1776,8 @@ if HAS_TORNADO:
                 frequency_detail,organization,managed_by,data_steward_id,
                 data_classification,encryption_method,disclosure_avoidance,
                 data_quality_measures,data_standard,retention_at_destination,legal_authority,
-                created_date,updated_date)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_date,updated_date,scenario_id,change_state)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (fid, data.get('name',''), data.get('description',''),
                  data.get('source_system_id',''), data.get('destination_system_id',''),
                  data.get('direction','Inbound'), data.get('frequency','Daily'),
@@ -1460,35 +1785,57 @@ if HAS_TORNADO:
                  data.get('transformation_steps',''), data.get('business_rules',''),
                  data.get('validations',''), data.get('error_handling',''),
                  data.get('contains_pii',0), data.get('ferpa_protected',0),
-                 data.get('regulatory_driver',''), data.get('agreement_id'),
-                 data.get('owner_id'), data.get('status','Active'),
+                 data.get('regulatory_driver',''), fk(data.get('agreement_id')),
+                 fk(data.get('owner_id')), data.get('status','Active'),
                  data.get('known_issues',''),
                  data.get('frequency_detail'), data.get('organization'),
-                 data.get('managed_by'), data.get('data_steward_id') or None,
+                 data.get('managed_by'), fk(data.get('data_steward_id')),
                  data.get('data_classification'), data.get('encryption_method'),
                  data.get('disclosure_avoidance'),
                  data.get('data_quality_measures'), data.get('data_standard'),
                  data.get('retention_at_destination'), data.get('legal_authority'),
-                 now, now))
+                 now, now, self.scenario_id,
+                 change_state_for_new(self, data)))
+            # Attaching a flow to a system that had been tidied away brings it
+            # back; otherwise the new flow would be invisible the moment it
+            # was drawn.
+            revealed = scenarios.reveal_for_flow(
+                conn, self.scenario_id, data.get('source_system_id'),
+                data.get('destination_system_id')) if self.scenario_id else []
             self.stamp_author(conn, "data_flow", "flow_id", fid, creating=True)
             row = conn.execute("SELECT * FROM data_flow WHERE flow_id=?", (fid,)).fetchone()
             self.audit_create(conn, "data_flow", fid, dict(row))
             conn.commit()
             conn.close()
             self.set_status(201)
-            self.write_json({"flow_id": fid})
+            out = {"flow_id": fid}
+            if revealed:
+                # Told to the user, not done silently: they hid these, so they
+                # should know why they are back.
+                out["revealed"] = revealed
+            self.write_json(out)
 
     class FlowHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def get(self, fid):
             conn = get_db()
-            row = conn.execute("""SELECT f.*, s1.name as source_name, s2.name as dest_name
+            try:
+                self.scenario_access(conn)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            where, params = self.scope_sql("f")
+            row = conn.execute(f"""SELECT f.*, s1.name as source_name, s2.name as dest_name
                 FROM data_flow f
                 JOIN system s1 ON f.source_system_id=s1.system_id
                 JOIN system s2 ON f.destination_system_id=s2.system_id
-                WHERE f.flow_id=?""", (fid,)).fetchone()
-            elements = conn.execute("""SELECT e.*, fe.is_transformed, fe.transformation_note
+                WHERE f.flow_id=? AND {where}""", (fid,) + params).fetchone()
+            fe_where, fe_params = self.scope_sql("fe")
+            elements = conn.execute(f"""SELECT e.*, fe.is_transformed, fe.transformation_note
                 FROM flow_element fe JOIN data_element e ON fe.element_id=e.element_id
-                WHERE fe.flow_id=? ORDER BY e.element_id""", (fid,)).fetchall()
+                WHERE fe.flow_id=? AND {fe_where} ORDER BY e.element_id""",
+                (fid,) + fe_params).fetchall()
             conn.close()
             if row:
                 result = row_to_dict(row)
@@ -1510,7 +1857,19 @@ if HAS_TORNADO:
             data = self.get_json_body()
             conn = get_db()
             now = datetime.datetime.now().isoformat()
-            before = conn.execute("SELECT * FROM data_flow WHERE flow_id=?", (fid,)).fetchone()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            complaint = reject_proposed_on_live(self, data)
+            if complaint:
+                conn.close()
+                return self.fail(400, complaint)
+            where, params = self.scope_sql()
+            before = conn.execute(
+                f"SELECT * FROM data_flow WHERE flow_id=? AND {where}",
+                (fid,) + params).fetchone()
             if not before:
                 conn.close()
                 return self.fail(404, "Not found")
@@ -1525,7 +1884,7 @@ if HAS_TORNADO:
             for key in self.FLOW_FIELDS:
                 if key in data:
                     fields.append(f"{key}=?")
-                    vals.append(data[key])
+                    vals.append(fk(data[key]) if key in FK_FIELDS else data[key])
             if fields:
                 fields.append("updated_date=?")
                 fields.append("updated_by=?")
@@ -1533,6 +1892,13 @@ if HAS_TORNADO:
                 vals.append(self.current_user["user_id"])
                 vals.append(fid)
                 conn.execute(f"UPDATE data_flow SET {','.join(fields)} WHERE flow_id=?", vals)
+            if "proposed" in data and self.scenario_id is not None:
+                conn.execute(
+                    "UPDATE data_flow SET change_state=? WHERE flow_id=? AND scenario_id=?",
+                    (scenarios.PROPOSED if data["proposed"] else scenarios.UNCHANGED,
+                     fid, self.scenario_id))
+            elif fields:
+                mark_modified(conn, "data_flow", "flow_id", fid, self.scenario_id)
             after_row = conn.execute("SELECT * FROM data_flow WHERE flow_id=?", (fid,)).fetchone()
             self.audit_update(conn, "data_flow", fid, before, dict(after_row),
                               fields=self.FLOW_FIELDS)
@@ -1558,10 +1924,36 @@ if HAS_TORNADO:
         def delete(self, fid):
             conn = get_db()
             try:
-                before = conn.execute("SELECT * FROM data_flow WHERE flow_id=?",
-                                      (fid,)).fetchone()
+                try:
+                    self.scenario_access(conn, write=True)
+                except scenarios.ScenarioError as e:
+                    return self.fail(e.status, e.message)
+                where, params = self.scope_sql()
+                before = conn.execute(
+                    f"SELECT * FROM data_flow WHERE flow_id=? AND {where}",
+                    (fid,) + params).fetchone()
                 if not before:
                     return self.fail(404, "Not found")
+
+                # In a scenario, retiring an existing flow is a proposal, not a
+                # deletion: it stays on the diagram struck through.
+                if self.scenario_id is not None and \
+                        self.get_argument("mode", "") == "remove":
+                    if before["change_state"] == scenarios.PROPOSED:
+                        return self.fail(
+                            400, "This data flow only exists in the scenario, so "
+                                 "there is nothing to retire. Delete it instead.")
+                    conn.execute(
+                        "UPDATE data_flow SET change_state=? "
+                        "WHERE flow_id=? AND scenario_id=?",
+                        (scenarios.REMOVED, fid, self.scenario_id))
+                    self.audit_update(
+                        conn, "data_flow", fid, dict(before),
+                        {**dict(before), "change_state": scenarios.REMOVED},
+                        fields=["change_state"])
+                    conn.commit()
+                    return self.write_json({"flow_id": fid,
+                                            "change_state": scenarios.REMOVED})
                 # Its links to data elements and any attached resources go with
                 # it; nothing else references a flow.
                 conn.execute("DELETE FROM flow_element WHERE flow_id=?", (fid,))
@@ -1579,13 +1971,26 @@ if HAS_TORNADO:
 
     # -- Data Elements --
     class ElementsHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def get(self):
             conn = get_db()
-            rows = conn.execute("SELECT * FROM data_element ORDER BY element_id").fetchall()
+            try:
+                self.scenario_access(conn)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            # Copy-on-write: a scenario sees live elements until it forks one.
+            where, params = self.scope_sql(table="data_element")
+            rows = conn.execute(
+                f"SELECT * FROM data_element WHERE {where} ORDER BY element_id",
+                params).fetchall()
             conn.close()
             self.write_json(rows_to_list(rows))
 
     class ElementHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def get(self, eid):
             conn = get_db()
             row = conn.execute("SELECT * FROM data_element WHERE element_id=?", (eid,)).fetchone()
@@ -1610,6 +2015,15 @@ if HAS_TORNADO:
             data = self.get_json_body()
             conn = get_db()
             now = datetime.datetime.now().isoformat()
+            try:
+                self.scenario_access(conn, write=True)
+                # Copy-on-write: editing a shared element from inside a scenario
+                # gives that scenario its own copy rather than changing live.
+                eid = scenarios.fork_for_write(
+                    conn, "data_element", "element_id", eid, self.scenario_id)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
             before = conn.execute("SELECT * FROM data_element WHERE element_id=?",
                                   (eid,)).fetchone()
             if not before:
@@ -1626,7 +2040,7 @@ if HAS_TORNADO:
             for key in self.ELEMENT_FIELDS:
                 if key in data:
                     fields.append(f"{key}=?")
-                    vals.append(data[key])
+                    vals.append(fk(data[key]) if key in FK_FIELDS else data[key])
             if fields:
                 fields.append("updated_date=?")
                 fields.append("updated_by=?")
@@ -1662,10 +2076,19 @@ if HAS_TORNADO:
     )
 
     class ContributorsHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def get(self):
             conn = get_db()
+            try:
+                self.scenario_access(conn)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            where, params = self.scope_sql(table="contributor")
             rows = conn.execute(
-                "SELECT * FROM contributor ORDER BY contributor_id").fetchall()
+                f"SELECT * FROM contributor WHERE {where} ORDER BY contributor_id",
+                params).fetchall()
             conn.close()
             self.write_json(rows_to_list(rows))
 
@@ -1706,6 +2129,7 @@ if HAS_TORNADO:
             self.write_json(row_to_dict(row))
 
     class ContributorHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
         def get(self, cid):
             conn = get_db()
             row = conn.execute("SELECT * FROM contributor WHERE contributor_id=?",
@@ -1719,6 +2143,9 @@ if HAS_TORNADO:
             data = self.get_json_body()
             conn = get_db()
             try:
+                self.scenario_access(conn, write=True)
+                cid = scenarios.fork_for_write(
+                    conn, "contributor", "contributor_id", cid, self.scenario_id)
                 before = conn.execute("SELECT * FROM contributor WHERE contributor_id=?",
                                       (cid,)).fetchone()
                 if not before:
@@ -1732,7 +2159,7 @@ if HAS_TORNADO:
                 for key in CONTRIBUTOR_FIELDS:
                     if key in data:
                         fields.append(f"{key}=?")
-                        vals.append(data[key])
+                        vals.append(fk(data[key]) if key in FK_FIELDS else data[key])
                 if fields:
                     fields += ["updated_date=?", "updated_by=?"]
                     vals += [iso(utcnow()), self.current_user['user_id'], cid]
@@ -1778,11 +2205,23 @@ if HAS_TORNADO:
 
     # -- Position update (for dragging nodes) --
     class PositionHandler(BaseAPIHandler):
+        # Moving a node is an edit like any other, so it follows the same rules:
+        # inside a scenario the scenario role decides, and the update is scoped
+        # so a scenario's layout can never write over the live diagram's.
+        SCENARIO_AWARE = True
+
         def put(self, sid):
             data = self.get_json_body()
             conn = get_db()
-            conn.execute("UPDATE system SET x_pos=?, y_pos=? WHERE system_id=?",
-                         (data.get('x_pos', 0), data.get('y_pos', 0), sid))
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            where, params = self.scope_sql()
+            conn.execute(
+                f"UPDATE system SET x_pos=?, y_pos=? WHERE system_id=? AND {where}",
+                (data.get('x_pos', 0), data.get('y_pos', 0), sid) + params)
             conn.commit()
             conn.close()
             self.write_json({"ok": True})
@@ -1790,15 +2229,28 @@ if HAS_TORNADO:
     # -- Schema drill-down --
     class SystemSchemaHandler(BaseAPIHandler):
         """All tables + columns for a system's database schema (for the ER view)."""
+        SCENARIO_AWARE = True
+
         def get(self, sid):
             conn = get_db()
-            system = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
+            try:
+                self.scenario_access(conn)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            where, params = self.scope_sql()
+            system = conn.execute(
+                f"SELECT * FROM system WHERE system_id=? AND {where}",
+                (sid,) + params).fetchone()
             if not system:
                 conn.close()
                 self.set_status(404); self.write_json({"error": "Not found"}); return
+            # A scenario copy reads the live system's schema until it has one of
+            # its own, so the field list is there from the moment it is created.
+            source_id, forked = scenarios.schema_source(conn, sid, self.scenario_id)
             tables = conn.execute(
                 "SELECT * FROM schema_table WHERE system_id=? ORDER BY schema_name, table_name",
-                (sid,)).fetchall()
+                (source_id,)).fetchall()
             cols_by_table = {}
             table_ids = [t["table_id"] for t in tables]
             if table_ids:
@@ -1818,9 +2270,13 @@ if HAS_TORNADO:
             self.write_json({
                 "system": {"system_id": system["system_id"], "name": system["name"]},
                 "tables": out_tables,
+                # False means these rows still belong to Current Architecture and
+                # are shown read-through; the first change forks them.
+                "schema_is_local": forked,
             })
 
     class SchemaTablePositionHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
         def put(self, table_id):
             data = self.get_json_body()
             conn = get_db()
@@ -1830,7 +2286,70 @@ if HAS_TORNADO:
             conn.close()
             self.write_json({"ok": True})
 
+    def fork_schema_before_write(handler, conn, row_id, table, pk):
+        """Redirect a schema edit onto the scenario's own copy.
+
+        Inside a scenario the schema is shown read-through from Current
+        Architecture until something changes it. Writing straight to the row
+        that was read would edit the live schema — the exact leak the whole
+        design exists to prevent. So the first edit forks the system's schema
+        into the scenario, and the edit is applied to the copy instead.
+
+        Returns the id to write to.
+        """
+        if handler.scenario_id is None:
+            return row_id
+        row = conn.execute(f"SELECT * FROM {table} WHERE {pk}=?", (row_id,)).fetchone()
+        if row is None:
+            return row_id
+        if row["scenario_id"] == handler.scenario_id:
+            # Already forked — by an earlier edit or by an upload. Still a
+            # change to the system, so make sure it reads as Modified.
+            owner = conn.execute(
+                "SELECT system_id FROM schema_table WHERE table_id=?",
+                (row_id if table == "schema_table" else row["table_id"],)).fetchone()
+            if owner:
+                mark_modified(conn, "system", "system_id", owner["system_id"],
+                              handler.scenario_id)
+            return row_id
+        if row["scenario_id"] is not None:
+            raise scenarios.ScenarioError("Not found.", 404)
+
+        # Find the scenario's copy of the system this row belongs to.
+        if table == "schema_table":
+            live_system = row["system_id"]
+        else:
+            parent = conn.execute("SELECT system_id FROM schema_table WHERE table_id=?",
+                                  (row["table_id"],)).fetchone()
+            live_system = parent["system_id"] if parent else None
+        copy = conn.execute(
+            "SELECT system_id FROM system WHERE origin_id=? AND scenario_id=?",
+            (live_system, handler.scenario_id)).fetchone()
+        if not copy:
+            raise scenarios.ScenarioError(
+                "This schema belongs to a system that is not in this scenario.", 404)
+        n = scenarios.fork_schema(conn, handler.scenario_id, copy["system_id"])
+        if n:
+            # One event for the whole fork, not one per column.
+            audit.record_event(
+                conn, handler.current_user, "update", "system", copy["system_id"],
+                summary=f"Schema copied into the scenario before editing "
+                        f"({n} field(s)); Current Architecture is unchanged",
+                scenario_id=handler.scenario_id,
+                ip_address=handler.client_ip(), user_agent=handler.user_agent())
+        # Changing a system's schema is a change to that system, so the system
+        # itself reads as Modified in the scenario. Without this the catalog
+        # shows nothing changed while its field governance plainly has.
+        mark_modified(conn, "system", "system_id", copy["system_id"],
+                      handler.scenario_id)
+        forked = conn.execute(
+            f"SELECT {pk} FROM {table} WHERE origin_id=? AND scenario_id=?",
+            (row_id, handler.scenario_id)).fetchone()
+        return forked[pk] if forked else row_id
+
     class SchemaTableHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def _payload(self, conn, table_id):
             t = conn.execute("SELECT * FROM schema_table WHERE table_id=?", (table_id,)).fetchone()
             if not t:
@@ -1859,6 +2378,13 @@ if HAS_TORNADO:
             data = self.get_json_body()
             conn = get_db()
             now = datetime.datetime.now().isoformat()
+            try:
+                self.scenario_access(conn, write=True)
+                table_id = fork_schema_before_write(
+                    self, conn, table_id, "schema_table", "table_id")
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
             before = conn.execute("SELECT * FROM schema_table WHERE table_id=?",
                                   (table_id,)).fetchone()
             if not before:
@@ -1889,6 +2415,8 @@ if HAS_TORNADO:
             self.write_json(payload)
 
     class SchemaColumnHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
+
         def _payload(self, conn, column_id):
             c = conn.execute("SELECT * FROM schema_column WHERE column_id=?", (column_id,)).fetchone()
             if not c:
@@ -1921,6 +2449,13 @@ if HAS_TORNADO:
             data = self.get_json_body()
             conn = get_db()
             now = datetime.datetime.now().isoformat()
+            try:
+                self.scenario_access(conn, write=True)
+                column_id = fork_schema_before_write(
+                    self, conn, column_id, "schema_column", "column_id")
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
             before = conn.execute("SELECT * FROM schema_column WHERE column_id=?",
                                   (column_id,)).fetchone()
             if not before:
@@ -2436,6 +2971,7 @@ if HAS_TORNADO:
     # Audit log (SuperAdmin)
     # -----------------------------------------------------------------------
     class AuditHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
         READ_ROLE = permissions.SUPERADMIN
 
         def _filters(self):
@@ -2455,6 +2991,7 @@ if HAS_TORNADO:
             conn = get_db()
             try:
                 events, total = audit.query_events(conn, limit=limit, offset=offset,
+                                                   scenario_id=self.scenario_id,
                                                    **filters)
                 # Fixed lists rather than DISTINCT scans over a growing table.
                 actions = [audit.CREATE, audit.UPDATE, audit.DELETE, audit.LOGIN,
@@ -2482,7 +3019,8 @@ if HAS_TORNADO:
             filters = self._filters()
             conn = get_db()
             try:
-                events, _ = audit.query_events(conn, limit=100000, offset=0, **filters)
+                events, _ = audit.query_events(conn, limit=100000, offset=0,
+                                               scenario_id=self.scenario_id, **filters)
             finally:
                 conn.close()
 
@@ -2783,15 +3321,41 @@ if HAS_TORNADO:
                 ORDER BY r.sort_order, r.resource_id""",
             (entity_type, entity_id)).fetchall()
 
+    def require_parent_in_view(handler, conn, entity_type, entity_id, write=False):
+        """Confirm the record a resource hangs off is visible in this view.
+
+        Resource ids are scenario-unique already, because the parent's id is
+        (``S3-SYS-001``). What this adds is authority: it is what lets someone
+        who is only a Viewer elsewhere attach a document inside a scenario they
+        were invited to edit, while still refusing them on Current
+        Architecture.
+        """
+        table, pk = RESOURCE_PARENTS[entity_type]
+        acc = handler.scenario_access(conn, write=write)
+        where, params = handler.scope_sql()
+        row = conn.execute(f"SELECT 1 FROM {table} WHERE {pk}=? AND {where}",
+                           (entity_id,) + params).fetchone()
+        if not row:
+            raise scenarios.ScenarioError("Not found.", 404)
+        return acc
+
     class ResourcesHandler(BaseAPIHandler):
         """List resources for an entity, or attach a new link/document."""
         READ_ROLE = permissions.VIEWER
         WRITE_ROLE = permissions.EDITOR
+        # Inside a scenario the scenario role decides, so somebody invited as an
+        # editor can attach documents even if they are a Viewer elsewhere.
+        SCENARIO_AWARE = True
 
         def get(self, entity_type, entity_id):
             if entity_type not in RESOURCE_PARENTS:
                 return self.fail(400, "Unknown entity type")
             conn = get_db()
+            try:
+                require_parent_in_view(self, conn, entity_type, entity_id)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
             rows = resource_rows(conn, entity_type, entity_id)
             conn.close()
             out = []
@@ -2804,6 +3368,13 @@ if HAS_TORNADO:
             if entity_type not in RESOURCE_PARENTS:
                 return self.fail(400, "Unknown entity type")
             table, pk = RESOURCE_PARENTS[entity_type]
+            probe = get_db()
+            try:
+                require_parent_in_view(self, probe, entity_type, entity_id, write=True)
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                probe.close()
 
             uploaded = self.request.files.get("file")
             if uploaded:
@@ -2834,12 +3405,12 @@ if HAS_TORNADO:
                 created = conn.execute(
                     """INSERT INTO resource
                          (entity_type, entity_id, label, kind, sort_order, description,
-                          created_date, updated_date, created_by, updated_by)
-                       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING resource_id""",
+                          created_date, updated_date, created_by, updated_by, scenario_id)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING resource_id""",
                     (entity_type, entity_id, label, kind, int(top["m"]) + 10,
                      (description or None)[:MAX_DESCRIPTION] if description else None,
                      now, now, self.current_user["user_id"],
-                     self.current_user["user_id"])).fetchone()
+                     self.current_user["user_id"], self.scenario_id)).fetchone()
                 rid = created["resource_id"]
 
                 if kind == "file":
@@ -2893,6 +3464,7 @@ if HAS_TORNADO:
             return None
 
     class ResourceHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
         """Relabel a resource, upload a new version over it, or remove it."""
         READ_ROLE = permissions.VIEWER
         WRITE_ROLE = permissions.EDITOR
@@ -3001,6 +3573,7 @@ if HAS_TORNADO:
             self.write_json(rows_to_list(rows))
 
     class ResourceFileHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
         """Serve a stored document, inline for preview or as a download."""
         READ_ROLE = permissions.VIEWER
 
@@ -3038,6 +3611,7 @@ if HAS_TORNADO:
             self.finish(data)
 
     class ResourceVersionsHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
         READ_ROLE = permissions.VIEWER
 
         def get(self, rid):
@@ -3069,8 +3643,14 @@ if HAS_TORNADO:
                 ids).fetchall())
         return tables, columns
 
-    def write_schema(conn, system_id, tables, columns):
-        """Replace a system's schema with the supplied tables and columns."""
+    def write_schema(conn, system_id, tables, columns, scenario_id=None):
+        """Replace a system's schema with the supplied tables and columns.
+
+        ``scenario_id`` tags the new rows so they belong to that scenario.
+        Without it they would carry a scenario system id but a NULL scenario,
+        and the read-through check would not find them — the upload would
+        appear to do nothing.
+        """
         existing = [r["table_id"] for r in conn.execute(
             "SELECT table_id FROM schema_table WHERE system_id=?", (system_id,)).fetchall()]
         if existing:
@@ -3079,7 +3659,7 @@ if HAS_TORNADO:
             conn.execute("DELETE FROM schema_table WHERE system_id=?", (system_id,))
 
         now = iso(utcnow())
-        t_cols = ["table_id", "system_id", "schema_name", "table_name", "primary_key",
+        t_cols = ["scenario_id", "table_id", "system_id", "schema_name", "table_name", "primary_key",
                   "description", "x_pos", "y_pos", "data_classification", "contains_pii",
                   "ferpa_protected", "data_owner_id", "data_steward_id",
                   "retention_schedule", "access_restrictions", "legal_authority",
@@ -3087,6 +3667,7 @@ if HAS_TORNADO:
         for t in tables:
             row = dict(t)
             row["system_id"] = system_id
+            row["scenario_id"] = scenario_id
             row.setdefault("created_date", now)
             row["updated_date"] = now
             conn.execute(
@@ -3094,7 +3675,7 @@ if HAS_TORNADO:
                 f"VALUES ({','.join('?' for _ in t_cols)})",
                 tuple(row.get(c) for c in t_cols))
 
-        c_cols = ["column_id", "table_id", "column_name", "ordinal", "data_type",
+        c_cols = ["scenario_id", "column_id", "table_id", "column_name", "ordinal", "data_type",
                   "is_nullable", "is_identity", "is_pk", "is_fk", "default_value",
                   "fk_target_schema", "fk_target_table", "fk_target_column",
                   "fk_target_table_id", "fk_constraint", "data_classification",
@@ -3103,6 +3684,7 @@ if HAS_TORNADO:
                   "business_meaning", "notes", "created_date", "updated_date"]
         for c in columns:
             row = dict(c)
+            row["scenario_id"] = scenario_id
             row.setdefault("created_date", now)
             row["updated_date"] = now
             conn.execute(
@@ -3120,11 +3702,29 @@ if HAS_TORNADO:
         """
         READ_ROLE = permissions.EDITOR
         WRITE_ROLE = permissions.EDITOR
+        # Uploading inside a scenario replaces that scenario's schema only;
+        # Current Architecture keeps whatever it had.
+        SCENARIO_AWARE = True
 
         def post(self, system_id):
             uploaded = self.request.files.get("file")
             if not uploaded:
                 return self.fail(400, "No .sql file was included.")
+            # Checked before any parsing: a non-member must not be able to tell
+            # whether the system exists by how long the request takes.
+            probe = get_db()
+            try:
+                self.scenario_access(probe, write=True)
+                where, params = self.scope_sql()
+                owns = probe.execute(
+                    f"SELECT 1 FROM system WHERE system_id=? AND {where}",
+                    (system_id,) + params).fetchone()
+                if not owns:
+                    return self.fail(404, "Not found")
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                probe.close()
             f = uploaded[0]
             if len(f["body"]) > MAX_UPLOAD_BYTES:
                 return self.fail(400, f"That file is larger than "
@@ -3181,7 +3781,9 @@ if HAS_TORNADO:
                      len(old_tables), len(old_columns),
                      f"Schema before upload of {f['filename']}"))
 
-                write_schema(conn, system_id, parsed["tables"], parsed["columns"])
+                write_schema(conn, system_id, parsed["tables"], parsed["columns"],
+                             scenario_id=self.scenario_id)
+                mark_modified(conn, "system", "system_id", system_id, self.scenario_id)
 
                 message = (f"Schema replaced from {f['filename']}: "
                            f"{summary['matched_tables']} table(s) matched, "
@@ -3202,6 +3804,7 @@ if HAS_TORNADO:
                              "message": message})
 
     class SchemaSnapshotsHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
         READ_ROLE = permissions.EDITOR
 
         def get(self, system_id):
@@ -3217,6 +3820,7 @@ if HAS_TORNADO:
             self.write_json(rows_to_list(rows))
 
     class SchemaRevertHandler(BaseAPIHandler):
+        SCENARIO_AWARE = True
         # Reverting discards work, so it stays with SuperAdmins even though
         # uploading is now open to Editors.
         READ_ROLE = permissions.EDITOR
@@ -3539,6 +4143,487 @@ if HAS_TORNADO:
             self.write_json({"types": types, "palette": TYPE_PALETTE})
 
     # -----------------------------------------------------------------------
+    # Scenarios
+    # -----------------------------------------------------------------------
+    def scenario_payload(conn, row, user):
+        """A scenario as the frontend needs it, including this user's rights."""
+        d = dict(row)
+        members = conn.execute(
+            """SELECT m.user_id, m.role, u.first_name, u.last_name, u.email,
+                      u.role AS system_role, u.is_active
+                 FROM scenario_member m JOIN app_user u ON u.user_id = m.user_id
+                WHERE m.scenario_id = ? ORDER BY m.role DESC, u.last_name""",
+            (row["scenario_id"],)).fetchall()
+        d["members"] = rows_to_list(members)
+        acc = scenarios.access(conn, user, row["scenario_id"], include_deleted=True)
+        d["my_role"] = acc.scenario_role
+        d["can_write"] = acc.can_write
+        d["can_manage"] = acc.can_manage
+        d["frozen"] = acc.frozen
+        return d
+
+    class ScenariosHandler(BaseAPIHandler):
+        """List scenarios, and create one."""
+        READ_ROLE = permissions.VIEWER
+        # Editors and above may create a scenario. Viewers can be invited to
+        # one and can edit inside it, but cannot start one of their own.
+        WRITE_ROLE = permissions.EDITOR
+
+        def get(self):
+            conn = get_db()
+            try:
+                rows = scenarios.visible_scenarios(conn, self.current_user)
+                out = [scenario_payload(conn, r, self.current_user) for r in rows]
+            finally:
+                conn.close()
+            self.write_json(out)
+
+        def post(self):
+            data = self.get_json_body()
+            name = (data.get("name") or "").strip()
+            if not name:
+                return self.fail(400, "These fields are required: Name.",
+                                 missing=["Name"])
+            start = data.get("start_from", "blank")
+            if start not in ("live", "scenario", "blank"):
+                return self.fail(400, "Choose what to start this scenario from.")
+            source_id = data.get("source_scenario_id")
+
+            conn = get_db()
+            try:
+                if start == "scenario":
+                    # You can only branch from a scenario you can already open.
+                    try:
+                        scenarios.access(conn, self.current_user, source_id).require_read()
+                    except scenarios.ScenarioError as e:
+                        return self.fail(e.status, e.message)
+                now = iso(utcnow())
+                row = conn.execute(
+                    """INSERT INTO scenario
+                         (name, description, status, owner_user_id, origin_kind,
+                          origin_scenario_id, created_date, updated_date,
+                          created_by_email)
+                       VALUES (?,?,?,?,?,?,?,?,?) RETURNING scenario_id""",
+                    (name, data.get("description"), scenarios.DRAFT,
+                     self.current_user["user_id"], start,
+                     source_id if start == "scenario" else None,
+                     now, now, self.current_user["email"])).fetchone()
+                sid = row["scenario_id"]
+                conn.execute(
+                    """INSERT INTO scenario_member
+                         (scenario_id, user_id, role, added_date, added_by_email)
+                       VALUES (?,?,?,?,?)""",
+                    (sid, self.current_user["user_id"], scenarios.S_OWNER, now,
+                     self.current_user["email"]))
+
+                counts = {}
+                focused = 0
+                if start in ("live", "scenario"):
+                    counts = scenarios.clone_into(
+                        conn, sid,
+                        source_scenario_id=source_id if start == "scenario" else None)
+                    # Optional focus: everything is still copied, so nothing is
+                    # lost and a later analysis stays honest, but anything
+                    # outside the chosen systems arrives hidden.
+                    focus = data.get("focus_system_ids") or []
+                    if focus:
+                        keep = {scenarios.scoped_id(sid, scenarios.base_id(f))
+                                for f in focus}
+                        others = [r["system_id"] for r in conn.execute(
+                            "SELECT system_id FROM system WHERE scenario_id=?",
+                            (sid,)).fetchall() if r["system_id"] not in keep]
+                        hidden = scenarios.set_hidden(
+                            conn, sid, systems=others, hidden=True)
+                        focused = hidden["system"]
+
+                # Invitees named at creation time.
+                invited = self.add_members(conn, sid, data.get("invite") or [], now)
+
+                summary = {
+                    "live": "started from Current Architecture",
+                    "scenario": "branched from another scenario",
+                    "blank": "started from a blank page",
+                }[start]
+                if counts:
+                    summary += (f" — copied {counts.get('system', 0)} system(s) and "
+                                f"{counts.get('data_flow', 0)} data flow(s)")
+                if focused:
+                    summary += f", {focused} hidden to focus the diagram"
+                # One event for the whole clone, per the bulk-operation rule.
+                audit.record_event(
+                    conn, self.current_user, "create", "scenario", sid,
+                    summary=f"Scenario '{name}' {summary}",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                created = conn.execute("SELECT * FROM scenario WHERE scenario_id=?",
+                                       (sid,)).fetchone()
+                payload = scenario_payload(conn, created, self.current_user)
+                payload["copied"] = counts
+                payload["invited"] = invited
+                payload["hidden_for_focus"] = focused
+            finally:
+                conn.close()
+            self.set_status(201)
+            self.write_json(payload)
+
+        def add_members(self, conn, sid, invites, now):
+            """Add members named at creation. Returns how many were added."""
+            added = 0
+            for item in invites:
+                uid = item.get("user_id") if isinstance(item, dict) else item
+                role = (item.get("role") if isinstance(item, dict) else None) \
+                    or scenarios.S_VIEWER
+                if role not in (scenarios.S_VIEWER, scenarios.S_EDITOR):
+                    continue
+                if not uid or uid == self.current_user["user_id"]:
+                    continue
+                user = conn.execute(
+                    "SELECT * FROM app_user WHERE user_id=? AND is_active=1",
+                    (uid,)).fetchone()
+                if not user:
+                    continue
+                conn.execute(
+                    """INSERT INTO scenario_member
+                         (scenario_id, user_id, role, added_date, added_by_email)
+                       VALUES (?,?,?,?,?)""",
+                    (sid, uid, role, now, self.current_user["email"]))
+                name = conn.execute("SELECT name FROM scenario WHERE scenario_id=?",
+                                    (sid,)).fetchone()["name"]
+                notify_user(
+                    conn, uid, "scenario_invite",
+                    f"You were added to the scenario '{name}'",
+                    body=f"{self.current_user['first_name']} "
+                         f"{self.current_user['last_name']} added you as "
+                         f"{'an editor' if role == scenarios.S_EDITOR else 'a viewer'}.",
+                    entity_type="scenario", entity_id=sid,
+                    from_email=self.current_user["email"])
+                added += 1
+            return added
+
+    class ScenarioHandler(BaseAPIHandler):
+        """Read, rename, change status, soft delete, and restore one scenario."""
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.VIEWER   # authority comes from membership
+
+        def get(self, sid):
+            conn = get_db()
+            try:
+                acc = scenarios.access(conn, self.current_user, sid)
+                acc.require_read()
+                self.write_json(scenario_payload(conn, acc.scenario, self.current_user))
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
+
+        def put(self, sid):
+            data = self.get_json_body()
+            conn = get_db()
+            try:
+                acc = scenarios.access(conn, self.current_user, sid)
+                before = dict(acc.scenario)
+
+                # Status is the one field editable while frozen — it has to be,
+                # or an Approved scenario could never be reopened.
+                if "status" in data:
+                    acc.require_manage()
+                    status = data["status"]
+                    if status not in scenarios.STATUSES:
+                        return self.fail(400, f"'{status}' is not a valid status.")
+                    conn.execute(
+                        "UPDATE scenario SET status=?, updated_date=? WHERE scenario_id=?",
+                        (status, iso(utcnow()), acc.scenario_id))
+
+                other = {k: v for k, v in data.items() if k in ("name", "description")}
+                if other:
+                    acc.require_manage()
+                    if "name" in other and not (other["name"] or "").strip():
+                        return self.fail(400, "These fields are required: Name.",
+                                         missing=["Name"])
+                    sets = ", ".join(f"{k}=?" for k in other)
+                    conn.execute(
+                        f"UPDATE scenario SET {sets}, updated_date=? WHERE scenario_id=?",
+                        tuple(other.values()) + (iso(utcnow()), acc.scenario_id))
+
+                after = conn.execute("SELECT * FROM scenario WHERE scenario_id=?",
+                                     (acc.scenario_id,)).fetchone()
+                # Lifecycle events belong to the live log, so an administrator
+                # can see what is being planned without opening each scenario.
+                audit.record_update(
+                    conn, self.current_user, "scenario", acc.scenario_id,
+                    before, dict(after),
+                    fields=["name", "description", "status"],
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                self.write_json(scenario_payload(conn, after, self.current_user))
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
+
+        def delete(self, sid):
+            """Soft delete. The plan is recoverable; nothing is actually dropped."""
+            conn = get_db()
+            try:
+                acc = scenarios.access(conn, self.current_user, sid)
+                acc.require_manage()
+                conn.execute(
+                    "UPDATE scenario SET deleted_at=?, deleted_by_email=? "
+                    "WHERE scenario_id=?",
+                    (iso(utcnow()), self.current_user["email"], acc.scenario_id))
+                audit.record_event(
+                    conn, self.current_user, "delete", "scenario", acc.scenario_id,
+                    summary=f"Scenario '{acc.scenario['name']}' deleted "
+                            f"(recoverable by a SuperAdmin)",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                for m in conn.execute(
+                        "SELECT user_id FROM scenario_member WHERE scenario_id=?",
+                        (acc.scenario_id,)).fetchall():
+                    if m["user_id"] != self.current_user["user_id"]:
+                        notify_user(
+                            conn, m["user_id"], "scenario_deleted",
+                            f"The scenario '{acc.scenario['name']}' was deleted",
+                            entity_type="scenario", entity_id=acc.scenario_id,
+                            from_email=self.current_user["email"])
+                conn.commit()
+                self.write_json({"deleted": acc.scenario_id})
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
+
+    class ScenarioRestoreHandler(BaseAPIHandler):
+        """Bring back a soft-deleted scenario. SuperAdmin, or its owner."""
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.VIEWER
+
+        def post(self, sid):
+            conn = get_db()
+            try:
+                acc = scenarios.access(conn, self.current_user, sid,
+                                       include_deleted=True)
+                acc.require_manage()
+                conn.execute(
+                    "UPDATE scenario SET deleted_at=NULL, deleted_by_email=NULL "
+                    "WHERE scenario_id=?", (acc.scenario_id,))
+                audit.record_event(
+                    conn, self.current_user, "restore", "scenario", acc.scenario_id,
+                    summary=f"Scenario '{acc.scenario['name']}' restored",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                row = conn.execute("SELECT * FROM scenario WHERE scenario_id=?",
+                                   (acc.scenario_id,)).fetchone()
+                self.write_json(scenario_payload(conn, row, self.current_user))
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
+
+    class ScenarioMembersHandler(BaseAPIHandler):
+        """Invite someone, change their scenario role, or remove them."""
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.VIEWER
+
+        def post(self, sid):
+            data = self.get_json_body()
+            conn = get_db()
+            try:
+                acc = scenarios.access(conn, self.current_user, sid)
+                acc.require_manage()
+                uid = data.get("user_id")
+                role = data.get("role", scenarios.S_VIEWER)
+                # An owner cannot hand out ownership, and there is no such thing
+                # as a scenario administrator: system Administrators and
+                # SuperAdmins already have their access from their system role.
+                if role not in (scenarios.S_VIEWER, scenarios.S_EDITOR):
+                    return self.fail(
+                        400, "A scenario member can be an editor or a viewer.")
+                user = conn.execute(
+                    "SELECT * FROM app_user WHERE user_id=? AND is_active=1",
+                    (uid,)).fetchone()
+                if not user:
+                    return self.fail(404, "That user was not found, or is inactive.")
+                if uid == acc.scenario["owner_user_id"]:
+                    return self.fail(400, "The owner's role cannot be changed here.")
+
+                existing = scenarios.member_role(conn, acc.scenario_id, uid)
+                now = iso(utcnow())
+                if existing:
+                    conn.execute(
+                        "UPDATE scenario_member SET role=? "
+                        "WHERE scenario_id=? AND user_id=?",
+                        (role, acc.scenario_id, uid))
+                    action = "updated"
+                else:
+                    conn.execute(
+                        """INSERT INTO scenario_member
+                             (scenario_id, user_id, role, added_date, added_by_email)
+                           VALUES (?,?,?,?,?)""",
+                        (acc.scenario_id, uid, role, now, self.current_user["email"]))
+                    action = "added"
+                    notify_user(
+                        conn, uid, "scenario_invite",
+                        f"You were added to the scenario '{acc.scenario['name']}'",
+                        body=f"You can "
+                             f"{'edit' if role == scenarios.S_EDITOR else 'view'} "
+                             f"this scenario.",
+                        entity_type="scenario", entity_id=acc.scenario_id,
+                        from_email=self.current_user["email"])
+                audit.record_event(
+                    conn, self.current_user, "update", "scenario", acc.scenario_id,
+                    summary=f"{user['email']} {action} as {role} on scenario "
+                            f"'{acc.scenario['name']}'",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                row = conn.execute("SELECT * FROM scenario WHERE scenario_id=?",
+                                   (acc.scenario_id,)).fetchone()
+                self.write_json(scenario_payload(conn, row, self.current_user))
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
+
+        def delete(self, sid, uid):
+            conn = get_db()
+            try:
+                acc = scenarios.access(conn, self.current_user, sid)
+                acc.require_manage()
+                uid = int(uid)
+                if uid == acc.scenario["owner_user_id"]:
+                    return self.fail(
+                        400, "The owner cannot be removed. Transfer ownership first.")
+                conn.execute(
+                    "DELETE FROM scenario_member WHERE scenario_id=? AND user_id=?",
+                    (acc.scenario_id, uid))
+                # Their contributions stay: the audit trail is append-only, and
+                # the work belongs to the scenario rather than to the person.
+                audit.record_event(
+                    conn, self.current_user, "update", "scenario", acc.scenario_id,
+                    summary=f"User {uid} removed from scenario "
+                            f"'{acc.scenario['name']}'",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                notify_user(
+                    conn, uid, "scenario_removed",
+                    f"You no longer have access to '{acc.scenario['name']}'",
+                    entity_type="scenario", entity_id=acc.scenario_id,
+                    from_email=self.current_user["email"])
+                conn.commit()
+                row = conn.execute("SELECT * FROM scenario WHERE scenario_id=?",
+                                   (acc.scenario_id,)).fetchone()
+                self.write_json(scenario_payload(conn, row, self.current_user))
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
+
+    class ScenarioVisibilityHandler(BaseAPIHandler):
+        """Hide or show records in bulk, so a scenario can be focused.
+
+        Built for multi-select: the client sends every identifier at once and
+        gets one summary audit event, rather than one event per row. Hiding is
+        a view preference — nothing is deleted, and nothing is excluded from
+        any future analysis.
+        """
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.VIEWER   # scenario membership decides
+
+        def post(self, sid):
+            data = self.get_json_body()
+            hide = bool(data.get("hidden", True))
+            systems = data.get("system_ids") or []
+            flows = data.get("flow_ids") or []
+            conn = get_db()
+            try:
+                acc = scenarios.access(conn, self.current_user, sid)
+                acc.require_write()
+                if not systems and not flows and not data.get("all"):
+                    return self.fail(400, "Nothing was selected.")
+
+                # "Show everything again" — the un-hide-all toggle.
+                if data.get("all"):
+                    systems = [r["system_id"] for r in conn.execute(
+                        "SELECT system_id FROM system WHERE scenario_id=?",
+                        (acc.scenario_id,)).fetchall()]
+                    flows = [r["flow_id"] for r in conn.execute(
+                        "SELECT flow_id FROM data_flow WHERE scenario_id=?",
+                        (acc.scenario_id,)).fetchall()]
+
+                changed = scenarios.set_hidden(
+                    conn, acc.scenario_id, systems=systems, flows=flows, hidden=hide)
+                verb = "hid" if hide else "showed"
+                audit.record_event(
+                    conn, self.current_user, "update", "scenario", acc.scenario_id,
+                    summary=f"{verb.capitalize()} {changed['system']} system(s) and "
+                            f"{changed['data_flow']} data flow(s) in scenario "
+                            f"'{acc.scenario['name']}'",
+                    scenario_id=acc.scenario_id,
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                self.write_json({"changed": changed, "hidden": hide})
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
+
+    class ScenarioOwnerHandler(BaseAPIHandler):
+        """Transfer ownership. SuperAdmin only, per the agreed rules."""
+        READ_ROLE = permissions.SUPERADMIN
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def post(self, sid):
+            data = self.get_json_body()
+            conn = get_db()
+            try:
+                acc = scenarios.access(conn, self.current_user, sid,
+                                       include_deleted=True)
+                uid = data.get("user_id")
+                user = conn.execute(
+                    "SELECT * FROM app_user WHERE user_id=? AND is_active=1",
+                    (uid,)).fetchone()
+                if not user:
+                    return self.fail(404, "That user was not found, or is inactive.")
+                now = iso(utcnow())
+                old_owner = acc.scenario["owner_user_id"]
+                conn.execute(
+                    "UPDATE scenario SET owner_user_id=?, updated_date=? "
+                    "WHERE scenario_id=?", (uid, now, acc.scenario_id))
+                # The previous owner stays on as an editor rather than losing
+                # access to work they did.
+                conn.execute(
+                    "UPDATE scenario_member SET role=? WHERE scenario_id=? AND user_id=?",
+                    (scenarios.S_EDITOR, acc.scenario_id, old_owner))
+                if scenarios.member_role(conn, acc.scenario_id, uid):
+                    conn.execute(
+                        "UPDATE scenario_member SET role=? "
+                        "WHERE scenario_id=? AND user_id=?",
+                        (scenarios.S_OWNER, acc.scenario_id, uid))
+                else:
+                    conn.execute(
+                        """INSERT INTO scenario_member
+                             (scenario_id, user_id, role, added_date, added_by_email)
+                           VALUES (?,?,?,?,?)""",
+                        (acc.scenario_id, uid, scenarios.S_OWNER, now,
+                         self.current_user["email"]))
+                audit.record_event(
+                    conn, self.current_user, "update", "scenario", acc.scenario_id,
+                    summary=f"Ownership of '{acc.scenario['name']}' transferred to "
+                            f"{user['email']}",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                notify_user(
+                    conn, uid, "scenario_owner",
+                    f"You now own the scenario '{acc.scenario['name']}'",
+                    entity_type="scenario", entity_id=acc.scenario_id,
+                    from_email=self.current_user["email"])
+                conn.commit()
+                row = conn.execute("SELECT * FROM scenario WHERE scenario_id=?",
+                                   (acc.scenario_id,)).fetchone()
+                self.write_json(scenario_payload(conn, row, self.current_user))
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
+
+    # -----------------------------------------------------------------------
     # Notifications
     # -----------------------------------------------------------------------
     class NotificationsHandler(BaseAPIHandler):
@@ -3605,6 +4690,15 @@ if HAS_TORNADO:
             (r"/api/preferences", PreferencesHandler),
             (r"/api/system-types", SystemTypesHandler),
             (r"/api/system-types/([^/]+)", SystemTypeHandler),
+            # Scenarios. The member route is listed before the single-scenario
+            # route so "/api/scenarios/3/members/7" is not swallowed by it.
+            (r"/api/scenarios", ScenariosHandler),
+            (r"/api/scenarios/([^/]+)/members/([^/]+)", ScenarioMembersHandler),
+            (r"/api/scenarios/([^/]+)/members", ScenarioMembersHandler),
+            (r"/api/scenarios/([^/]+)/restore", ScenarioRestoreHandler),
+            (r"/api/scenarios/([^/]+)/visibility", ScenarioVisibilityHandler),
+            (r"/api/scenarios/([^/]+)/owner", ScenarioOwnerHandler),
+            (r"/api/scenarios/([^/]+)", ScenarioHandler),
             (r"/api/notifications", NotificationsHandler),
             (r"/api/audit/export", AuditExportHandler),
             (r"/api/audit/([0-9]+)/revert", AuditRevertHandler),

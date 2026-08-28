@@ -38,6 +38,12 @@ services:
       BOOTSTRAP_SUPERADMIN_PASSWORD: ${BOOTSTRAP_SUPERADMIN_PASSWORD:-}
       BOOTSTRAP_SUPERADMIN_FIRST_NAME: ${BOOTSTRAP_SUPERADMIN_FIRST_NAME:-System}
       BOOTSTRAP_SUPERADMIN_LAST_NAME: ${BOOTSTRAP_SUPERADMIN_LAST_NAME:-Administrator}
+      # Local convenience: keep the password above instead of being asked to
+      # change it every time the database is recreated. Never set this on a
+      # deployed environment.
+      BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE: ${BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE:-}
+      # Emergency password reset. Normally unset; see RELEASE_CHECKLIST.md.
+      BOOTSTRAP_SUPERADMIN_RESET: ${BOOTSTRAP_SUPERADMIN_RESET:-}
     ports:
       - "8765:8765"
     depends_on:

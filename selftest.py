@@ -342,6 +342,106 @@ try:
     else:
         print("        (Preferences and Audit need SuperAdmin — skipped)")
 
+    # -----------------------------------------------------------------------
+    section("Scenario planning")
+    # The rule that matters most: a scenario must never change Current
+    # Architecture. Everything else here supports that claim.
+    if role in ("Editor", "Administrator", "SuperAdmin"):
+        s, live_before = admin.request("GET", "/api/systems")
+        n_live = len(live_before) if isinstance(live_before, list) else 0
+        s, scn = admin.request("POST", "/api/scenarios",
+                               {"name": "selftest — safe to delete",
+                                "start_from": "live"})
+        check("a scenario can be created from Current Architecture", s == 201,
+              f"got {s}: {scn}")
+        sid = scn.get("scenario_id") if isinstance(scn, dict) else None
+        if sid:
+            s, in_scn = admin.request("GET", f"/api/systems?scenario={sid}")
+            check("it contains its own copy of every system",
+                  s == 200 and len(in_scn) == n_live, f"{len(in_scn)} vs {n_live}")
+            check("those copies have scenario-prefixed identifiers",
+                  all(x["system_id"].startswith(f"S{sid}-") for x in in_scn))
+            check("copied records start as unchanged",
+                  {x["change_state"] for x in in_scn} == {"unchanged"})
+
+            # Change something inside the scenario, then prove live is intact.
+            if in_scn:
+                target = in_scn[0]
+                admin.request("PUT", f"/api/systems/{target['system_id']}?scenario={sid}",
+                              {"notes": "selftest edit"})
+                s, again = admin.request("GET", f"/api/systems/{target['system_id']}?scenario={sid}")
+                check("editing a copied record marks it modified",
+                      again.get("change_state") == "modified", str(again.get("change_state")))
+                s, origin = admin.request("GET", f"/api/systems/{target['origin_id']}")
+                check("the live original is untouched",
+                      origin.get("notes") != "selftest edit")
+
+            s, live_after = admin.request("GET", "/api/systems")
+            check("Current Architecture still has the same number of systems",
+                  len(live_after) == n_live, f"{len(live_after)} vs {n_live}")
+            check("NO scenario record leaks into the live diagram",
+                  not [x for x in live_after
+                       if str(x["system_id"]).startswith(f"S{sid}-")])
+            check("every live record still has an empty scenario",
+                  all(x.get("scenario_id") is None for x in live_after))
+
+            # 'proposed' is only meaningful inside a scenario.
+            s, _ = admin.request("POST", "/api/systems",
+                                 {"name": "selftest proposed", "system_type": "Source",
+                                  "managed_by": "x", "proposed": True})
+            check("'proposed' is refused on Current Architecture", s == 400, f"got {s}")
+
+            # Blank optional foreign keys must be stored as null, not "".
+            s, made = admin.request("POST", f"/api/flows?scenario={sid}",
+                                    {"name": "selftest flow",
+                                     "source_system_id": in_scn[0]["system_id"],
+                                     "destination_system_id": in_scn[-1]["system_id"],
+                                     "frequency": "Daily", "transfer_method": "API",
+                                     "format": "JSON", "owner_id": "",
+                                     "data_steward_id": "", "proposed": True})
+            check("a flow saves with ownership left blank", s == 201, f"got {s}: {made}")
+
+            # Hiding is cosmetic.
+            s, hid = admin.request("POST", f"/api/scenarios/{sid}/visibility",
+                                   {"system_ids": [in_scn[0]["system_id"]], "hidden": True})
+            check("records can be hidden in bulk", s == 200, f"got {s}")
+            s, visible = admin.request("GET", f"/api/systems?scenario={sid}")
+            s, everything = admin.request(
+                "GET", f"/api/systems?scenario={sid}&include_hidden=1")
+            check("hidden records drop out of the normal view",
+                  len(visible) < len(everything), f"{len(visible)} vs {len(everything)}")
+            check("but are still present in the scenario",
+                  len(everything) == n_live + 0, f"{len(everything)} vs {n_live}")
+
+            # Schema reads through to the live original.
+            withschema = [x for x in live_after if x.get("schema_table_count")]
+            if withschema:
+                copy_id = f"S{sid}-{withschema[0]['system_id']}"
+                s, sch = admin.request("GET", f"/api/systems/{copy_id}/schema?scenario={sid}")
+                check("a scenario shows the schema inherited from live",
+                      s == 200 and len(sch.get("tables", []))
+                      == withschema[0]["schema_table_count"],
+                      f"got {s}")
+                check("and reports that it does not yet own it",
+                      sch.get("schema_is_local") is False)
+
+            # Deleting is recoverable.
+            s, _ = admin.request("DELETE", f"/api/scenarios/{sid}")
+            check("a scenario can be deleted", s == 200, f"got {s}")
+            s, listing = admin.request("GET", "/api/scenarios")
+            check("it disappears from the list",
+                  all(x["scenario_id"] != sid for x in listing))
+            if role == "SuperAdmin":
+                s, _ = admin.request("POST", f"/api/scenarios/{sid}/restore")
+                check("and a SuperAdmin can restore it", s == 200, f"got {s}")
+                admin.request("DELETE", f"/api/scenarios/{sid}")
+
+            s, live_end = admin.request("GET", "/api/systems")
+            check("Current Architecture is unchanged by all of the above",
+                  len(live_end) == n_live, f"{len(live_end)} vs {n_live}")
+    else:
+        print("        (creating a scenario needs Editor or higher — skipped)")
+
     section("Sign out")
     s, _ = admin.request("POST", "/api/auth/logout")
     check("logout succeeds", s == 200, f"got {s}")

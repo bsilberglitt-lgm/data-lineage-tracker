@@ -71,22 +71,27 @@ def diff_records(before, after, fields=None):
 
 
 def record_event(conn, actor, action, entity_type=None, entity_id=None,
-                 changes=None, summary=None, ip_address=None, user_agent=None):
+                 changes=None, summary=None, ip_address=None, user_agent=None,
+                 scenario_id=None):
     """Write one audit event plus any field-level changes.
 
     ``actor`` may be a user row/dict, or None for anonymous actions such as a
     failed login. Returns the new event id.
+
+    ``scenario_id`` records which view the change happened in. NULL means the
+    live diagram, so the existing history keeps its meaning untouched and the
+    live audit log never fills up with other people's planning work.
     """
     actor = actor or {}
     row = conn.execute(
         """INSERT INTO audit_event
              (occurred_at, actor_user_id, actor_email, action, entity_type,
-              entity_id, summary, ip_address, user_agent)
-           VALUES (?,?,?,?,?,?,?,?,?)
+              entity_id, summary, ip_address, user_agent, scenario_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?)
            RETURNING event_id""",
         (_now(), actor.get("user_id"), actor.get("email"), action, entity_type,
          str(entity_id) if entity_id is not None else None,
-         summary, ip_address, user_agent),
+         summary, ip_address, user_agent, scenario_id),
     ).fetchone()
     event_id = row["event_id"]
 
@@ -132,17 +137,38 @@ def record_delete(conn, actor, entity_type, entity_id, before, **kw):
 # Querying (Audit screen + CSV export)
 # ---------------------------------------------------------------------------
 
+def _day_end(value):
+    """Turn a date picked in the UI into an end-of-day timestamp.
+
+    Timestamps are stored as ISO strings, so the comparison is textual:
+    ``'2026-08-27T09:15:00' <= '2026-08-27'`` is false, and filtering "up to
+    the 27th" silently dropped everything that happened *on* the 27th. Widening
+    a bare date to the end of that day is what people mean by it.
+    """
+    text = str(value).strip()
+    return text if "T" in text else text + "T23:59:59.999999"
+
+
 def query_events(conn, start=None, end=None, actor_email=None, action=None,
                  entity_type=None, entity_id=None, limit=200, offset=0,
-                 include_changes=True):
-    """Return audit events matching the given filters, newest first."""
+                 include_changes=True, scenario_id=None):
+    """Return audit events matching the given filters, newest first.
+
+    ``scenario_id`` selects which view's history to show. NULL is Current
+    Architecture, which is also where scenario lifecycle events are recorded.
+    """
     where, params = [], []
+    if scenario_id is None:
+        where.append("e.scenario_id IS NULL")
+    else:
+        where.append("e.scenario_id = ?")
+        params.append(scenario_id)
     if start:
         where.append("e.occurred_at >= ?")
         params.append(start)
     if end:
         where.append("e.occurred_at <= ?")
-        params.append(end)
+        params.append(_day_end(end))
     if actor_email:
         where.append("LOWER(e.actor_email) LIKE ?")
         params.append(f"%{actor_email.strip().lower()}%")
