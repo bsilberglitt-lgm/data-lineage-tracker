@@ -78,6 +78,16 @@ Until then, uploads are capped at 10 MB (`MAX_UPLOAD_BYTES`).
   emitted an `import` statement, and produced a blank page.
 - **Schema:** Alembic migrations in `alembic/versions/`. Never edit tables by
   hand; add a migration.
+
+  **Never edit a migration that has already run — anywhere, including one
+  laptop.** Alembic records it as applied and will not revisit it, so the
+  change reaches new databases only, and the environment that already ran it
+  diverges from the code with no warning. The symptom is a 500 complaining
+  about a column that plainly exists in the migration file. This happened
+  during 0.3.0: `is_hidden` was added to 0005 after 0005 had run locally, and
+  0006 exists only to repair it. Always add a new migration, and make catch-up
+  migrations idempotent (`ADD COLUMN IF NOT EXISTS`) so they are safe on
+  databases built either way.
 - **Config:** environment variables only, so the same container runs locally, on
   Render, and later on AWS or Azure.
 

@@ -60,16 +60,40 @@ identical.)*
   git pull
   ```
 
+- [ ] **If the pull brought in a migration, restart so it runs.**
+
+  ```bash
+  docker compose restart app
+  docker compose logs app | grep -i upgrade
+  ```
+
+  Migrations run at startup, so code that expects a new column will fail with a
+  **500** until the app has been restarted. Expect a line like
+  `Running upgrade 0005 -> 0006`. Nothing found and no migration in the pull is
+  fine; nothing found *and* a new file in `alembic/versions/` is not.
+
 - [ ] **Start the app.**
 
   ```bash
   docker compose up
   ```
 
-  Leave this running; it streams the logs. Wait for
-  `Data Lineage Tracker running at http://localhost:8765`.
-  To run it in the background instead, use `docker compose up -d` and watch
-  with `docker compose logs -f app`.
+  Wait for `Data Lineage Tracker running at http://localhost:8765`.
+
+  > **This command does not return, and that is correct.** It stays in the
+  > foreground streaming the app's logs, so the terminal will not accept
+  > another command. That is the app running, not a hang.
+  >
+  > Every later step that needs a terminal — `selftest.py`, the JSX check, git —
+  > needs a **second terminal tab**: press **Cmd + T**, then `cd` back to the
+  > project folder. Or start the app detached instead and keep one terminal:
+  >
+  > ```bash
+  > docker compose up -d
+  > docker compose logs -f app     # Ctrl-C stops watching, not the app
+  > ```
+  >
+  > Stop a detached app with `docker compose down`.
 
 - [ ] **Sign in** at <http://localhost:8765> and confirm the app works *before*
   you change anything. Knowing it was healthy at the start saves a lot of
@@ -184,6 +208,19 @@ Sign in as a **SuperAdmin** and confirm each:
   "are you sure" prompt), and a system still used by a flow refuses to delete
   with an explanation rather than an error
 - [ ] Both deletions appear in the **Audit Log**
+- [ ] **Scenarios** — the release's main feature:
+  - Create one from Current Architecture; confirm it copies every system and
+    the sidebar shows it as "… (Scenario)"
+  - Inside it, the background is tinted and the header names the scenario
+  - Add a system and a data flow; both default to **Proposed** and draw with a
+    dashed outline
+  - Edit a copied record and confirm it becomes **Modified**
+  - Delete a copied record and choose **retire**; it stays, struck through
+  - Select several rows and hide them; **Show hidden items** brings them back
+  - Open the schema on a system copied from live — the field list should be
+    there — then change a field's governance and confirm **Current
+    Architecture's schema is unchanged**
+  - **Then switch back to Current Architecture and confirm nothing changed**
 - [ ] Sign out, and confirm you are returned to the sign-in page
 
 Then, in a **private/incognito window**, sign in as a **Viewer** test account:
@@ -254,8 +291,11 @@ Finally:
   → **Environment**:
   - `DATABASE_URL` — present, pointing at the Internal Database URL
   - `BOOTSTRAP_SUPERADMIN_EMAIL` — present
-  - `BOOTSTRAP_SUPERADMIN_RESET` — **must not be set.** If it is, every
-    deploy resets the SuperAdmin password. Delete it before deploying.
+
+  > **Only if you used the emergency SuperAdmin reset since the last deploy:**
+  > confirm `BOOTSTRAP_SUPERADMIN_RESET` has been deleted again. Left in place,
+  > it resets that password on *every* deploy. It is not normally set, so
+  > there is nothing to do here unless you set it yourself.
 
 - [ ] **Commit and push.** Ask Claude for the commit message, or write one
   summarising the release.

@@ -1,7 +1,31 @@
 # Accessibility Report — Data Lineage Tracker
 
-Covers the colour palette introduced in v0.2.1 and the screen reader support
-added alongside it. Measured against **WCAG 2.1 Level AA**.
+Covers the colour palette introduced in v0.2.1, the screen reader support added
+alongside it, and the scenario view added in v0.3.0. Measured against
+**WCAG 2.1 Level AA**.
+
+---
+
+## 0. Secondary text — a failure found and fixed in v0.3.0
+
+The v0.2.1 report listed "contrast has not been verified for every small UI
+element" as a known gap. Measuring it while choosing the scenario background
+turned up a real failure, present since long before scenarios existed.
+
+| Colour | Used for | On white | On page | Result |
+|---|---|---|---|---|
+| `#888` | secondary text, 24 places | 3.54 | 3.21 | **Failed AA** |
+| `#999` | hints, empty states, dates, 8 places | 2.85 | 2.58 | **Failed AA** |
+| `#6b6b6b` | the replacement | **5.33** | **4.82** | Pass |
+
+All 32 uses now use `#6b6b6b`, which clears AA on white panels, on the page
+background, and on the scenario tint. Nothing else about the design changed.
+
+**Still outstanding:** `#bbb` is used twice — the breadcrumb separator and the
+"none" tag — at roughly 1.9:1. Both are arguably decorative rather than
+informational, and darkening them changes how the interface looks rather than
+just how it measures, so they are left as a deliberate decision rather than
+silently restyled.
 
 ---
 
@@ -33,6 +57,37 @@ way, so a new type cannot arrive with an unreadable combination:
 Every combination clears AA for normal text, and most clear **AAA** (7:1) as
 well. The weakest measurement anywhere is the Manual Entry border at 4.43:1,
 comfortably above the 3:1 required for a graphical object.
+
+## 1a. The scenario background
+
+A scenario is tinted so it is obvious you are not looking at the live diagram.
+Choosing the shade is a trade-off: too pale and it does nothing, too strong and
+it starts eating into text contrast.
+
+| Candidate | Difference from the page background (CIE Lab dE) | Worst text contrast on it |
+|---|---|---|
+| `#fdfaef` | 8.3 — easy to miss | 4.63 |
+| **`#fcf7e3` (chosen)** | **12.7 — clearly noticeable** | **4.51** |
+| `#fbf3d5` | 17.9 | 4.35 |
+| `#f7ecc0` | 25.4 — heavy | 4.09 **fails AA** |
+
+Contrast ratio is the wrong tool for comparing two pale backgrounds — every
+candidate scores about 1.0 against the page — so perceptual difference (CIE Lab)
+was used to judge visibility, and contrast ratio only to check the text on top.
+
+On `#fcf7e3`, every text colour in the app clears AA: body text 14.70:1,
+headings 10.82:1, field labels 5.35:1, secondary text 4.96:1, primary blue
+4.51:1, danger red 5.06:1.
+
+**Colour is not the only cue**, as WCAG 1.4.1 requires. The header names the
+scenario, the name carries a "(Scenario)" suffix, and a badge appears beside it.
+Someone who cannot see the tint at all still knows exactly where they are.
+
+**Proposed and removed records** are shown by pattern, not colour: a dashed
+outline and a struck-through, faded row. Both survive every form of colour
+blindness, and both are stated in text for screen readers.
+
+---
 
 ## 2. Colour blindness
 

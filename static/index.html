@@ -7,6 +7,70 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #1a2332; height: 100vh; overflow: hidden; }
+/* --- Scenario view ------------------------------------------------------
+   A scenario is not the live diagram, and that must be obvious at a glance
+   without relying on colour alone: the header also names the scenario and
+   carries a "(Scenario)" suffix, satisfying WCAG 1.4.1. The tint is
+   #fcf7e3 — measurably different from the normal page background
+   (dE 12.7) while keeping every text colour above AA. See ACCESSIBILITY.md. */
+.scenario-view { background: #fcf7e3; }
+.scenario-view .data-table, .scenario-view .panel { background: #fffdf6; }
+.scenario-view .schema-canvas, .scenario-view .table-view,
+.scenario-view .diagram-canvas { background: #fcf7e3; }
+.scenario-badge { display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 10px; background: #f7ecc0; color: #6b5200;
+  margin-left: 8px; vertical-align: middle; }
+/* Proposed / removed, drawn so the pattern carries the meaning rather than
+   the colour: a dotted outline survives every kind of colour blindness. */
+.state-proposed { border-style: dashed !important; }
+.state-removed { opacity: 0.55; text-decoration: line-through; }
+.state-modified-dot { display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%; background: #b35c00; margin-right: 5px; }
+.row-hidden { opacity: 0.5; }
+.scenario-picker select { font-size: 12px; padding: 3px 6px; border: 1px solid #c7d0da;
+  border-radius: 4px; background: #fff; max-width: 260px; }
+.check-inline { display: flex; align-items: center; gap: 6px; font-size: 13px;
+  margin: 6px 0; cursor: pointer; }
+.pick-list { max-height: 190px; overflow-y: auto; border: 1px solid #dde3ea;
+  border-radius: 4px; padding: 8px 10px; margin: 6px 0 12px; background: #fff; }
+.invite-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.invite-row select { font-size: 12px; padding: 2px 4px; }
+.scenario-bar { display: flex; align-items: center; gap: 10px; padding: 6px 16px;
+  background: #f7ecc0; border-bottom: 1px solid #e0d3a0; font-size: 12px; color: #5a4700; }
+.scenario-bar .grow { flex: 1; }
+.nav-scenario { padding-left: 26px; font-size: 12px; }
+.nav-add { font-size: 12px; opacity: 0.85; }
+.hide-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 12px; background: #fff8dc; border: 1px solid #e0d3a0;
+  border-radius: 4px; margin: 0 0 8px; font-size: 12px; }
+.hide-bar .btn { padding: 3px 9px; font-size: 12px; }
+.pick-col { width: 28px; text-align: center; }
+.zoom-controls { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.zoom-btn { width: 26px; height: 26px; display: flex; align-items: center;
+  justify-content: center; background: #fff; border: 1px solid #c7d0da;
+  border-radius: 4px; color: #1B3A5C; cursor: pointer; padding: 0; }
+.zoom-btn:hover:not(:disabled) { background: #eaf2fb; border-color: #2E75B6; }
+.zoom-btn:disabled { opacity: 0.4; cursor: default; }
+.zoom-level { min-width: 46px; background: none; border: none; font-family: inherit;
+  font-size: 11px; color: #6b6b6b; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.zoom-level:hover { background: #eaf2fb; color: #1B3A5C; }
+.person-picker { position: relative; margin: 6px 0 12px; }
+.person-picker > input { width: 100%; padding: 6px 8px; border: 1px solid #c7d0da;
+  border-radius: 4px; font-family: inherit; font-size: 13px; }
+.picker-results { position: absolute; z-index: 30; left: 0; right: 0; background: #fff;
+  border: 1px solid #c7d0da; border-radius: 4px; margin-top: 2px; max-height: 200px;
+  overflow-y: auto; box-shadow: 0 4px 14px rgba(0,0,0,0.12); list-style: none; }
+.picker-results li { padding: 6px 10px; font-size: 13px; cursor: pointer; }
+.picker-results li.active { background: #eaf2fb; }
+.picker-results li.no-match { color: #6b6b6b; cursor: default; }
+.chosen-list { margin-top: 8px; border: 1px solid #dde3ea; border-radius: 4px; padding: 6px 10px; }
+.chosen-list .invite-row { padding: 3px 0; font-size: 13px; }
+.chosen-list .btn { padding: 1px 7px; font-size: 11px; margin-left: 6px; }
+.tab-row { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid #e3e8ee; }
+.tab-btn { background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 8px 12px; font-family: inherit; font-size: 13px; cursor: pointer; color: #6b6b6b; }
+.tab-btn.active { color: #1B3A5C; border-bottom-color: #2E75B6; font-weight: 600; }
+
 .app { display: flex; height: 100vh; }
 .sidebar { width: 260px; background: #1B3A5C; color: #fff; display: flex; flex-direction: column; flex-shrink: 0; }
 .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
@@ -48,7 +112,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .panel-close:hover { background: #e0e0e0; }
 .panel-body { padding: 16px 20px; }
 .panel-section { margin-bottom: 20px; }
-.panel-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 8px; font-weight: 600; }
+.panel-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #6b6b6b; margin-bottom: 8px; font-weight: 600; }
 .field-row { display: flex; margin-bottom: 6px; font-size: 13px; line-height: 1.5; }
 .field-label { width: 140px; flex-shrink: 0; color: #666; font-weight: 500; }
 .field-value { flex: 1; color: #1a2332; word-break: break-word; }
@@ -104,7 +168,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .stats-bar { display: flex; gap: 24px; padding: 10px 20px; background: #fff; border-bottom: 1px solid #eee; }
 .stat { text-align: center; }
 .stat-value { font-size: 22px; font-weight: 700; color: #1B3A5C; }
-.stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-label { font-size: 10px; color: #6b6b6b; text-transform: uppercase; letter-spacing: 0.5px; }
 .legend { position: absolute; bottom: 16px; left: 16px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); font-size: 11px; z-index: 5; }
 .legend-title { font-weight: 600; margin-bottom: 6px; color: #555; }
 .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
@@ -115,7 +179,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .login-screen { display: flex; align-items: center; justify-content: center; height: 100vh; background: #f0f4f8; }
 .login-box { background: #fff; border-radius: 12px; padding: 40px; width: 380px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); text-align: center; }
 .login-box h1 { font-size: 20px; color: #1B3A5C; margin-bottom: 6px; }
-.login-box p { font-size: 13px; color: #888; margin-bottom: 24px; }
+.login-box p { font-size: 13px; color: #6b6b6b; margin-bottom: 24px; }
 .login-box input { width: 100%; padding: 10px 14px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; font-family: inherit; margin-bottom: 12px; }
 .login-box input:focus { outline: none; border-color: #2E75B6; box-shadow: 0 0 0 3px rgba(46,117,182,0.15); }
 .login-box .login-btn { width: 100%; padding: 10px; background: #1B3A5C; color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -124,7 +188,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 /* Collapsible section styles */
 .collapsible-header { display: flex; align-items: center; cursor: pointer; padding: 8px 0; margin-bottom: 4px; user-select: none; gap: 6px; }
 .collapsible-header:hover .panel-section-title { color: #1B3A5C; }
-.collapsible-arrow { font-size: 10px; color: #888; transition: transform 0.2s; width: 14px; flex-shrink: 0; }
+.collapsible-arrow { font-size: 10px; color: #6b6b6b; transition: transform 0.2s; width: 14px; flex-shrink: 0; }
 .collapsible-arrow.open { transform: rotate(90deg); }
 .collapsible-content { overflow: hidden; transition: max-height 0.25s ease; }
 .collapsible-content.collapsed { max-height: 0 !important; overflow: hidden; }
@@ -168,7 +232,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .gov-dot { width: 7px; height: 7px; border-radius: 50%; background: #D4772C; flex-shrink: 0; }
 .schema-link-line { stroke: #9fb3c8; stroke-width: 1.5; fill: none; }
 .schema-link-line.hl { stroke: #D4772C; stroke-width: 2.5; }
-.schema-empty { padding: 40px; text-align: center; color: #888; font-size: 14px; }
+.schema-empty { padding: 40px; text-align: center; color: #6b6b6b; font-size: 14px; }
 /* governance inheritance display */
 .gov-field { display: flex; margin-bottom: 7px; font-size: 13px; line-height: 1.5; }
 .gov-field .field-label { width: 140px; flex-shrink: 0; color: #666; font-weight: 500; }
@@ -179,11 +243,11 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .src-tag-table { background: #e3f2fd; color: #1565c0; }
 .src-tag-column { background: #fdebd0; color: #b9770e; }
 .src-tag-none { background: #f5f5f5; color: #bbb; }
-.gov-hint { font-size: 10px; color: #999; margin-top: 2px; }
+.gov-hint { font-size: 10px; color: #6b6b6b; margin-top: 2px; }
 .col-meta-row { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
 .col-meta-row .chip { background: #eef2f7; border-radius: 4px; padding: 2px 8px; color: #4a5764; }
 /* ===== Auth / admin ===== */
-.login-box .login-sub { font-size: 12px; color: #888; margin-top: 14px; line-height: 1.5; }
+.login-box .login-sub { font-size: 12px; color: #6b6b6b; margin-top: 14px; line-height: 1.5; }
 .login-box label { display: block; text-align: left; font-size: 12px; font-weight: 600; color: #555; margin-bottom: 4px; }
 .login-box .field { margin-bottom: 12px; }
 .login-note { background: #fff8e1; border: 1px solid #ffe0a3; color: #7a5b00; border-radius: 6px; padding: 10px 12px; font-size: 12px; margin-bottom: 14px; text-align: left; line-height: 1.5; }
@@ -204,7 +268,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .inactive-row td { opacity: 0.45; }
 .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; padding: 12px 20px; background: #fff; border-bottom: 1px solid #eee; }
 .filter-bar .fg { display: flex; flex-direction: column; gap: 3px; }
-.filter-bar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; font-weight: 600; }
+.filter-bar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #6b6b6b; font-weight: 600; }
 .filter-bar input, .filter-bar select { padding: 6px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 12px; font-family: inherit; }
 .audit-changes { margin-top: 4px; font-size: 11px; }
 .audit-changes .chg { display: block; color: #555; padding: 1px 0; }
@@ -216,7 +280,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .pref-row:last-child { border-bottom: none; }
 .pref-row .pref-label { width: 260px; flex-shrink: 0; }
 .pref-row .pref-label b { display: block; font-size: 13px; color: #1a2332; }
-.pref-row .pref-label span { font-size: 11px; color: #888; line-height: 1.45; }
+.pref-row .pref-label span { font-size: 11px; color: #6b6b6b; line-height: 1.45; }
 .pref-row .pref-control { flex: 1; }
 .pref-row input[type=text], .pref-row input[type=number], .pref-row select { width: 100%; max-width: 380px; padding: 7px 9px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px; font-family: inherit; }
 .pref-row.locked { background: #fafafa; }
@@ -224,7 +288,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .banner { padding: 10px 20px; font-size: 13px; display: flex; align-items: center; gap: 10px; }
 .banner-error { background: #fde8e8; color: #922b21; border-bottom: 1px solid #f5c6cb; }
 .banner-ok { background: #e6f4ea; color: #1e7e34; border-bottom: 1px solid #bfe5c9; }
-.empty-state { padding: 40px; text-align: center; color: #999; font-size: 14px; }
+.empty-state { padding: 40px; text-align: center; color: #6b6b6b; font-size: 14px; }
 /* Screens that stack a toolbar above a scrolling table. The content area is a
    flex row, so a screen with more than one child must declare its own column. */
 .screen { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -253,7 +317,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .release-head h3 { font-size: 15px; color: #1B3A5C; }
 .release-ver { font-size: 11px; font-weight: 700; background: #1B3A5C; color: #fff;
   border-radius: 9px; padding: 2px 9px; }
-.release-date { font-size: 11px; color: #999; margin-left: auto; }
+.release-date { font-size: 11px; color: #6b6b6b; margin-left: auto; }
 .md { font-size: 13px; line-height: 1.6; color: #33414f; }
 .md h2 { font-size: 13px; color: #1B3A5C; margin: 10px 0 6px; }
 .md ul { margin: 4px 0 8px 18px; }
@@ -295,7 +359,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
   text-decoration: underline; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .res-title-link:hover { color: #1a4f7a; }
 .res-desc { font-size: 12px; color: #6b7684; margin-top: 3px; line-height: 1.45; }
-.char-count { font-size: 11px; color: #999; text-align: right; margin-top: 2px; }
+.char-count { font-size: 11px; color: #6b6b6b; text-align: right; margin-top: 2px; }
 .char-count.over { color: #c0392b; font-weight: 600; }
 /* Required-field validation */
 .field-error { border-color: #c0392b !important; background: #fff8f8; }
@@ -342,7 +406,44 @@ class ApiError extends Error {
   }
 }
 
+// Which view every request belongs to. null is Current Architecture; a number
+// is that scenario. Held here rather than passed through every component
+// because otherwise each of the ~40 existing API calls would have to be found
+// and edited, and the one that got missed would quietly read live data while
+// the user believed they were in a scenario.
+let viewScenario = null;
+let viewShowHidden = false;
+const setViewScenario = (id) => { viewScenario = id === null ? null : Number(id); };
+const setViewShowHidden = (on) => { viewShowHidden = !!on; };
+
+// Endpoints that are the SAME whatever view you are in: accounts, settings,
+// release notes, and the scenario machinery itself.
+//
+// This is a deny-list on purpose. It began as a list of scoped endpoints and
+// that failed open: /api/schema was missing, so editing a field's governance
+// inside a scenario sent no scenario at all and wrote straight to Current
+// Architecture. Forgetting to add an endpoint here now means a harmless extra
+// query parameter that unscoped handlers ignore, instead of a silent edit to
+// live data.
+const UNSCOPED_ENDPOINTS = [
+  '/api/auth', '/api/users', '/api/sessions', '/api/preferences',
+  '/api/releases', '/api/version', '/api/whats-new', '/api/notifications',
+  '/api/scenarios', '/api/system-types',
+];
+
+function scopedUrl(url) {
+  if (viewScenario === null && !viewShowHidden) return url;
+  const path = url.split('?')[0];
+  if (!path.startsWith('/api/')) return url;
+  if (UNSCOPED_ENDPOINTS.some(p => path === p || path.startsWith(p + '/'))) return url;
+  const parts = [];
+  if (viewScenario !== null) parts.push(`scenario=${viewScenario}`);
+  if (viewShowHidden) parts.push('include_hidden=1');
+  return url + (url.includes('?') ? '&' : '?') + parts.join('&');
+}
+
 async function request(method, url, data) {
+  url = scopedUrl(url);
   const opts = { method, credentials: 'same-origin', headers: {} };
   if (data !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
@@ -483,6 +584,10 @@ const byName = (list) => [...(list || [])].sort((a, b) =>
   String(a.name || '').localeCompare(String(b.name || '')));
 const systemOption = (s) => `${s.name} (${s.system_id})`;
 
+// Views that belong to a particular scenario (or to Current Architecture).
+// The rest — users, preferences, releases — are the same wherever you are.
+const SCOPED_VIEWS = ['diagram', 'schema', 'systems', 'flows', 'elements', 'contributors', 'audit'];
+
 const VIEW_TITLES = {
   diagram: 'Lineage Diagram', systems: 'Systems Catalog',
   flows: 'Data Flows Catalog', elements: 'Data Elements Glossary',
@@ -512,11 +617,11 @@ function CollapsibleSection({ title, domainTag, children, defaultOpen }) {
 }
 
 // ===== SVG Diagram =====
-function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes }) {
+function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes, inScenario, zoom, setZoom }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const NODE_W = 200, NODE_H = 70, NODE_EDGE = 12;  // NODE_EDGE = draggable border band
@@ -583,10 +688,15 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
         e.preventDefault(); e.stopPropagation(); onDismissPanel();
       }} title="Click to close the details panel" />}
       <svg ref={svgRef} role="img"
-           aria-label={`Data lineage diagram: ${systems.length} systems and ${flows.length} data flows. The Systems and Data Flows tables in the sidebar list the same information.`}
+           aria-label={`Data lineage diagram: ${systems.length} systems and ${flows.length} data flows.`
+             + (systems.some(s=>s.change_state && s.change_state!=='unchanged') || flows.some(f=>f.change_state && f.change_state!=='unchanged')
+                ? ` This is a scenario: ${systems.filter(s=>s.change_state==='proposed').length + flows.filter(f=>f.change_state==='proposed').length} proposed item(s) are drawn with a dashed outline and `
+                  + `${systems.filter(s=>s.change_state==='removed').length + flows.filter(f=>f.change_state==='removed').length} item(s) being retired are faded.`
+                : '')
+             + ' The Systems and Data Flows tables in the sidebar list the same information.'}
            onMouseDown={(e) => handleMouseDown(e, null)} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
         <defs>
-          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#888"><polygon points="0 0, 10 3.5, 0 7" /></marker>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#6b6b6b"><polygon points="0 0, 10 3.5, 0 7" /></marker>
           <marker id="arrowhead-sel" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#D4772C"><polygon points="0 0, 10 3.5, 0 7" /></marker>
         </defs>
         <g transform={`translate(${panOffset.x},${panOffset.y}) scale(${zoom})`}>
@@ -602,7 +712,10 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
               <g key={flow.flow_id} className={`flow-line ${isSel?'selected':''}`}
                  onMouseDown={(e)=>e.stopPropagation()}
                  onClick={(e)=>{e.stopPropagation();onSelectFlow(flow.flow_id);}}>
-                <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={isSel?'#D4772C':'#999'} strokeWidth={isSel?3:2} markerEnd={isSel?'url(#arrowhead-sel)':'url(#arrowhead)'} />
+                <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={isSel?'#D4772C':'#6b6b6b'} strokeWidth={isSel?3:2}
+                      strokeDasharray={flow.change_state==='proposed' ? '7,5' : undefined}
+                      opacity={flow.change_state==='removed' ? 0.45 : 1}
+                      markerEnd={isSel?'url(#arrowhead-sel)':'url(#arrowhead)'} />
                 <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="transparent" strokeWidth="16" />
                 {/* The number is a generous click target — easier to hit than the line. */}
                 <rect className="flow-label-hit" x={(sx+ex)/2-22} y={(sy+ey)/2-23} width={44} height={16}
@@ -617,12 +730,16 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
             const isSel = selected && selected.type === 'system' && selected.id === sys.system_id;
             return (
               <g key={sys.system_id} className={`system-node ${isSel?'selected':''}`}
+                 opacity={sys.change_state==='removed' ? 0.45 : 1}
                  onDoubleClick={(e)=>{e.stopPropagation(); if(sys.schema_table_count>0 && onDrill) onDrill(sys.system_id);}}
                  transform={`translate(${sys.x_pos},${sys.y_pos})`}>
-                {/* Outer band: grab here to move the node. */}
+                {/* Outer band: grab here to move the node. A dashed border marks
+                    something proposed — a pattern rather than a colour, so it
+                    survives every form of colour blindness. */}
                 <rect className={`node-frame ${canEdit ? '' : 'locked'}`}
                       width={NODE_W} height={NODE_H} fill={c.fill}
                       stroke={isSel?'#D4772C':c.stroke} strokeWidth={isSel?3:2}
+                      strokeDasharray={sys.change_state==='proposed' ? '8,4' : undefined}
                       onMouseDown={(e)=>handleMouseDown(e,sys)} />
                 {/* Inner area: click here to open the details panel. */}
                 <rect className="node-body" x={NODE_EDGE} y={NODE_EDGE}
@@ -631,8 +748,13 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
                       onMouseDown={(e)=>e.stopPropagation()}
                       onClick={(e)=>{e.stopPropagation(); onSelectSystem(sys.system_id);}} />
                 <text x={NODE_W/2} y={24} textAnchor="middle" fontSize="11" fontWeight="700" fill={c.text}>{sys.name.length>28?sys.name.substring(0,26)+'...':sys.name}</text>
-                <text x={NODE_W/2} y={40} textAnchor="middle" fontSize="9" fill="#888">{sys.system_type}</text>
+                <text x={NODE_W/2} y={40} textAnchor="middle" fontSize="9" fill="#6b6b6b">{sys.system_type}</text>
                 <text x={NODE_W/2} y={56} textAnchor="middle" fontSize="9" fill="#aaa">{sys.system_id}</text>
+                {sys.change_state==='removed' && (
+                  <line x1={8} y1={NODE_H/2} x2={NODE_W-8} y2={NODE_H/2}
+                        stroke={c.text} strokeWidth={1.5} />
+                )}
+
                 {sys.schema_table_count>0 ? <g style={{cursor:'pointer'}} onMouseDown={(e)=>e.stopPropagation()} onClick={(e)=>{e.stopPropagation(); onDrill && onDrill(sys.system_id);}}>
                   <rect x={6} y={NODE_H-18} width={64} height={14} rx="7" fill="#1B3A5C" />
                   <text x={38} y={NODE_H-8} textAnchor="middle" fontSize="8" fill="#fff" fontWeight="700">&#9707; SCHEMA</text>
@@ -655,6 +777,24 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
                  border: `2px solid ${t.stroke_color}`}}></div>{t.type_name}
           </div>
         ))}
+        {/* Only shown in a scenario: on Current Architecture nothing is
+            proposed or being retired, so the entries would be noise. */}
+        {inScenario && (
+          <React.Fragment>
+            <div className="legend-title" style={{marginTop:10}}>In this scenario</div>
+            <div className="legend-item">
+              <div className="legend-color" style={{background:'#fff',
+                   border:'2px dashed #4a5764'}}></div>Proposed &mdash; new here
+            </div>
+            <div className="legend-item">
+              <div className="legend-color" style={{background:'#e2e6ea',
+                   border:'2px solid #4a5764', opacity:0.45}}></div>Being retired
+            </div>
+            <div className="legend-item" style={{color:'#6b6b6b'}}>
+              Hidden items are left out until you show them
+            </div>
+          </React.Fragment>
+        )}
       </div>
       {showTypeKey && <SystemTypeKeyModal types={systemTypes}
                                           onClose={() => setShowTypeKey(false)} />}
@@ -678,11 +818,11 @@ function rectEdge(cx, cy, w, h, tx, ty) {
   return { x: cx + dx * s, y: cy + dy * s };
 }
 
-function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdatePosition, canEdit }) {
+function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdatePosition, canEdit, zoom, setZoom }) {
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const [panOffset, setPanOffset] = useState({ x: 40, y: 20 });
-  const [zoom, setZoom] = useState(0.85);
+  
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
 
@@ -809,7 +949,7 @@ function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdat
         <div className="legend-item"><span className="col-badge col-badge-pk">PK</span> Primary key</div>
         <div className="legend-item"><span className="col-badge col-badge-fk">FK</span> Foreign key</div>
         <div className="legend-item"><span className="gov-dot"></span> Governance override</div>
-        <div className="legend-item" style={{marginTop:4,color:'#888'}}>Drag headers · scroll to zoom</div>
+        <div className="legend-item" style={{marginTop:4,color:'#6b6b6b'}}>Drag headers · scroll to zoom</div>
       </div>
     </div>
   );
@@ -897,7 +1037,7 @@ const PANEL_REQUIRED = {
 };
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged }) {
+function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [missing, setMissing] = useState([]);
@@ -1064,9 +1204,20 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
         </div>
         <div className="panel-actions">
           {!editing && canEdit && <button className="btn btn-edit" onClick={startEdit}>Edit</button>}
+          {!editing && canEdit && onSetHidden && inScenario && ['system','flow'].includes(type) &&
+            <button className="btn"
+                    title={data.is_hidden
+                      ? 'Show this again on the scenario diagram'
+                      : 'Take this off the scenario diagram. Nothing is deleted.'}
+                    onClick={() => onSetHidden(
+                      type === 'system' ? [data.system_id] : [],
+                      type === 'flow' ? [data.flow_id] : [],
+                      !data.is_hidden)}>
+              {data.is_hidden ? 'Show on diagram' : 'Hide from diagram'}
+            </button>}
           {!editing && canEdit && onDelete && ['system','flow'].includes(type) &&
             <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>Delete</button>}
-          {!editing && !canEdit && <span style={{fontSize:'12px',color:'#888'}}>
+          {!editing && !canEdit && <span style={{fontSize:'12px',color:'#6b6b6b'}}>
             Read-only — your role does not permit editing.</span>}
           {editing && <button className="btn btn-save" onClick={saveEdit}>Save Changes</button>}
           {editing && <button className="btn" onClick={cancelEdit}>Cancel</button>}
@@ -1300,7 +1451,7 @@ function FlowReadView({ data, contributors, canEdit, notify }) {
       <table className="data-table" style={{fontSize:'12px'}}>
         <thead><tr><th>Element</th><th>PII</th><th>Transformed</th></tr></thead>
         <tbody>{data.elements.map(el => (
-          <tr key={el.element_id}><td><strong>{el.element_id}</strong> {el.name}</td><td>{el.is_pii?<span className="badge badge-pii">PII</span>:'—'}</td><td>{el.is_transformed?'Yes':'—'}{el.transformation_note?<div style={{fontSize:'11px',color:'#888',marginTop:2}}>{el.transformation_note}</div>:null}</td></tr>
+          <tr key={el.element_id}><td><strong>{el.element_id}</strong> {el.name}</td><td>{el.is_pii?<span className="badge badge-pii">PII</span>:'—'}</td><td>{el.is_transformed?'Yes':'—'}{el.transformation_note?<div style={{fontSize:'11px',color:'#6b6b6b',marginTop:2}}>{el.transformation_note}</div>:null}</td></tr>
         ))}</tbody>
       </table>
     </CollapsibleSection>}
@@ -1546,7 +1697,7 @@ function SchemaColumnReadView({ data }) {
       {data.notes && <ReadField label="Notes" value={data.notes} multiline />}
     </CollapsibleSection>}
     <CollapsibleSection title="Upstream Lineage" defaultOpen={false}>
-      <div style={{ fontSize: '12px', color: '#888', lineHeight: 1.6 }}>
+      <div style={{ fontSize: '12px', color: '#6b6b6b', lineHeight: 1.6 }}>
         Field-level lineage tracing is not yet mapped. Once column-level source mappings are defined, this section will trace where this field originates, the transformations applied along the way, and the responsible owners and stewards at each hop.
       </div>
     </CollapsibleSection>
@@ -1554,7 +1705,7 @@ function SchemaColumnReadView({ data }) {
 }
 
 // ===== Add Modals =====
-function AddSystemModal({ onClose, onSave, systems, systemTypes }) {
+function AddSystemModal({ onClose, onSave, systems, systemTypes, inScenario }) {
   const [form, setForm] = useState({
     name:'', description:'', system_type:'', vendor:'', technology:'', environment:'Production',
     managed_by:'', organization:'', contains_pii:false, ferpa_protected:false, status:'Active', notes:'',
@@ -1564,7 +1715,10 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes }) {
     entry_type:'Direct Entry', entered_by:'', target_system_id:'',
     entry_validation:'', entry_error_correction:'',
     flow_frequency:'Daily', flow_frequency_detail:'', flow_format:'',
-    flow_transfer_method:'', flow_contains_pii:false, flow_ferpa_protected:false
+    flow_transfer_method:'', flow_contains_pii:false, flow_ferpa_protected:false,
+    // New things in a scenario are proposals unless told otherwise. Ignored
+    // outside a scenario, where the server rejects the field outright.
+    proposed: true
   });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const bodyRef = useRef(null);
@@ -1581,6 +1735,14 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes }) {
         <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body" ref={bodyRef}>
         {req.summary(form) && <div className="form-error-summary" role="alert">{req.summary(form)}</div>}
+        {inScenario && (
+          <label className="check-inline">
+            <input type="checkbox" checked={!!form.proposed}
+                   onChange={e=>set('proposed', e.target.checked)} />
+            Proposed &mdash; something this scenario adds
+            <span className="gov-hint"> (clear this if it already exists today)</span>
+          </label>
+        )}
         <div className="modal-section-title">Overview</div>
         <ReqField id="sys-name" label="Name *" value={form.name} onChange={v=>set('name',v)}
                   error={req.errorFor(form,'name')} placeholder="e.g., PowerSchool SIS" />
@@ -1619,7 +1781,7 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes }) {
             </select>
             {req.errorFor(form,'target_system_id') &&
               <div className="field-error-msg">This field is required</div>}
-            <div style={{fontSize:'11px',color:'#888',marginTop:4}}>
+            <div style={{fontSize:'11px',color:'#6b6b6b',marginTop:4}}>
               The data flow into this store is created for you, so you only answer
               the timing questions once.
             </div>
@@ -1683,12 +1845,13 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes }) {
   );
 }
 
-function AddFlowModal({ systems, onClose, onSave, contributors }) {
+function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
   const [form, setForm] = useState({
     name:'', description:'', source_system_id:'', destination_system_id:'', frequency:'Daily',
     frequency_detail:'', transfer_method:'', format:'', contains_pii:false, ferpa_protected:false,
     data_classification:'', encryption_method:'', data_standard:'', legal_authority:'',
-    organization:'', managed_by:'', owner_id:'', data_steward_id:''
+    organization:'', managed_by:'', owner_id:'', data_steward_id:'',
+    proposed: true
   });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   const bodyRef = useRef(null);
@@ -1704,6 +1867,14 @@ function AddFlowModal({ systems, onClose, onSave, contributors }) {
         <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body" ref={bodyRef}>
         {req.summary(form) && <div className="form-error-summary" role="alert">{req.summary(form)}</div>}
+        {inScenario && (
+          <label className="check-inline">
+            <input type="checkbox" checked={!!form.proposed}
+                   onChange={e=>set('proposed', e.target.checked)} />
+            Proposed &mdash; something this scenario adds
+            <span className="gov-hint"> (clear this if it already exists today)</span>
+          </label>
+        )}
         <div className="modal-section-title">Flow Overview</div>
         <ReqField id="flow-name" label="Name *" value={form.name} onChange={v=>set('name',v)}
                   error={req.errorFor(form,'name')} placeholder="e.g., District Enrollment to Staging" />
@@ -1777,10 +1948,52 @@ function AddFlowModal({ systems, onClose, onSave, contributors }) {
 }
 
 // ===== Table Views =====
-function SystemsTable({ systems, onSelect }) {
+// Multi-select hiding. Only offered inside a scenario, where hiding means
+// "not part of what I am planning" — on Current Architecture there is nothing
+// to tidy away, and a hidden live record would just be a record people cannot
+// find. Selection lives here rather than in App because it is scratch state:
+// switching view or reloading should forget it.
+function useHideSelection(rows, idKey) {
+  const [picked, setPicked] = useState([]);
+  const present = new Set((rows || []).map(r => r[idKey]));
+  const valid = picked.filter(id => present.has(id));
+  const toggle = (id) => setPicked(p =>
+    p.includes(id) ? p.filter(x => x !== id) : p.concat([id]));
+  const clear = () => setPicked([]);
+  const all = () => setPicked((rows || []).map(r => r[idKey]));
+  return { picked: valid, toggle, clear, all,
+           allPicked: valid.length > 0 && valid.length === (rows || []).length };
+}
+
+function HideBar({ count, onHide, onShow, onClear, onSelectAll, allPicked, canEdit }) {
+  if (!count) return null;
+  return (
+    <div className="hide-bar" role="status">
+      <strong>{count} selected</strong>
+      {canEdit && <button className="btn" onClick={onHide}>Hide from this scenario</button>}
+      {canEdit && <button className="btn" onClick={onShow}>Show again</button>}
+      <button className="btn" onClick={allPicked ? onClear : onSelectAll}>
+        {allPicked ? 'Clear selection' : 'Select all'}
+      </button>
+      <span className="gov-hint">
+        Hiding only affects what you see here. Nothing is deleted, and nothing is
+        left out of the scenario.
+      </span>
+    </div>
+  );
+}
+
+function SystemsTable({ systems, onSelect, inScenario, canEdit, onSetHidden }) {
   const { sorted, sort, toggle } = useSort(systems, 'system_id');
-  return (<div className="table-view"><table className="data-table">
+  const sel = useHideSelection(systems, 'system_id');
+  return (<div className="table-view">
+    {inScenario && <HideBar count={sel.picked.length} allPicked={sel.allPicked} canEdit={canEdit}
+      onHide={()=>{ onSetHidden(sel.picked, [], true); sel.clear(); }}
+      onShow={()=>{ onSetHidden(sel.picked, [], false); sel.clear(); }}
+      onClear={sel.clear} onSelectAll={sel.all} />}
+    <table className="data-table">
     <thead><tr>
+      {inScenario && <th className="pick-col"><span className="sr-only">Select</span></th>}
       <SortHeader label="ID" sortKey="system_id" sort={sort} toggle={toggle} />
       <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
       <SortHeader label="Type" sortKey="system_type" sort={sort} toggle={toggle} />
@@ -1788,15 +2001,23 @@ function SystemsTable({ systems, onSelect }) {
       <SortHeader label="Organization" sortKey="organization" sort={sort} toggle={toggle} />
       <SortHeader label="Status" sortKey="status" sort={sort} toggle={toggle} />
       <SortHeader label="PII" sortKey="contains_pii" sort={sort} toggle={toggle} />
+      {inScenario && <SortHeader label="In this scenario" sortKey="change_state" sort={sort} toggle={toggle} />}
     </tr></thead>
-    <tbody>{sorted.map(s=>(<tr key={s.system_id} className="clickable" onClick={()=>onSelect(s.system_id)}><td>{s.system_id}</td><td><strong>{s.name}</strong></td><td><span className={`badge badge-${s.system_type?.toLowerCase().replace(/\s/g,'')}`}>{s.system_type}</span></td><td>{s.data_classification ? <span className={`badge badge-${CLASS_BADGE[s.data_classification]||'internal'}`}>{s.data_classification}</span> : '—'}</td><td>{s.organization}</td><td><span className={`badge badge-${STATUS_BADGE[s.status]}`}>{s.status}</span></td><td>{s.contains_pii?<span className="badge badge-pii">PII</span>:'—'}</td></tr>))}</tbody>
+    <tbody>{sorted.map(s=>(<tr key={s.system_id} className={'clickable'+(s.is_hidden?' row-hidden':'')+(s.change_state==='removed'?' state-removed':'')} onClick={()=>onSelect(s.system_id)}>{inScenario && <td className="pick-col" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.picked.includes(s.system_id)} onChange={()=>sel.toggle(s.system_id)} aria-label={`Select ${s.name}`} /></td>}<td>{s.system_id}</td><td><strong>{s.name}</strong></td><td><span className={`badge badge-${s.system_type?.toLowerCase().replace(/\s/g,'')}`}>{s.system_type}</span></td><td>{s.data_classification ? <span className={`badge badge-${CLASS_BADGE[s.data_classification]||'internal'}`}>{s.data_classification}</span> : '—'}</td><td>{s.organization}</td><td><span className={`badge badge-${STATUS_BADGE[s.status]}`}>{s.status}</span></td><td>{s.contains_pii?<span className="badge badge-pii">PII</span>:'—'}</td>{inScenario && <td><ChangeBadge state={s.change_state} hidden={s.is_hidden} /></td>}</tr>))}</tbody>
   </table></div>);
 }
 
-function FlowsTable({ flows, onSelect }) {
+function FlowsTable({ flows, onSelect, inScenario, canEdit, onSetHidden }) {
   const { sorted, sort, toggle } = useSort(flows, 'flow_id');
-  return (<div className="table-view"><table className="data-table">
+  const sel = useHideSelection(flows, 'flow_id');
+  return (<div className="table-view">
+    {inScenario && <HideBar count={sel.picked.length} allPicked={sel.allPicked} canEdit={canEdit}
+      onHide={()=>{ onSetHidden([], sel.picked, true); sel.clear(); }}
+      onShow={()=>{ onSetHidden([], sel.picked, false); sel.clear(); }}
+      onClear={sel.clear} onSelectAll={sel.all} />}
+    <table className="data-table">
     <thead><tr>
+      {inScenario && <th className="pick-col"><span className="sr-only">Select</span></th>}
       <SortHeader label="ID" sortKey="flow_id" sort={sort} toggle={toggle} />
       <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
       <SortHeader label="Source" sortKey="source_name" sort={sort} toggle={toggle} />
@@ -1804,8 +2025,9 @@ function FlowsTable({ flows, onSelect }) {
       <SortHeader label="Classification" sortKey="data_classification" sort={sort} toggle={toggle} />
       <SortHeader label="Frequency" sortKey="frequency" sort={sort} toggle={toggle} />
       <SortHeader label="Status" sortKey="status" sort={sort} toggle={toggle} />
+      {inScenario && <SortHeader label="In this scenario" sortKey="change_state" sort={sort} toggle={toggle} />}
     </tr></thead>
-    <tbody>{sorted.map(f=>(<tr key={f.flow_id} className="clickable" onClick={()=>onSelect(f.flow_id)}><td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.data_classification ? <span className={`badge badge-${CLASS_BADGE[f.data_classification]||'internal'}`}>{f.data_classification}</span> : '—'}</td><td>{f.frequency}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td></tr>))}</tbody>
+    <tbody>{sorted.map(f=>(<tr key={f.flow_id} className={'clickable'+(f.is_hidden?' row-hidden':'')+(f.change_state==='removed'?' state-removed':'')} onClick={()=>onSelect(f.flow_id)}>{inScenario && <td className="pick-col" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.picked.includes(f.flow_id)} onChange={()=>sel.toggle(f.flow_id)} aria-label={`Select ${f.name}`} /></td>}<td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.data_classification ? <span className={`badge badge-${CLASS_BADGE[f.data_classification]||'internal'}`}>{f.data_classification}</span> : '—'}</td><td>{f.frequency}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td>{inScenario && <td><ChangeBadge state={f.change_state} hidden={f.is_hidden} /></td>}</tr>))}</tbody>
   </table></div>);
 }
 
@@ -1820,7 +2042,7 @@ function ElementsTable({ elements, onSelect }) {
       <SortHeader label="PII" sortKey="is_pii" sort={sort} toggle={toggle} />
       <SortHeader label="FERPA" sortKey="ferpa_protected" sort={sort} toggle={toggle} />
     </tr></thead>
-    <tbody>{sorted.map(e=>(<tr key={e.element_id} className="clickable" onClick={()=>onSelect(e.element_id)}><td>{e.element_id}</td><td><strong>{e.name}</strong><br/><span style={{fontSize:'11px',color:'#888'}}>{e.aliases}</span></td><td>{e.data_type||'—'}</td><td>{e.data_classification ? <span className={`badge badge-${CLASS_BADGE[e.data_classification]||'internal'}`}>{e.data_classification}</span> : '—'}</td><td>{e.is_pii?<span className="badge badge-pii">PII</span>:'—'}</td><td>{e.ferpa_protected?<span className="badge badge-ferpa">FERPA</span>:'—'}</td></tr>))}</tbody>
+    <tbody>{sorted.map(e=>(<tr key={e.element_id} className="clickable" onClick={()=>onSelect(e.element_id)}><td>{e.element_id}</td><td><strong>{e.name}</strong><br/><span style={{fontSize:'11px',color:'#6b6b6b'}}>{e.aliases}</span></td><td>{e.data_type||'—'}</td><td>{e.data_classification ? <span className={`badge badge-${CLASS_BADGE[e.data_classification]||'internal'}`}>{e.data_classification}</span> : '—'}</td><td>{e.is_pii?<span className="badge badge-pii">PII</span>:'—'}</td><td>{e.ferpa_protected?<span className="badge badge-ferpa">FERPA</span>:'—'}</td></tr>))}</tbody>
   </table></div>);
 }
 
@@ -1868,7 +2090,7 @@ function SystemTypeKeyModal({ types, onClose }) {
               </div>
             </div>
           ))}
-          <div style={{ fontSize: 11, color: '#999', marginTop: 12 }}>
+          <div style={{ fontSize: 11, color: '#6b6b6b', marginTop: 12 }}>
             A SuperAdmin can edit these descriptions in Preferences.
           </div>
         </div>
@@ -1888,9 +2110,16 @@ function useRequired(fields, scrollRef) {
   // Required fields are often below the fold, so a failed save must bring the
   // message into view — otherwise pressing Save looks like it did nothing.
   const revealErrors = () => {
-    const el = scrollRef && scrollRef.current;
-    if (el && typeof el.scrollTo === 'function') el.scrollTo({ top: 0, behavior: 'smooth' });
-    else if (el) el.scrollTop = 0;
+    // The element holding the fields is not always the one that scrolls: in the
+    // Add modals the scroll container is the modal itself, so scrolling the
+    // body did nothing and pressing Save looked like it was ignored. Walk up
+    // until something can actually move.
+    let el = scrollRef && scrollRef.current;
+    while (el && el.scrollHeight <= el.clientHeight + 1) el = el.parentElement;
+    if (!el) el = scrollRef && scrollRef.current;
+    if (!el) return;
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: 0, behavior: 'smooth' });
+    else el.scrollTop = 0;
   };
   const missing = (form) => fields.filter(f => {
     const v = form[f.key];
@@ -2105,7 +2334,7 @@ function ReleasesScreen({ canEdit, notify, currentVersion }) {
 
   return (<div className="screen"><div className="table-view">
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-      <div style={{ flex: 1, fontSize: 12, color: '#888' }}>
+      <div style={{ flex: 1, fontSize: 12, color: '#6b6b6b' }}>
         Release history. Everyone sees published notes; drafts are visible to SuperAdmins only.
         This deployment is running <strong>v{currentVersion}</strong>.
       </div>
@@ -2271,7 +2500,7 @@ function ResourcesSection({ entityType, entityId, canEdit, notify }) {
 
   return (<>
     <div className="res-list">
-      {items.length === 0 && <div style={{ fontSize: 12, color: '#999' }}>
+      {items.length === 0 && <div style={{ fontSize: 12, color: '#6b6b6b' }}>
         No documents or links yet.</div>}
       {items.map(r => (
         <div className="res-item" key={r.resource_id}>
@@ -2545,7 +2774,7 @@ function UserFormModal({ user, contributors, assignableRoles, onClose, onSave })
           <label>{editing ? 'Set a new temporary password (optional)' : 'Temporary password *'}</label>
           <input type="text" value={form.password} onChange={e => set('password', e.target.value)}
                  placeholder={editing ? 'Leave blank to keep the current password' : ''} />
-          <div style={{fontSize:'11px',color:'#888',marginTop:4}}>
+          <div style={{fontSize:'11px',color:'#6b6b6b',marginTop:4}}>
             The user must change this at first sign-in. Share it through a separate
             channel — email delivery isn't configured yet.
           </div>
@@ -2584,7 +2813,7 @@ function UsersScreen({ currentUser, assignableRoles, notify }) {
 
   return (<div className="screen"><div className="table-view">
     <div style={{display:'flex',alignItems:'center',marginBottom:12}}>
-      <div style={{flex:1,fontSize:12,color:'#888'}}>
+      <div style={{flex:1,fontSize:12,color:'#6b6b6b'}}>
         Accounts are created here. Deactivate rather than delete so the audit history stays intact.
       </div>
       <button className="btn btn-primary" onClick={() => setAdding(true)}>+ Add User</button>
@@ -2720,7 +2949,7 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
 
   return (<div className="screen"><div className="table-view">
     <div style={{display:'flex',alignItems:'center',marginBottom:14}}>
-      <div style={{flex:1,fontSize:12,color:'#888'}}>
+      <div style={{flex:1,fontSize:12,color:'#6b6b6b'}}>
         Global settings for this deployment. Changes are recorded in the audit log.
       </div>
       <button className="btn btn-primary" onClick={save} disabled={busy}>
@@ -2803,7 +3032,7 @@ function SystemTypesEditor({ notify, onChanged }) {
   return (
     <div className="pref-group">
       <h3>System Types</h3>
-      <div style={{ padding: '10px 16px', fontSize: 12, color: '#888' }}>
+      <div style={{ padding: '10px 16px', fontSize: 12, color: '#6b6b6b' }}>
         These appear on the diagram key and in the Type dropdown. Colours are drawn
         from a palette checked for contrast.
         <button className="btn" style={{ marginLeft: 10 }}
@@ -2904,17 +3133,24 @@ function AuditScreen({ notify }) {
   const [conflicts, setConflicts] = useState(null);
   const LIMIT = 100;
 
-  const queryString = useCallback((extra) => {
+  // Dates are sent as-is and interpreted as UTC days by the server, matching the
+  // timestamps shown in the table. Reading them as *local* days was tried and
+  // removed: it made the filter disagree with the column beside it, so a date
+  // visible in the table could return nothing.
+  const queryString = useCallback((extra, useFilters) => {
     const p = new URLSearchParams();
-    Object.entries(filters).forEach(([k, v]) => { if (v) p.set(k, v); });
+    Object.entries(useFilters || filters).forEach(([k, v]) => { if (v) p.set(k, v); });
     Object.entries(extra || {}).forEach(([k, v]) => p.set(k, v));
     return p.toString();
   }, [filters]);
 
-  const load = useCallback((newOffset) => {
+  // `load` can be given the filters to use. Clearing used to call setFilters and
+  // then load(0), but load still closed over the OLD filters, so the table came
+  // back filtered exactly as before — the button looked broken.
+  const load = useCallback((newOffset, useFilters) => {
     const off = newOffset === undefined ? offset : newOffset;
     setLoading(true);
-    api.get(`/api/audit?${queryString({ limit: LIMIT, offset: off })}`)
+    api.get(`/api/audit?${queryString({ limit: LIMIT, offset: off }, useFilters)}`)
       .then(d => { setData(d); setOffset(off); })
       .catch(e => notify(e.message, true))
       .finally(() => setLoading(false));
@@ -2944,9 +3180,9 @@ function AuditScreen({ notify }) {
 
   return (<div className="screen">
     <div className="filter-bar">
-      <div className="fg"><label>From</label>
+      <div className="fg"><label>From (UTC)</label>
         <input type="date" value={filters.start} onChange={e => setF('start', e.target.value)} /></div>
-      <div className="fg"><label>To</label>
+      <div className="fg"><label>To (UTC)</label>
         <input type="date" value={filters.end} onChange={e => setF('end', e.target.value)} /></div>
       <div className="fg"><label>User</label>
         <input type="text" placeholder="email contains…" value={filters.user}
@@ -2960,12 +3196,15 @@ function AuditScreen({ notify }) {
           <option value="">All</option>
           {data.entity_types.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
       <button className="btn btn-primary" onClick={() => load(0)}>Apply</button>
-      <button className="btn" onClick={() => { setFilters({ start:'', end:'', user:'', action:'', entity_type:'' }); setTimeout(() => load(0), 0); }}>Clear</button>
+      <button className="btn" onClick={() => {
+        const empty = { start:'', end:'', user:'', action:'', entity_type:'' };
+        setFilters(empty); setOffset(0); load(0, empty);
+      }}>Clear</button>
       <button className="btn" onClick={() => { window.location = `/api/audit/export?${queryString()}`; }}>
         Export CSV</button>
     </div>
     <div className="table-view">
-      <div style={{fontSize:12,color:'#888',marginBottom:8}}>
+      <div style={{fontSize:12,color:'#6b6b6b',marginBottom:8}}>
         {data.total} event{data.total === 1 ? '' : 's'}
         {data.total > LIMIT ? ` — showing ${offset + 1}–${Math.min(offset + LIMIT, data.total)}` : ''}
         . The audit log is append-only; nothing can edit or remove entries.
@@ -3002,7 +3241,7 @@ function AuditScreen({ notify }) {
                 {e.changes.length > 6 && <span className="chg">…and {e.changes.length - 6} more</span>}
               </div>}
             </td>
-            <td style={{fontSize:'11px',color:'#888'}}>{e.ip_address || '—'}</td>
+            <td style={{fontSize:'11px',color:'#6b6b6b'}}>{e.ip_address || '—'}</td>
             <td>{e.revertible &&
               <button className="btn" style={{padding:'3px 8px',fontSize:'11px'}}
                       onClick={() => { setConflicts(null); setConfirmRevert(e); }}>Revert</button>}</td>
@@ -3027,7 +3266,7 @@ function AuditScreen({ notify }) {
               {conflicts.map(c => <div key={c.field}>{c.field}: now "{String(c.current).slice(0,40)}"</div>)}
             </div>
           </div>}
-          <div style={{fontSize:12,color:'#888',marginTop:10}}>
+          <div style={{fontSize:12,color:'#6b6b6b',marginTop:10}}>
             The revert is recorded as a new audit entry; nothing is erased from the log.
           </div>
         </>}
@@ -3202,6 +3441,493 @@ function AppWrapper() {
 }
 
 // ===== Main App =====
+// ===== Scenarios =====
+// A scenario is a private, non-live copy of the diagram used for planning.
+// The label always carries "(Scenario)" so the distinction never depends on
+// the background tint alone — see ACCESSIBILITY.md.
+const LIVE_LABEL = 'Current Architecture';
+const scenarioLabel = (s) => s ? `${s.name} (Scenario)` : LIVE_LABEL;
+const SCENARIO_STATUSES = ['Draft', 'Under review', 'Approved', 'Archived'];
+
+// How a record differs from the live diagram. Every one of these is shown as
+// text as well as styling, so none of it depends on sight of a colour.
+const CHANGE_LABEL = {
+  proposed: 'Proposed', modified: 'Modified', removed: 'Being retired',
+  unchanged: '',
+};
+
+function ChangeBadge({ state, hidden }) {
+  if (!state || state === 'unchanged') {
+    return hidden ? <span className="badge" title="Hidden from this scenario's diagram">Hidden</span> : null;
+  }
+  const cls = { proposed: 'badge-planned', modified: 'badge-pii',
+                removed: 'badge-deprecated' }[state] || '';
+  return (
+    <React.Fragment>
+      <span className={`badge ${cls}`}>{CHANGE_LABEL[state]}</span>
+      {hidden && <span className="badge" title="Hidden from this scenario's diagram">Hidden</span>}
+    </React.Fragment>
+  );
+}
+
+// The picker shown beside every catalog heading and on the audit log.
+function ScenarioPicker({ scenarios, current, onChange }) {
+  if (!scenarios.length) return null;
+  return (
+    <label className="scenario-picker">
+      <span className="sr-only">Choose which view to show</span>
+      <select value={current === null ? 'live' : String(current)}
+              aria-label="Choose which view to show"
+              onChange={e => onChange(e.target.value === 'live' ? null : Number(e.target.value))}>
+        <option value="live">{LIVE_LABEL}</option>
+        {scenarios.map(s => (
+          <option key={s.scenario_id} value={s.scenario_id}>{scenarioLabel(s)}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// Type-ahead for choosing people. A checkbox list is fine for a handful of
+// accounts and unusable once a department is on the system, so this searches
+// instead of listing — but it still shows who has already been chosen, since
+// a search box alone gives no way to see what you have picked.
+function PersonPicker({ users, exclude, chosen, onChange }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const boxRef = useRef(null);
+
+  const pool = (users || []).filter(u => u.user_id !== exclude && u.is_active);
+  const already = new Set(chosen.map(c => c.user_id));
+  const q = query.trim().toLowerCase();
+  const matches = !q ? [] : pool.filter(u =>
+    !already.has(u.user_id) &&
+    (`${u.first_name} ${u.last_name}`.toLowerCase().includes(q) ||
+     (u.email || '').toLowerCase().includes(q))
+  ).slice(0, 8);
+
+  const add = (u) => {
+    onChange(chosen.concat([{ user_id: u.user_id, role: 'viewer' }]));
+    setQuery(''); setOpen(false); setActive(0);
+  };
+
+  const onKeyDown = (e) => {
+    if (!matches.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, matches.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); add(matches[active]); }
+    else if (e.key === 'Escape') { setOpen(false); }
+  };
+
+  const nameOf = (id) => {
+    const u = pool.find(x => x.user_id === id);
+    return u ? `${u.first_name} ${u.last_name}` : `User ${id}`;
+  };
+
+  return (
+    <div className="person-picker" ref={boxRef}>
+      <label htmlFor="scn-invite" className="sr-only">Search for a person to invite</label>
+      <input id="scn-invite" type="text" value={query} autoComplete="off"
+             placeholder="Type a name or email to search…"
+             role="combobox" aria-expanded={open && matches.length > 0}
+             aria-controls="scn-invite-results" aria-autocomplete="list"
+             onChange={e => { setQuery(e.target.value); setOpen(true); setActive(0); }}
+             onKeyDown={onKeyDown}
+             onFocus={() => setOpen(true)} />
+      {open && q && (
+        <ul className="picker-results" id="scn-invite-results" role="listbox">
+          {matches.map((u, i) => (
+            <li key={u.user_id} role="option" aria-selected={i === active}
+                className={i === active ? 'active' : ''}
+                onMouseDown={e => { e.preventDefault(); add(u); }}
+                onMouseEnter={() => setActive(i)}>
+              {u.first_name} {u.last_name}
+              <span className="gov-hint"> {u.email} &middot; {u.role}</span>
+            </li>
+          ))}
+          {matches.length === 0 && (
+            <li className="no-match">No matching active account.</li>
+          )}
+        </ul>
+      )}
+      {chosen.length > 0 && (
+        <div className="chosen-list">
+          {chosen.map(c => (
+            <div key={c.user_id} className="invite-row">
+              <span>{nameOf(c.user_id)}</span>
+              <span>
+                <select value={c.role}
+                        aria-label={`Scenario role for ${nameOf(c.user_id)}`}
+                        onChange={e => onChange(chosen.map(x =>
+                          x.user_id === c.user_id ? { ...x, role: e.target.value } : x))}>
+                  <option value="viewer">can view</option>
+                  <option value="editor">can edit</option>
+                </select>
+                <button type="button" className="btn"
+                        aria-label={`Remove ${nameOf(c.user_id)}`}
+                        onClick={() => onChange(chosen.filter(x => x.user_id !== c.user_id))}>
+                  Remove
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {chosen.length === 0 && (
+        <div className="gov-hint">Nobody else yet — only you will see this scenario.</div>
+      )}
+    </div>
+  );
+}
+
+// Managing a scenario after it exists: rename, status, membership, ownership,
+// deletion. Only the owner and SuperAdmins get here.
+function ScenarioSettingsModal({ scenario, users, currentUserId, isSuper,
+                                 onClose, onSaved, notify }) {
+  const [tab, setTab] = useState('details');
+  const [form, setForm] = useState({
+    name: scenario.name || '', description: scenario.description || '',
+  });
+  const [status, setStatus] = useState(scenario.status);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [invite, setInvite] = useState([]);
+  const [newOwner, setNewOwner] = useState('');
+  const members = scenario.members || [];
+
+  const call = (p) => { setBusy(true); return p.finally(() => setBusy(false)); };
+
+  const saveDetails = () => {
+    if (!form.name.trim()) { notify('A scenario needs a name.', true); return; }
+    call(api.put(`/api/scenarios/${scenario.scenario_id}`, form)
+      .then(() => onSaved()).then(() => notify('Scenario updated.'))
+      .catch(e => notify(e.message, true)));
+  };
+
+  const saveStatus = (next) => {
+    setStatus(next);
+    call(api.put(`/api/scenarios/${scenario.scenario_id}`, { status: next })
+      .then(() => onSaved())
+      .then(() => notify(next === 'Draft'
+        ? 'Returned to Draft — it can be edited again.'
+        : `Status set to ${next}. The scenario is now read-only.`))
+      .catch(e => { setStatus(scenario.status); notify(e.message, true); }));
+  };
+
+  const addPeople = () => {
+    if (!invite.length) return;
+    call(Promise.all(invite.map(i =>
+      api.post(`/api/scenarios/${scenario.scenario_id}/members`, i)))
+      .then(() => onSaved()).then(() => { setInvite([]); notify('Invitations sent.'); })
+      .catch(e => notify(e.message, true)));
+  };
+
+  const setRole = (uid, role) =>
+    call(api.post(`/api/scenarios/${scenario.scenario_id}/members`, { user_id: uid, role })
+      .then(() => onSaved()).catch(e => notify(e.message, true)));
+
+  const removeMember = (uid) =>
+    call(api.del(`/api/scenarios/${scenario.scenario_id}/members/${uid}`)
+      .then(() => onSaved()).then(() => notify('Removed from this scenario.'))
+      .catch(e => notify(e.message, true)));
+
+  const transfer = () => {
+    if (!newOwner) return;
+    call(api.post(`/api/scenarios/${scenario.scenario_id}/owner`, { user_id: Number(newOwner) })
+      .then(() => onSaved()).then(() => { setNewOwner(''); notify('Ownership transferred.'); })
+      .catch(e => notify(e.message, true)));
+  };
+
+  const doDelete = () =>
+    call(api.del(`/api/scenarios/${scenario.scenario_id}`)
+      .then(() => { setConfirmDelete(false); onClose(); return onSaved(true); })
+      .then(() => notify('Scenario deleted. A SuperAdmin can restore it.'))
+      .catch(e => notify(e.message, true)));
+
+  const nameOf = (m) => `${m.first_name} ${m.last_name}`;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="scn-set-title" onClick={e => e.stopPropagation()}>
+      <div className="modal-header" id="scn-set-title">
+        {scenario.name} (Scenario)
+        <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button>
+      </div>
+      <div className="tab-row" role="tablist">
+        {['details', 'people', 'danger'].map(t => (
+          <button key={t} role="tab" aria-selected={tab === t}
+                  className={`tab-btn ${tab === t ? 'active' : ''}`}
+                  onClick={() => setTab(t)}>
+            {t === 'details' ? 'Details' : t === 'people' ? 'People' : 'Delete'}
+          </button>
+        ))}
+      </div>
+      <div className="modal-body">
+        {tab === 'details' && (
+          <React.Fragment>
+            <ReqField id="set-name" label="Name" value={form.name}
+                      onChange={v => setForm({ ...form, name: v })} />
+            <ReqField id="set-desc" label="Description" type="textarea"
+                      value={form.description}
+                      onChange={v => setForm({ ...form, description: v })} />
+            <button className="btn btn-primary" onClick={saveDetails} disabled={busy}>
+              Save details
+            </button>
+
+            <div className="modal-section-title" style={{ marginTop: 18 }}>Status</div>
+            <div className="gov-hint">
+              Only a Draft can be edited. Under review, Approved and Archived are
+              read-only for everyone — return it to Draft to make changes.
+            </div>
+            <select value={status} aria-label="Scenario status"
+                    onChange={e => saveStatus(e.target.value)} disabled={busy}>
+              {SCENARIO_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </React.Fragment>
+        )}
+
+        {tab === 'people' && (
+          <React.Fragment>
+            <div className="gov-hint">
+              A scenario role applies here only. Someone can edit this scenario
+              while being a Viewer everywhere else, and the reverse.
+            </div>
+            <table className="data-table" style={{ marginBottom: 14 }}>
+              <thead><tr><th>Person</th><th>Elsewhere</th><th>Here</th><th></th></tr></thead>
+              <tbody>
+                {members.map(m => (
+                  <tr key={m.user_id}>
+                    <td><strong>{nameOf(m)}</strong><br />
+                        <span className="gov-hint">{m.email}</span></td>
+                    {/* Read the role from the freshly-loaded account list, not
+                        from the membership row: that row is only refetched when
+                        the scenario changes, so a role changed in User
+                        Management would otherwise show stale here. */}
+                    <td>{(users || []).find(u => u.user_id === m.user_id)?.role
+                         || m.system_role}</td>
+                    <td>
+                      {m.role === 'owner' ? <span className="badge">Owner</span> : (
+                        <select value={m.role} disabled={busy}
+                                aria-label={`Scenario role for ${nameOf(m)}`}
+                                onChange={e => setRole(m.user_id, e.target.value)}>
+                          <option value="viewer">can view</option>
+                          <option value="editor">can edit</option>
+                        </select>
+                      )}
+                    </td>
+                    <td>
+                      {m.role !== 'owner' && (
+                        <button className="btn btn-danger" disabled={busy}
+                                aria-label={`Remove ${nameOf(m)}`}
+                                onClick={() => removeMember(m.user_id)}>Remove</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="modal-section-title">Invite someone</div>
+            <PersonPicker users={(users || []).filter(u =>
+                            !members.some(m => m.user_id === u.user_id))}
+                          exclude={currentUserId} chosen={invite} onChange={setInvite} />
+            <button className="btn btn-primary" onClick={addPeople}
+                    disabled={busy || !invite.length}>Send invitations</button>
+
+            {isSuper && (
+              <React.Fragment>
+                <div className="modal-section-title" style={{ marginTop: 18 }}>
+                  Transfer ownership
+                </div>
+                <div className="gov-hint">
+                  The current owner stays on as an editor rather than losing access
+                  to their own work.
+                </div>
+                <select value={newOwner} aria-label="New owner"
+                        onChange={e => setNewOwner(e.target.value)}>
+                  <option value="">Choose a person…</option>
+                  {(users || []).filter(u => u.is_active &&
+                      u.user_id !== scenario.owner_user_id).map(u => (
+                    <option key={u.user_id} value={u.user_id}>
+                      {u.first_name} {u.last_name}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn" onClick={transfer} disabled={busy || !newOwner}>
+                  Transfer
+                </button>
+              </React.Fragment>
+            )}
+          </React.Fragment>
+        )}
+
+        {tab === 'danger' && (
+          <React.Fragment>
+            <div className="modal-section-title">Delete this scenario</div>
+            <p style={{ fontSize: 13, lineHeight: 1.6 }}>
+              Everyone invited loses access immediately and it disappears from
+              their list. <strong>Current Architecture is not affected.</strong>
+            </p>
+            <p style={{ fontSize: 13, lineHeight: 1.6 }}>
+              Nothing is actually destroyed — a SuperAdmin can restore it, with
+              all of its systems, flows and history intact.
+            </p>
+            <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}
+                    disabled={busy}>Delete scenario</button>
+          </React.Fragment>
+        )}
+      </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={onClose}>Close</button>
+      </div>
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete this scenario?"
+          message={`“${scenario.name}” will disappear for everyone invited to it.`}
+          detail={<div className="gov-hint" style={{ marginTop: 8 }}>
+                    Current Architecture is untouched, and a SuperAdmin can
+                    restore this scenario afterwards.
+                  </div>}
+          confirmLabel="Delete scenario" danger
+          onConfirm={doDelete} onCancel={() => setConfirmDelete(false)} />
+      )}
+    </div></div>
+  );
+}
+
+// Creating a scenario: name, what to start from, an optional focus, and who
+// else can see it. Everything except the name can be changed afterwards.
+function AddScenarioModal({ scenarios, systems, users, currentUserId, onClose, onSave }) {
+  const bodyRef = useRef(null);
+  const [form, setForm] = useState({
+    name: '', description: '', start_from: 'live', source_scenario_id: '',
+  });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const [focus, setFocus] = useState([]);        // systems to keep visible
+  const [useFocus, setUseFocus] = useState(false);
+  const [invite, setInvite] = useState([]);      // [{user_id, role}]
+  const [copyMembers, setCopyMembers] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const req = useRequired(
+    [{ key: 'name', label: 'Name' }].concat(
+      form.start_from === 'scenario'
+        ? [{ key: 'source_scenario_id', label: 'Scenario to copy' }] : []),
+    bodyRef);
+
+  const parent = scenarios.find(s => String(s.scenario_id) === String(form.source_scenario_id));
+
+  const submit = () => req.attempt(form, () => {
+    setBusy(true);
+    onSave({
+      name: form.name.trim(),
+      description: form.description,
+      start_from: form.start_from,
+      source_scenario_id: form.start_from === 'scenario'
+        ? Number(form.source_scenario_id) : null,
+      focus_system_ids: (form.start_from !== 'blank' && useFocus) ? focus : [],
+      invite,
+      copy_members: form.start_from === 'scenario' && copyMembers,
+    }).finally(() => setBusy(false));
+  });
+
+  const toggleFocus = (id) =>
+    setFocus(focus.includes(id) ? focus.filter(x => x !== id) : [...focus, id]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="add-scn-title" onClick={e => e.stopPropagation()}>
+      <div className="modal-header" id="add-scn-title">Add Scenario
+        <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
+      <div className="modal-body" ref={bodyRef}>
+        {req.summary(form) && <div className="form-error-summary" role="alert">{req.summary(form)}</div>}
+
+        <div className="modal-section-title">About this scenario</div>
+        <ReqField id="scn-name" label="Name *" value={form.name}
+                  onChange={v => set('name', v)} error={req.errorFor(form, 'name')}
+                  placeholder="e.g., SIS replacement" />
+        <div className="gov-hint" style={{ marginTop: -6, marginBottom: 10 }}>
+          Shown everywhere as &ldquo;{form.name.trim() || 'Your name'} (Scenario)&rdquo;.
+        </div>
+        <ReqField id="scn-desc" label="Description" type="textarea" value={form.description}
+                  onChange={v => set('description', v)}
+                  placeholder="What is being explored, and why" />
+
+        <div className="modal-section-title">Starting point</div>
+        <ReqField id="scn-start" label="Start from" type="select" value={form.start_from}
+                  onChange={v => set('start_from', v)}
+                  options={[
+                    { value: 'live', label: LIVE_LABEL + ' — copy what exists today' },
+                    { value: 'scenario', label: 'Another scenario' },
+                    { value: 'blank', label: 'A blank page' },
+                  ]} />
+
+        {form.start_from === 'scenario' && (
+          <React.Fragment>
+            <ReqField id="scn-src" label="Scenario to copy *" type="select"
+                      value={form.source_scenario_id}
+                      onChange={v => set('source_scenario_id', v)}
+                      error={req.errorFor(form, 'source_scenario_id')}
+                      options={scenarios.map(s => ({ value: String(s.scenario_id), label: s.name }))} />
+            {parent && (
+              <label className="check-inline">
+                <input type="checkbox" checked={copyMembers}
+                       onChange={e => setCopyMembers(e.target.checked)} />
+                Also invite the {(parent.members || []).length} people who can see
+                &ldquo;{parent.name}&rdquo;
+              </label>
+            )}
+          </React.Fragment>
+        )}
+
+        {form.start_from !== 'blank' && (
+          <React.Fragment>
+            <label className="check-inline">
+              <input type="checkbox" checked={useFocus}
+                     onChange={e => setUseFocus(e.target.checked)} />
+              Focus on particular systems
+            </label>
+            <div className="gov-hint">
+              Everything is still copied, so the scenario stays complete and nothing
+              is lost &mdash; the rest simply starts hidden, and you can show it again
+              whenever you want.
+            </div>
+            {useFocus && (
+              <div className="pick-list" role="group" aria-label="Systems to keep visible">
+                {(systems || []).map(sy => (
+                  <label key={sy.system_id} className="check-inline">
+                    <input type="checkbox" checked={focus.includes(sy.system_id)}
+                           onChange={() => toggleFocus(sy.system_id)} />
+                    {sy.name}
+                  </label>
+                ))}
+                {focus.length === 0 && (
+                  <div className="gov-hint">Nothing chosen yet &mdash; everything stays visible.</div>
+                )}
+              </div>
+            )}
+          </React.Fragment>
+        )}
+
+        <div className="modal-section-title">Who can see it</div>
+        <div className="gov-hint">
+          A scenario is private to the people invited to it. Someone can be an editor
+          here whatever their role elsewhere, and you can invite more people later.
+        </div>
+        <PersonPicker users={users} exclude={currentUserId} chosen={invite}
+                      onChange={setInvite} />
+      </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={submit} disabled={busy}>
+          {busy ? 'Creating\u2026' : 'Create Scenario'}
+        </button>
+      </div>
+    </div></div>
+  );
+}
+
 function App({ user, settings, onSignOut, onSettingsChanged }) {
   const [view, setView] = useState('diagram');
   const appTitle = settings.app_title || 'DATA LINEAGE TRACKER';
@@ -3231,9 +3957,42 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const [showAddSystem, setShowAddSystem] = useState(false);
   const [showAddFlow, setShowAddFlow] = useState(false);
   const [showAddContributor, setShowAddContributor] = useState(false);
+  // Held here rather than inside each canvas so the toolbar buttons and the
+  // trackpad change the same number. Separate values because the two canvases
+  // have different sensible ranges and you switch between them.
+  const [diagramZoom, setDiagramZoom] = useState(1);
+  const [schemaZoom, setSchemaZoom] = useState(0.85);
+  const zoomLimits = view === 'schema' ? [0.25, 2.5] : [0.3, 3];
+  const currentZoom = view === 'schema' ? schemaZoom : diagramZoom;
+  const setCurrentZoom = view === 'schema' ? setSchemaZoom : setDiagramZoom;
+  const stepZoom = (factor) => setCurrentZoom(z =>
+    Math.max(zoomLimits[0], Math.min(zoomLimits[1], z * factor)));
+  const resetZoom = () => setCurrentZoom(view === 'schema' ? 0.85 : 1);
+
   const [schemaSystemId, setSchemaSystemId] = useState(null);
   const [schemaSystemName, setSchemaSystemName] = useState('');
   const [schemaTables, setSchemaTables] = useState([]);
+
+  // --- Scenarios ---------------------------------------------------------
+  // `scenarioId` is the single source of truth for which view is on screen.
+  // It is mirrored into the module-level `viewScenario` before any fetch, so
+  // every existing API call is scoped without each one having to know.
+  const [scenarios, setScenarios] = useState([]);
+  const [scenarioId, setScenarioId] = useState(null);   // null = live
+  const [showHidden, setShowHidden] = useState(false);
+  const [showAddScenario, setShowAddScenario] = useState(false);
+  const [showScenarioSettings, setShowScenarioSettings] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const scenario = scenarios.find(s => s.scenario_id === scenarioId) || null;
+  const inScenario = scenarioId !== null;
+  // Inside a scenario, authority comes from the scenario role rather than the
+  // system role — the server decides, this only hides controls.
+  const canEditHere = inScenario ? !!(scenario && scenario.can_write) : canEdit;
+
+  const loadScenarios = useCallback(() => (
+    api.get('/api/scenarios').then(list => { setScenarios(list); return list; })
+      .catch(() => [])
+  ), []);
 
   const refresh = useCallback(() => {
     api.get('/api/systems').then(setSystems).catch(() => {});
@@ -3241,6 +4000,80 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     api.get('/api/elements').then(setElements).catch(() => {});
     api.get('/api/contributors').then(setContributors).catch(() => {});
   }, []);
+
+  useEffect(() => { loadScenarios(); }, [loadScenarios]);
+
+  // Switching view: point every subsequent request at the new scope, clear
+  // anything on screen that belonged to the old one, then reload. Clearing
+  // first matters — leaving a live record open while the diagram switches to a
+  // scenario is exactly how someone edits the wrong thing.
+  const switchView = useCallback((id) => {
+    setViewScenario(id);
+    setViewShowHidden(false);
+    setShowHidden(false);
+    setScenarioId(id);
+    setSelected(null);
+    setDetailData(null);
+    setDetailType(null);
+    setSchemaSystemId(null);
+    setView(v => v === 'schema' ? 'diagram' : v);
+    setSystems([]); setFlows([]); setElements([]); setContributors([]);
+    refresh();
+  }, [refresh]);
+
+  // Only fetched when the invite list is actually needed: an Editor creating a
+  // scenario would otherwise be denied /api/users, which requires Administrator.
+  const loadUsersForInvite = useCallback(() => {
+    api.get('/api/users').then(setAllUsers).catch(() => setAllUsers([]));
+  }, []);
+
+  const createScenario = useCallback((payload) => (
+    api.post('/api/scenarios', payload)
+      .then(created => {
+        setShowAddScenario(false);
+        return loadScenarios().then(() => {
+          switchView(created.scenario_id);
+          const bits = [];
+          if (created.copied && created.copied.system)
+            bits.push(`${created.copied.system} systems and ${created.copied.data_flow} data flows copied`);
+          if (created.hidden_for_focus)
+            bits.push(`${created.hidden_for_focus} hidden to focus the diagram`);
+          if (created.invited) bits.push(`${created.invited} person(s) invited`);
+          notify(`Scenario created${bits.length ? ' — ' + bits.join(', ') : ''}.`);
+        });
+      })
+      .catch(e => { notify(e.message, true); throw e; })
+  ), [loadScenarios, switchView, notify]);
+
+  const setRecordsHidden = useCallback((systemIds, flowIds, hidden) => {
+    if (scenarioId === null) return;
+    return api.post(`/api/scenarios/${scenarioId}/visibility`,
+                    { system_ids: systemIds, flow_ids: flowIds, hidden })
+      .then(r => {
+        refresh();
+        const n = (r.changed.system || 0) + (r.changed.data_flow || 0);
+        notify(hidden
+          ? `${n} item(s) hidden. They are still in the scenario — use “Show hidden items” to bring them back.`
+          : `${n} item(s) shown again.`);
+      })
+      .catch(e => notify(e.message, true));
+  }, [scenarioId, refresh, notify]);
+
+  const showEverything = useCallback(() => {
+    if (scenarioId === null) return;
+    return api.post(`/api/scenarios/${scenarioId}/visibility`, { all: true, hidden: false })
+      .then(() => { refresh(); notify('Everything in this scenario is visible again.'); })
+      .catch(e => notify(e.message, true));
+  }, [scenarioId, refresh, notify]);
+
+  const toggleHidden = useCallback(() => {
+    setShowHidden(prev => {
+      const next = !prev;
+      setViewShowHidden(next);
+      refresh();
+      return next;
+    });
+  }, [refresh]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -3363,10 +4196,14 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   }, [refresh, schemaSystemId, loadSchema]);
 
   const addSystem = async (data) => {
+    // The modal always carries a 'proposed' flag; it is meaningless outside a
+    // scenario and the server refuses it there, so drop it before sending.
+    if (scenarioId === null) { data = { ...data }; delete data.proposed; }
     try { await api.post('/api/systems', data); refresh(); setShowAddSystem(false); notify('System added.'); }
     catch (err) { notify(err.message, true); }
   };
   const addFlow = async (data) => {
+    if (scenarioId === null) { data = { ...data }; delete data.proposed; }
     try { await api.post('/api/flows', data); refresh(); setShowAddFlow(false); notify('Data flow added.'); }
     catch (err) { notify(err.message, true); }
   };
@@ -3401,7 +4238,22 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
         </div>
         <nav className="sidebar-nav" aria-label="Main">
           <div className="nav-section">Views</div>
-          <div className={`nav-item ${view==='diagram'?'active':''}`} onClick={()=>setView('diagram')}><span className="nav-icon">&#9678;</span> Lineage Diagram</div>
+          <div className={`nav-item ${view==='diagram' && !inScenario ?'active':''}`}
+               onClick={()=>{ switchView(null); setView('diagram'); }}>
+            <span className="nav-icon">&#9678;</span> {LIVE_LABEL}</div>
+          {scenarios.map(s => (
+            <div key={s.scenario_id}
+                 className={`nav-item nav-scenario ${scenarioId===s.scenario_id?'active':''}`}
+                 onClick={()=>{ switchView(s.scenario_id); setView('diagram'); }}
+                 title={s.description || ''}>
+              <span className="nav-icon">&#9633;</span> {s.name} (Scenario)
+            </div>
+          ))}
+          {canEdit && (
+            <div className="nav-item nav-add" onClick={()=>{ setShowAddScenario(true); loadUsersForInvite(); }}>
+              <span className="nav-icon">+</span> Add Scenario
+            </div>
+          )}
           <div className="nav-section">Catalog</div>
           <div className={`nav-item ${view==='systems'?'active':''}`} onClick={()=>setView('systems')}><span className="nav-icon">&#9634;</span> Systems ({systems.length})</div>
           <div className={`nav-item ${view==='flows'?'active':''}`} onClick={()=>setView('flows')}><span className="nav-icon">&#8594;</span> Data Flows ({flows.length})</div>
@@ -3424,17 +4276,57 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
         </div>
       </div>
 
-      <div className="main-area">
+      <div className={`main-area${inScenario ? ' scenario-view' : ''}`}>
         <div className="toolbar">
           {view==='schema'
-            ? <span className="breadcrumb"><span className="crumb-link" onClick={exitSchema}>Lineage Diagram</span><span className="crumb-sep">&rsaquo;</span><span>{schemaSystemName} &mdash; Database Schema</span></span>
-            : <span className="toolbar-title">{VIEW_TITLES[view] || ''}</span>}
+            ? <span className="breadcrumb"><span className="crumb-link" onClick={exitSchema}>{scenarioLabel(scenario)}</span><span className="crumb-sep">&rsaquo;</span><span>{schemaSystemName} &mdash; Database Schema</span></span>
+            : <span className="toolbar-title">
+                {(VIEW_TITLES[view] || '')}
+                {SCOPED_VIEWS.includes(view) && (
+                  <React.Fragment>
+                    <span aria-hidden="true"> &mdash; </span>
+                    <span>{scenarioLabel(scenario)}</span>
+                    {inScenario && <span className="scenario-badge">Scenario</span>}
+                  </React.Fragment>
+                )}
+              </span>}
+          {SCOPED_VIEWS.includes(view) && scenarios.length > 0 && (
+            <ScenarioPicker scenarios={scenarios} current={scenarioId} onChange={switchView} />
+          )}
           <div className="toolbar-spacer"></div>
           {view==='schema' && <button className="btn" onClick={exitSchema}>&larr; Back to Lineage</button>}
-          {canEdit && (view==='diagram'||view==='systems')&&<button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
-          {canEdit && (view==='diagram'||view==='flows')&&<button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
-          {canEdit && view==='contributors'&&<button className="btn btn-primary" onClick={()=>setShowAddContributor(true)}>+ Add Contributor</button>}
+          {canEditHere && (view==='diagram'||view==='systems')&&<button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
+          {canEditHere && (view==='diagram'||view==='flows')&&<button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
+          {canEditHere && view==='contributors'&&<button className="btn btn-primary" onClick={()=>setShowAddContributor(true)}>+ Add Contributor</button>}
         </div>
+        {inScenario && SCOPED_VIEWS.includes(view) && (
+          <div className="scenario-bar" role="status">
+            <strong>{scenario ? scenario.name : ''} (Scenario)</strong>
+            <span>&middot;</span>
+            <span>{scenario ? scenario.status : ''}</span>
+            {scenario && scenario.frozen && (
+              <span title="Only Draft scenarios can be edited">
+                &middot; read-only until returned to Draft
+              </span>
+            )}
+            <span className="grow"></span>
+            <label className="check-inline" style={{margin:0}}>
+              <input type="checkbox" checked={showHidden} onChange={toggleHidden} />
+              Show hidden items
+            </label>
+            {canEditHere && (
+              <button className="btn" style={{padding:'2px 8px',fontSize:12}}
+                      onClick={showEverything}>Un-hide everything</button>
+            )}
+            {scenario && scenario.can_manage && (
+              <button className="btn" style={{padding:'2px 8px',fontSize:12}}
+                      onClick={()=>{ setShowScenarioSettings(true); loadUsersForInvite(); }}>
+                Manage scenario
+              </button>
+            )}
+            <span>Changes here do not affect {LIVE_LABEL}.</span>
+          </div>
+        )}
         {notice && <div className={`banner ${notice.isError ? 'banner-error' : 'banner-ok'}`}
           role="status" aria-live="polite">
           <span style={{flex:1}}>{notice.message}</span>
@@ -3453,15 +4345,55 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             <div className="stat"><div className="stat-value">{elements.length}</div><div className="stat-label">Data Elements</div></div>
             <div className="stat"><div className="stat-value">{elements.filter(e=>e.is_pii).length}</div><div className="stat-label">PII Elements</div></div>
           </>}
+          {/* Zoom controls. Trackpad pinch-zoom is hard to land precisely, so
+              these give a predictable step. Only shown where there is something
+              to zoom. */}
+          {['diagram', 'schema'].includes(view) && (
+            <div className="zoom-controls">
+              <button className="zoom-btn" onClick={() => stepZoom(1 / 1.2)}
+                      aria-label="Zoom out" title="Zoom out"
+                      disabled={currentZoom <= zoomLimits[0] + 0.001}>
+                <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+                  <circle cx="8.5" cy="8.5" r="5.5" fill="none"
+                          stroke="currentColor" strokeWidth="1.8" />
+                  <line x1="12.8" y1="12.8" x2="17.5" y2="17.5"
+                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  <line x1="6" y1="8.5" x2="11" y2="8.5"
+                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+              <button className="zoom-level" onClick={resetZoom}
+                      title="Reset zoom to 100%" aria-label={
+                        `Zoom is ${Math.round(currentZoom * 100)} percent. Reset to 100 percent.`}>
+                {Math.round(currentZoom * 100)}%
+              </button>
+              <button className="zoom-btn" onClick={() => stepZoom(1.2)}
+                      aria-label="Zoom in" title="Zoom in"
+                      disabled={currentZoom >= zoomLimits[1] - 0.001}>
+                <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+                  <circle cx="8.5" cy="8.5" r="5.5" fill="none"
+                          stroke="currentColor" strokeWidth="1.8" />
+                  <line x1="12.8" y1="12.8" x2="17.5" y2="17.5"
+                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  <line x1="6" y1="8.5" x2="11" y2="8.5"
+                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  <line x1="8.5" y1="6" x2="8.5" y2="11"
+                        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>}
         <div className="content-area">
           {view==='diagram' && <DiagramCanvas systems={systems} flows={flows} selected={selected}
             onSelectSystem={selectSystem} onSelectFlow={selectFlow} onUpdatePosition={updatePosition}
-            onDrill={drillIntoSchema} canEdit={canEdit} systemTypes={systemTypes}
+            onDrill={drillIntoSchema} canEdit={canEditHere} systemTypes={systemTypes}
+            inScenario={inScenario} zoom={diagramZoom} setZoom={setDiagramZoom}
             panelOpen={!!detailData} onDismissPanel={closeDetail} />}
-          {view==='schema' && <SchemaCanvas tables={schemaTables} selected={selected} onSelectTable={selectSchemaTable} onSelectColumn={selectSchemaColumn} onUpdatePosition={updateSchemaPosition} canEdit={canEdit} />}
-          {view==='systems' && <SystemsTable systems={systems} onSelect={selectSystem} />}
-          {view==='flows' && <FlowsTable flows={flows} onSelect={selectFlow} />}
+          {view==='schema' && <SchemaCanvas tables={schemaTables} selected={selected} onSelectTable={selectSchemaTable} onSelectColumn={selectSchemaColumn} onUpdatePosition={updateSchemaPosition} canEdit={canEditHere}
+            zoom={schemaZoom} setZoom={setSchemaZoom} />}
+          {view==='systems' && <SystemsTable systems={systems} inScenario={inScenario} canEdit={canEditHere} onSetHidden={setRecordsHidden} onSelect={selectSystem} />}
+          {view==='flows' && <FlowsTable flows={flows} inScenario={inScenario} canEdit={canEditHere} onSetHidden={setRecordsHidden} onSelect={selectFlow} />}
           {view==='elements' && <ElementsTable elements={elements} onSelect={selectElement} />}
           {view==='contributors' && <ContributorsTable contributors={contributors} onSelect={selectContributor} />}
           {view==='users' && isAdmin && <UsersScreen currentUser={user} assignableRoles={assignableRoles} notify={notify} />}
@@ -3473,15 +4405,30 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
             <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave}
                          onDelete={deleteRecord}
-                         systems={systems} onDrill={drillIntoSchema} canEdit={canEdit}
+                         systems={systems} onDrill={drillIntoSchema} canEdit={canEditHere}
+                         inScenario={inScenario} onSetHidden={setRecordsHidden}
                          notify={notify} contributors={contributors} isAdmin={isAdmin}
                          systemTypes={systemTypes} onSchemaChanged={refresh} />}
         </div>
       </div>
 
-      {showAddSystem && <AddSystemModal systems={systems} systemTypes={systemTypes}
+      {showScenarioSettings && scenario && (
+        <ScenarioSettingsModal scenario={scenario} users={allUsers}
+          currentUserId={user.user_id} isSuper={isSuper} notify={notify}
+          onClose={()=>setShowScenarioSettings(false)}
+          onSaved={(deleted)=>loadScenarios().then(list=>{
+            // If it was deleted (or we lost access), fall back to the live view
+            // rather than leaving the screen pointed at something gone.
+            if (deleted || !list.some(x=>x.scenario_id===scenarioId)) switchView(null);
+            else refresh();
+          })} />
+      )}
+      {showAddScenario && <AddScenarioModal scenarios={scenarios} systems={systems}
+        users={allUsers} currentUserId={user.user_id}
+        onClose={()=>setShowAddScenario(false)} onSave={createScenario} />}
+      {showAddSystem && <AddSystemModal systems={systems} systemTypes={systemTypes} inScenario={inScenario}
         onClose={()=>setShowAddSystem(false)} onSave={addSystem} />}
-      {showAddFlow && <AddFlowModal systems={systems} contributors={contributors}
+      {showAddFlow && <AddFlowModal systems={systems} inScenario={inScenario} contributors={contributors}
         onClose={()=>setShowAddFlow(false)} onSave={addFlow} />}
       {showAddContributor && <AddContributorModal onClose={()=>setShowAddContributor(false)} onSave={addContributor} />}
       {whatsNew.length > 0 && <WhatsNewModal releases={whatsNew}
