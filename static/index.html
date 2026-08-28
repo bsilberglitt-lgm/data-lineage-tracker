@@ -46,6 +46,43 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .hide-bar .btn { padding: 3px 9px; font-size: 12px; }
 .pick-col { width: 28px; text-align: center; }
 .zoom-controls { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+/* Help. The button sits beside the version badge; the panel rises from the
+   bottom so the screen being asked about stays visible behind it. */
+.help-button { position: fixed; right: 62px; bottom: 8px; z-index: 60;
+  width: 20px; height: 20px; border-radius: 50%; border: 1px solid #d7dee6;
+  background: #fff; color: #6b6b6b; font-family: inherit; font-size: 11px;
+  font-weight: 700; line-height: 1; cursor: pointer; padding: 0; }
+.help-button:hover, .help-button.active { color: #2E75B6; border-color: #b9d3ea;
+  background: #eaf2fb; }
+.help-sheet { position: fixed; right: 16px; bottom: 34px; z-index: 70;
+  width: 420px; max-width: calc(100vw - 32px); height: 62vh; max-height: 560px;
+  background: #fff; border: 1px solid #d7dee6; border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.18); display: flex; flex-direction: column;
+  animation: help-rise 0.16s ease-out; }
+@keyframes help-rise { from { transform: translateY(12px); opacity: 0; }
+                       to { transform: none; opacity: 1; } }
+.help-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid #eee; font-size: 14px; font-weight: 600; color: #1B3A5C; }
+.help-header .btn { padding: 2px 8px; font-size: 11px; }
+.help-search { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+.help-search input { width: 100%; padding: 6px 9px; border: 1px solid #c7d0da;
+  border-radius: 4px; font-family: inherit; font-size: 13px; }
+.help-body { flex: 1; overflow-y: auto; padding: 6px 12px 14px; }
+.help-section { font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  color: #6b6b6b; font-weight: 600; margin: 12px 0 4px; }
+.help-item { display: block; width: 100%; text-align: left; background: none;
+  border: none; border-radius: 6px; padding: 8px 9px; cursor: pointer;
+  font-family: inherit; }
+.help-item:hover { background: #f2f7fc; }
+.help-item-title { font-size: 13px; font-weight: 600; color: #1B3A5C; }
+.help-item-summary { font-size: 11.5px; color: #6b6b6b; line-height: 1.45; margin-top: 2px; }
+.help-empty { padding: 18px 9px; font-size: 12.5px; color: #6b6b6b; line-height: 1.6; }
+.help-body .md { font-size: 13px; line-height: 1.62; }
+.help-body .md h2 { font-size: 13px; margin: 14px 0 5px; color: #1B3A5C; }
+.help-body .md p, .help-body .md li { margin-bottom: 7px; }
+.help-body .md ul { padding-left: 18px; }
+.md-img { max-width: 100%; border: 1px solid #e3e8ee; border-radius: 5px;
+  margin: 8px 0; display: block; }
 .zoom-btn { width: 26px; height: 26px; display: flex; align-items: center;
   justify-content: center; background: #fff; border: 1px solid #c7d0da;
   border-radius: 4px; color: #1B3A5C; cursor: pointer; padding: 0; }
@@ -2187,35 +2224,212 @@ function VersionBadge({ version, onClick }) {
   );
 }
 
+function HelpButton({ open, onToggle }) {
+  return (
+    <button className={`help-button${open ? ' active' : ''}`}
+            onClick={onToggle}
+            aria-expanded={open}
+            title={open ? 'Close help' : 'Help'}
+            aria-label={open ? 'Close help' : 'Open help'}>
+      ?
+    </button>
+  );
+}
+
 // ===== Minimal markdown =====
 // Release notes support a deliberately small subset: headings, bullets, bold,
 // italic and links. Input is escaped first, so notes can never inject markup.
 function renderMarkdown(text) {
   const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const inline = (s) => esc(s)
+    // Images, before links, since ![alt](src) also matches the link pattern.
+    // Only local files under /help/ are allowed — that is where the static
+    // handler serves static/help/ from. Release notes are editable inside the
+    // app, and permitting a remote image would let another server see who read
+    // them and when.
+    .replace(/!\[([^\]]*)\]\((\/help\/[A-Za-z0-9._-]+)\)/g,
+             '<img src="$2" alt="$1" class="md-img" loading="lazy" />')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
              '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>');
 
+  // Blocks are separated by blank lines, not by line endings. Source text is
+  // hard-wrapped for readability, so treating every line as its own paragraph
+  // broke sentences apart and stranded the last word on its own line.
   const out = [];
-  let list = null;
+  let list = null;      // accumulated <li> html
+  let item = null;      // the current list item's text, still being collected
+  let para = null;      // the current paragraph's text, still being collected
+
+  const closeItem = () => {
+    if (item !== null) { list.push(`<li>${inline(item)}</li>`); item = null; }
+  };
+  const closeList = () => {
+    closeItem();
+    if (list && list.length) out.push(`<ul>${list.join('')}</ul>`);
+    list = null;
+  };
+  const closePara = () => {
+    if (para !== null) { out.push(`<p>${inline(para)}</p>`); para = null; }
+  };
+
   (text || '').split('\n').forEach(raw => {
     const line = raw.replace(/\s+$/, '');
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    const heading = line.match(/^(#{1,3})\s+(.*)$/);
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    const indented = /^\s+\S/.test(line);
+
+    if (!line.trim()) { closeList(); closePara(); return; }
+
+    if (heading) { closeList(); closePara(); out.push(`<h2>${inline(heading[2])}</h2>`); return; }
+
     if (bullet) {
-      list = list || [];
-      list.push(`<li>${inline(bullet[1])}</li>`);
+      closePara();
+      if (!list) list = [];
+      closeItem();
+      item = bullet[1];
       return;
     }
-    if (list) { out.push(`<ul>${list.join('')}</ul>`); list = null; }
-    if (heading) { out.push(`<h2>${inline(heading[2])}</h2>`); return; }
-    if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+
+    // An indented line under a bullet continues that bullet.
+    if (item !== null && indented) { item += ' ' + line.trim(); return; }
+
+    closeList();
+    para = para === null ? line.trim() : para + ' ' + line.trim();
   });
-  if (list) out.push(`<ul>${list.join('')}</ul>`);
+
+  closeList();
+  closePara();
   return out.join('');
+}
+
+// ===== Help / knowledge base =====
+// A panel that slides up from the bottom, so it can sit over whatever you were
+// looking at without navigating away — the question is nearly always about the
+// screen you are on.
+function HelpPanel({ screen, onClose, notify }) {
+  const [data, setData] = useState({ for_this_screen: [], articles: [] });
+  const [query, setQuery] = useState('');
+  const [openId, setOpenId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const searchRef = useRef(null);
+  const bodyRef = useRef(null);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get(`/api/help?screen=${encodeURIComponent(screen || '')}`)
+      .then(setData)
+      .catch(e => notify(e.message, true))
+      .finally(() => setLoading(false));
+  }, [screen, notify]);
+
+  // Escape closes the panel, and closes an open article first, so it never
+  // takes two guesses to get back to where you were.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (openId) setOpenId(null); else onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openId, onClose]);
+
+  useEffect(() => { if (searchRef.current) searchRef.current.focus(); }, []);
+  useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [openId]);
+
+  const q = query.trim().toLowerCase();
+  const matches = !q ? [] : data.articles.filter(a =>
+    a.title.toLowerCase().includes(q) ||
+    a.summary.toLowerCase().includes(q) ||
+    (a.body || '').toLowerCase().includes(q));
+
+  const open = data.articles.find(a => a.id === openId);
+  const relevantIds = new Set((data.for_this_screen || []).map(a => a.id));
+
+  // A short piece of the article around the first match, so a search result
+  // shows why it matched rather than just repeating the summary.
+  const snippet = (a) => {
+    const body = (a.body || '').replace(/[#*`>]/g, ' ').replace(/\s+/g, ' ');
+    const at = body.toLowerCase().indexOf(q);
+    if (at < 0) return a.summary;
+    const from = Math.max(0, at - 60);
+    return (from > 0 ? '…' : '') + body.slice(from, at + 140).trim() + '…';
+  };
+
+  const Item = ({ a }) => (
+    <button className="help-item" onClick={() => setOpenId(a.id)}>
+      <div className="help-item-title">{a.title}</div>
+      <div className="help-item-summary">{q ? snippet(a) : a.summary}</div>
+    </button>
+  );
+
+  return (
+    <div className="help-sheet" role="dialog" aria-modal="false"
+         aria-labelledby="help-title">
+      <div className="help-header">
+        <span id="help-title">{open ? open.title : 'Help'}</span>
+        {open && (
+          <button className="btn" onClick={() => setOpenId(null)}>
+            &larr; All articles
+          </button>
+        )}
+        <span style={{ flex: 1 }} />
+        <button className="panel-close" onClick={onClose} aria-label="Close help">
+          &times;
+        </button>
+      </div>
+
+      {!open && (
+        <div className="help-search">
+          <label htmlFor="help-q" className="sr-only">Search help articles</label>
+          <input id="help-q" ref={searchRef} type="text" value={query}
+                 placeholder="Search help…" autoComplete="off"
+                 onChange={e => setQuery(e.target.value)} />
+        </div>
+      )}
+
+      <div className="help-body" ref={bodyRef}>
+        {loading && <div className="help-empty">Loading…</div>}
+
+        {!loading && open && (
+          <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(open.body) }} />
+        )}
+
+        {!loading && !open && q && (
+          <React.Fragment>
+            <div className="help-section">
+              {matches.length} {matches.length === 1 ? 'result' : 'results'}
+            </div>
+            {matches.map(a => <Item key={a.id} a={a} />)}
+            {matches.length === 0 && (
+              <div className="help-empty">
+                Nothing matched “{query}”. Try a word that would appear in the
+                app itself — “scenario”, “governance”, “schema”.
+              </div>
+            )}
+          </React.Fragment>
+        )}
+
+        {!loading && !open && !q && (
+          <React.Fragment>
+            {relevantIds.size > 0 && (
+              <React.Fragment>
+                <div className="help-section">For this screen</div>
+                {data.articles.filter(a => relevantIds.has(a.id))
+                  .map(a => <Item key={a.id} a={a} />)}
+                <div className="help-section">Everything else</div>
+              </React.Fragment>
+            )}
+            {data.articles.filter(a => !relevantIds.has(a.id))
+              .map(a => <Item key={a.id} a={a} />)}
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ReleaseBody({ notes }) {
@@ -3982,6 +4196,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const [showHidden, setShowHidden] = useState(false);
   const [showAddScenario, setShowAddScenario] = useState(false);
   const [showScenarioSettings, setShowScenarioSettings] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const scenario = scenarios.find(s => s.scenario_id === scenarioId) || null;
   const inScenario = scenarioId !== null;
@@ -4435,6 +4650,11 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
         onLater={() => setWhatsNew([])} onAcknowledge={acknowledgeReleases} />}
       {whatsNew.length === 0 && alerts.length > 0 && <NotificationsModal items={alerts}
         onLater={() => setAlerts([])} onAcknowledge={acknowledgeAlerts} />}
+      <HelpButton open={helpOpen} onToggle={() => setHelpOpen(o => !o)} />
+      {helpOpen && (
+        <HelpPanel screen={inScenario ? 'scenario' : view}
+                   onClose={() => setHelpOpen(false)} notify={notify} />
+      )}
       <VersionBadge version={version} onClick={() => setView('releases')} />
     </div>
   );
