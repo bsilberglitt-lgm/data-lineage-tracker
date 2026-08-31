@@ -419,11 +419,8 @@ def clone_into(conn, scenario_id, source_scenario_id=None):
         cols = _columns(conn, table)
         src_where = "scenario_id = ?" if source_scenario_id else "scenario_id IS NULL"
         src_params = (source_scenario_id,) if source_scenario_id else ()
-        # A scenario is a plan for what exists; something already retired in the
-        # source scenario should not reappear in the copy.
         rows = conn.execute(
-            f"SELECT * FROM {table} WHERE {src_where} AND change_state != ?",
-            src_params + (REMOVED,)).fetchall()
+            f"SELECT * FROM {table} WHERE {src_where}", src_params).fetchall()
         for row in rows:
             row = dict(row)
             old_id = row[pk]
@@ -432,9 +429,13 @@ def clone_into(conn, scenario_id, source_scenario_id=None):
             row[pk] = new_id
             row["scenario_id"] = scenario_id
             row["origin_id"] = old_id
-            # Copied records describe what exists today, so they start
-            # unchanged; only what someone does next makes them a proposal.
-            row["change_state"] = UNCHANGED
+            # From Current Architecture, everything copied describes what exists
+            # today, so it starts unchanged. From another scenario, the copy
+            # inherits that scenario's plan: something proposed there is still
+            # proposed here, and something being retired is still being retired.
+            # Dropping those states would silently turn a plan into a baseline.
+            row["change_state"] = (row.get("change_state") or UNCHANGED) \
+                if source_scenario_id else UNCHANGED
             names = [c for c in cols if c in row]
             conn.execute(
                 f"INSERT INTO {table} ({','.join(names)}) "

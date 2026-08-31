@@ -46,6 +46,19 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .hide-bar .btn { padding: 3px 9px; font-size: 12px; }
 .pick-col { width: 28px; text-align: center; }
 .zoom-controls { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+/* Arrow routing. Handles only appear on the selected flow, so the diagram is
+   not covered in dots while reading it. */
+.route-handle { fill: #fff; stroke: #D4772C; stroke-width: 2.5; cursor: grab; }
+.route-handle:active { cursor: grabbing; }
+.route-handle:hover { fill: #D4772C; }
+.route-bend { fill: #D4772C; stroke: #fff; stroke-width: 1.5; cursor: grab; }
+.route-bend:active { cursor: grabbing; }
+.anchor-dot { fill: #fff; stroke: #2E75B6; stroke-width: 1.5; opacity: 0.85;
+  cursor: pointer; }
+.anchor-dot:hover { fill: #eaf2fb; opacity: 1; }
+.anchor-dot.hot { fill: #2E75B6; opacity: 1; }
+.anchor-dot.in-use { fill: #2E75B6; opacity: 1; }
+.flow-line.adjusting .flow-label-hit { stroke: #2E75B6; }
 /* Help. The button sits beside the version badge; the panel rises from the
    bottom so the screen being asked about stays visible behind it. */
 .help-button { position: fixed; right: 62px; bottom: 8px; z-index: 60;
@@ -499,6 +512,12 @@ async function request(method, url, data) {
 // Content-Type. This mirrors its error handling, including the case where the
 // server answers with something that isn't JSON at all.
 async function uploadFile(url, formData) {
+  // Multipart uploads cannot go through request() — FormData sets its own
+  // Content-Type — but they still belong to a view. Skipping this is why
+  // attaching a document inside a scenario returned "Not found": the server
+  // looked for the parent record on Current Architecture, where a scenario's
+  // copy does not exist. The same applied to uploading a schema.
+  url = scopedUrl(url);
   const r = await fetch(url, {
     method: 'POST', credentials: 'same-origin',
     headers: { 'X-CSRF-Token': session.csrf }, body: formData,
@@ -653,8 +672,216 @@ function CollapsibleSection({ title, domainTag, children, defaultOpen }) {
   );
 }
 
+// ===== Diagram geometry =====
+// Pure functions, kept out of the component so they can be reasoned about (and
+// tested) on their own. Everything here works in diagram coordinates; panning
+// and zoom are applied by a transform on the group that contains it all.
+
+const DIAGRAM_NODE_W = 200, DIAGRAM_NODE_H = 70;
+const ANCHOR_SIDES = ['top', 'right', 'bottom', 'left'];
+const ANCHORS_PER_SIDE = 3;
+
+// Every connection point on a box, as {id, x, y}. Three per side: the middle
+// one is where an automatic arrow lands, the outer two give parallel flows
+// somewhere of their own to go.
+function anchorPoints(sys, W = DIAGRAM_NODE_W, H = DIAGRAM_NODE_H) {
+  const out = [];
+  for (const side of ANCHOR_SIDES) {
+    for (let i = 0; i < ANCHORS_PER_SIDE; i++) {
+      const f = (i + 1) / (ANCHORS_PER_SIDE + 1);   // 0.25, 0.5, 0.75
+      let x, y;
+      if (side === 'top')         { x = sys.x_pos + W * f; y = sys.y_pos; }
+      else if (side === 'bottom') { x = sys.x_pos + W * f; y = sys.y_pos + H; }
+      else if (side === 'left')   { x = sys.x_pos;         y = sys.y_pos + H * f; }
+      else                        { x = sys.x_pos + W;     y = sys.y_pos + H * f; }
+      out.push({ id: `${side}:${i}`, side, index: i, x, y });
+    }
+  }
+  return out;
+}
+
+function anchorPoint(sys, id, W, H) {
+  return anchorPoints(sys, W, H).find(a => a.id === id) || null;
+}
+
+// Which side of the source box faces the destination. Used when an arrow has
+// no anchor of its own, which is every arrow until someone drags one.
+function facingSide(from, to, W = DIAGRAM_NODE_W, H = DIAGRAM_NODE_H) {
+  const dx = (to.x_pos + W / 2) - (from.x_pos + W / 2);
+  const dy = (to.y_pos + H / 2) - (from.y_pos + H / 2);
+  // Compared against the box's own proportions so a wide box prefers its sides.
+  if (Math.abs(dx) / W > Math.abs(dy) / H) return dx >= 0 ? 'right' : 'left';
+  return dy >= 0 ? 'bottom' : 'top';
+}
+
+// Spread n flows across the three points on a side: one uses the middle, two
+// use the outer pair, three use all of them, more start doubling up.
+function spreadIndex(position, count) {
+  if (count <= 1) return 1;
+  if (count === 2) return position === 0 ? 0 : 2;
+  return position % ANCHORS_PER_SIDE;
+}
+
+// Where each flow attaches, resolving automatic ones and fanning apart any
+// group that runs between the same two systems. Returns {flow_id: {from, to}}.
+function resolveEndpoints(flows, sysMap, W = DIAGRAM_NODE_W, H = DIAGRAM_NODE_H) {
+  // Group by unordered pair, so A→B and B→A are spread apart together rather
+  // than each independently choosing the middle point.
+  const groups = {};
+  flows.forEach(f => {
+    const a = f.source_system_id, b = f.destination_system_id;
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+    (groups[key] = groups[key] || []).push(f);
+  });
+
+  const out = {};
+  Object.values(groups).forEach(group => {
+    group.forEach((f, i) => {
+      const src = sysMap[f.source_system_id], dst = sysMap[f.destination_system_id];
+      if (!src || !dst) return;
+      const srcSide = facingSide(src, dst, W, H);
+      const dstSide = facingSide(dst, src, W, H);
+      const idx = spreadIndex(i, group.length);
+      const from = f.source_anchor
+        ? anchorPoint(src, f.source_anchor, W, H)
+        : anchorPoint(src, `${srcSide}:${idx}`, W, H);
+      const to = f.dest_anchor
+        ? anchorPoint(dst, f.dest_anchor, W, H)
+        : anchorPoint(dst, `${dstSide}:${idx}`, W, H);
+      if (from && to) out[f.flow_id] = { from, to };
+    });
+  });
+  return out;
+}
+
+function parseWaypoints(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+
+// The full point list for one arrow: start, any bends, end.
+function flowPoints(flow, ends) {
+  if (!ends) return [];
+  return [ends.from, ...parseWaypoints(flow.waypoints), ends.to];
+}
+
+// --- line crossings ---------------------------------------------------------
+// Where two flows cross, the one drawn later hops over the other with a small
+// arc, so it reads as "passing over" rather than "joining".
+
+function segmentIntersection(p1, p2, p3, p4) {
+  const d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
+  if (Math.abs(d) < 1e-9) return null;              // parallel
+  const t = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / d;
+  const u = ((p3.x - p1.x) * (p2.y - p1.y) - (p3.y - p1.y) * (p2.x - p1.x)) / d;
+  // Excludes the very ends, so two arrows meeting at the same anchor are not
+  // treated as a crossing.
+  if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) return null;
+  return { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y), t };
+}
+
+// An SVG path for one arrow, arcing over each supplied crossing point.
+function pathWithHops(points, hops, r = 5) {
+  if (points.length < 2) return '';
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+    // Only the hops on this segment, in order along it.
+    const on = hops
+      .filter(h => h.seg === i - 1)
+      .sort((p, q) => p.t - q.t);
+    on.forEach(h => {
+      const bx = h.x - ux * r, by = h.y - uy * r;
+      const ax = h.x + ux * r, ay = h.y + uy * r;
+      d += ` L ${bx.toFixed(1)} ${by.toFixed(1)}`;
+      // Sweep direction is constant, so parallel hops all bow the same way.
+      d += ` A ${r} ${r} 0 0 1 ${ax.toFixed(1)} ${ay.toFixed(1)}`;
+    });
+    d += ` L ${b.x} ${b.y}`;
+  }
+  return d;
+}
+
+// For every flow, the crossings it should hop over: those against flows drawn
+// before it, so exactly one of each pair hops.
+function computeHops(order, pointsById) {
+  const hops = {};
+  order.forEach((id, i) => {
+    hops[id] = [];
+    const mine = pointsById[id] || [];
+    for (let s = 0; s + 1 < mine.length; s++) {
+      for (let j = 0; j < i; j++) {
+        const theirs = pointsById[order[j]] || [];
+        for (let t = 0; t + 1 < theirs.length; t++) {
+          const hit = segmentIntersection(mine[s], mine[s + 1], theirs[t], theirs[t + 1]);
+          if (hit) hops[id].push({ ...hit, seg: s });
+        }
+      }
+    }
+  });
+  return hops;
+}
+
+// What an arrow is labelled with: its short display name when one is set,
+// otherwise its identifier. The identifier is unambiguous but says nothing, and
+// the full name is usually a sentence — far too long to sit on a line.
+function flowLabel(flow) {
+  const dn = (flow.display_name || '').trim();
+  return dn || flow.flow_id;
+}
+
+function labelWidth(flow) {
+  // Roughly 6px per character at 10px type, with padding, so the pill fits
+  // the text rather than always being sized for an identifier.
+  return Math.max(44, flowLabel(flow).length * 6 + 14);
+}
+
+// The point on a path halfway along its length, for the flow's number label.
+function midpointOf(points) {
+  if (points.length < 2) return { x: 0, y: 0 };
+  let total = 0;
+  const lens = [];
+  for (let i = 1; i < points.length; i++) {
+    const l = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    lens.push(l); total += l;
+  }
+  let want = total / 2;
+  for (let i = 0; i < lens.length; i++) {
+    if (want <= lens[i]) {
+      const f = lens[i] ? want / lens[i] : 0;
+      return { x: points[i].x + (points[i + 1].x - points[i].x) * f,
+               y: points[i].y + (points[i + 1].y - points[i].y) * f };
+    }
+    want -= lens[i];
+  }
+  return points[points.length - 1];
+}
+
+// Closest point on a polyline to (px,py), and which segment it fell on — used
+// to decide where a new bend goes when someone drags the line itself.
+function closestOnPath(points, px, py) {
+  let best = null;
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = points[i], b = points[i + 1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy || 1;
+    let t = ((px - a.x) * dx + (py - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const x = a.x + dx * t, y = a.y + dy * t;
+    const dist = Math.hypot(px - x, py - y);
+    if (!best || dist < best.dist) best = { dist, x, y, segment: i };
+  }
+  return best;
+}
+
 // ===== SVG Diagram =====
-function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes, inScenario, zoom, setZoom }) {
+function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onUpdateRoute, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes, inScenario, zoom, setZoom }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -665,6 +892,10 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
 
   const handleMouseDown = useCallback((e, sys) => {
     if (sys && !canEdit) { e.stopPropagation(); return; }   // viewers cannot rearrange
+    // While an arrow is being adjusted its connection points sit on the box's
+    // draggable border. Allowing the box to move as well made the two
+    // impossible to tell apart, so boxes are pinned until adjustment ends.
+    if (sys && adjustFlowRef.current) { e.stopPropagation(); return; }
     if (sys) {
       e.stopPropagation();
       const svg = svgRef.current;
@@ -716,6 +947,155 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
   const sysMap = {};
   systems.forEach(s => { sysMap[s.system_id] = s; });
 
+  // --- routing -------------------------------------------------------------
+  // routeDrag holds the in-progress gesture. It is state rather than a ref
+  // because the anchor dots and the rubber-banding have to re-render as the
+  // pointer moves.
+  const [routeDrag, setRouteDrag] = useState(null);
+  // Which arrow is being adjusted. Entered by clicking the line, left by
+  // clicking away or pressing Escape. Kept separate from `selected` so that
+  // opening a flow's record and rearranging its arrow are different acts.
+  const [adjustFlow, setAdjustFlow] = useState(null);
+  const adjustFlowRef = useRef(null);
+  useEffect(() => { adjustFlowRef.current = adjustFlow; }, [adjustFlow]);
+
+  const flowById = {};
+  flows.forEach(f => { flowById[f.flow_id] = f; });
+  // A stable order so "the later one hops" does not change between renders.
+  const flowOrder = flows.map(f => f.flow_id).sort();
+  const endpoints = resolveEndpoints(flows, sysMap, NODE_W, NODE_H);
+
+  // While dragging, show the arrow where it *would* land rather than where it
+  // is stored — otherwise the line only moves once the drag is released.
+  const livePoints = (flow, ends) => {
+    let from = ends.from, to = ends.to;
+    let bends = parseWaypoints(flow.waypoints);
+    if (routeDrag && routeDrag.flowId === flow.flow_id) {
+      if (routeDrag.kind === 'end' && routeDrag.at) {
+        if (routeDrag.end === 'source') from = routeDrag.at; else to = routeDrag.at;
+      } else if (routeDrag.kind === 'bend' && routeDrag.at) {
+        bends = bends.slice();
+        if (routeDrag.index === null) bends.splice(routeDrag.insertAt, 0, routeDrag.at);
+        else bends[routeDrag.index] = routeDrag.at;
+      }
+    }
+    return [from, ...bends, to];
+  };
+
+  const pointsById = {};
+  flowOrder.forEach(fid => {
+    const f = flowById[fid], e = endpoints[fid];
+    if (f && e) pointsById[fid] = livePoints(f, e);
+  });
+  const hops = computeHops(flowOrder, pointsById);
+
+  const diagramPoint = (e) => {
+    const svg = svgRef.current;
+    const rect = svg.getBoundingClientRect();
+    return { x: (e.clientX - rect.left - panOffset.x) / zoom,
+             y: (e.clientY - rect.top - panOffset.y) / zoom };
+  };
+
+  const beginEndDrag = (e, flow, end) => {
+    e.stopPropagation(); e.preventDefault();
+    setRouteDrag({ kind: 'end', flowId: flow.flow_id, end, at: null, over: null });
+  };
+
+  const beginBendDrag = (e, flow, index) => {
+    e.stopPropagation(); e.preventDefault();
+    setRouteDrag({ kind: 'bend', flowId: flow.flow_id, index, at: null });
+  };
+
+  // Dragging the line itself inserts a new bend at the point grabbed.
+  const beginBend = (e, flow, pts) => {
+    e.stopPropagation(); e.preventDefault();
+    const p = diagramPoint(e);
+    const near = closestOnPath(pts, p.x, p.y);
+    if (!near) return;
+    setRouteDrag({ kind: 'bend', flowId: flow.flow_id, index: null,
+                   insertAt: near.segment, at: { x: p.x, y: p.y } });
+  };
+
+  // Snap radius for a connection point, in diagram units.
+  const SNAP = 26;
+
+  const routeMove = useCallback((e) => {
+    if (!routeDrag) return;
+    const p = diagramPoint(e);
+    if (routeDrag.kind === 'end') {
+      // Find the nearest connection point on any box.
+      let best = null;
+      systems.forEach(sys => {
+        anchorPoints(sys, NODE_W, NODE_H).forEach(a => {
+          const d = Math.hypot(a.x - p.x, a.y - p.y);
+          if (d < SNAP && (!best || d < best.d)) {
+            best = { d, system: sys.system_id, anchor: a.id, x: a.x, y: a.y };
+          }
+        });
+      });
+      setRouteDrag(rd => ({ ...rd, at: best ? { x: best.x, y: best.y } : p,
+                            over: best }));
+    } else {
+      setRouteDrag(rd => ({ ...rd, at: { x: p.x, y: p.y } }));
+    }
+  }, [routeDrag, systems, panOffset, zoom]);
+
+  const routeUp = useCallback(() => {
+    if (!routeDrag) return;
+    const flow = flowById[routeDrag.flowId];
+    const rd = routeDrag;
+    setRouteDrag(null);
+    if (!flow || !onUpdateRoute) return;
+
+    if (rd.kind === 'end') {
+      // Dropped away from any connection point: leave it as it was. A data
+      // flow always joins two systems, so an end cannot float.
+      if (!rd.over) return;
+      const endSystem = rd.end === 'source'
+        ? flow.source_system_id : flow.destination_system_id;
+      // Only the shape is editable here, not which systems are connected —
+      // that is a change to the record, and belongs in the details panel.
+      if (rd.over.system !== endSystem) return;
+      onUpdateRoute(flow.flow_id, rd.end === 'source'
+        ? { source_anchor: rd.over.anchor } : { dest_anchor: rd.over.anchor });
+      return;
+    }
+
+    const bends = parseWaypoints(flow.waypoints).slice();
+    if (rd.index === null) {
+      if (!rd.at) return;
+      bends.splice(rd.insertAt, 0, rd.at);
+    } else {
+      // Dragged back onto the straight line between its neighbours: remove it,
+      // which is how a bend is undone.
+      const ends = endpoints[flow.flow_id];
+      const all = [ends.from, ...bends, ends.to];
+      const before = all[rd.index], after = all[rd.index + 2];
+      const onLine = closestOnPath([before, after], rd.at.x, rd.at.y);
+      if (onLine && onLine.dist < 8) bends.splice(rd.index, 1);
+      else bends[rd.index] = rd.at;
+    }
+    onUpdateRoute(flow.flow_id, { waypoints: bends });
+  }, [routeDrag, flowById, endpoints, onUpdateRoute]);
+
+  // Escape leaves adjustment, and so does clicking the empty canvas.
+  useEffect(() => {
+    if (!adjustFlow) return;
+    const onKey = (e) => { if (e.key === 'Escape') setAdjustFlow(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [adjustFlow]);
+
+  useEffect(() => {
+    if (!routeDrag) return;
+    window.addEventListener('mousemove', routeMove);
+    window.addEventListener('mouseup', routeUp);
+    return () => {
+      window.removeEventListener('mousemove', routeMove);
+      window.removeEventListener('mouseup', routeUp);
+    };
+  }, [routeDrag, routeMove, routeUp]);
+
   return (
     <div className="canvas-container">
       {/* While a details panel is open the diagram is frozen: the next click
@@ -731,37 +1111,70 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
                   + `${systems.filter(s=>s.change_state==='removed').length + flows.filter(f=>f.change_state==='removed').length} item(s) being retired are faded.`
                 : '')
              + ' The Systems and Data Flows tables in the sidebar list the same information.'}
-           onMouseDown={(e) => handleMouseDown(e, null)} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+           onMouseDown={(e) => { setAdjustFlow(null); handleMouseDown(e, null); }}
+           onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#6b6b6b"><polygon points="0 0, 10 3.5, 0 7" /></marker>
           <marker id="arrowhead-sel" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#D4772C"><polygon points="0 0, 10 3.5, 0 7" /></marker>
         </defs>
         <g transform={`translate(${panOffset.x},${panOffset.y}) scale(${zoom})`}>
-          {flows.map(flow => {
-            const src = sysMap[flow.source_system_id], dst = sysMap[flow.destination_system_id];
-            if (!src || !dst) return null;
+          {flowOrder.map(fid => {
+            const flow = flowById[fid];
+            const ends = endpoints[fid];
+            if (!flow || !ends) return null;
             const isSel = selected && selected.type === 'flow' && selected.id === flow.flow_id;
-            const x1 = src.x_pos + NODE_W/2, y1 = src.y_pos + NODE_H/2, x2 = dst.x_pos + NODE_W/2, y2 = dst.y_pos + NODE_H/2;
-            const angle = Math.atan2(y2-y1, x2-x1);
-            const sx = x1+Math.cos(angle)*(NODE_W/2+5), sy = y1+Math.sin(angle)*(NODE_H/2+5);
-            const ex = x2-Math.cos(angle)*(NODE_W/2+12), ey = y2-Math.sin(angle)*(NODE_H/2+12);
+            const adjusting = adjustFlow === flow.flow_id;
+            const pts = livePoints(flow, ends);
+            const mid = midpointOf(pts);
             return (
-              <g key={flow.flow_id} className={`flow-line ${isSel?'selected':''}`}
-                 onMouseDown={(e)=>e.stopPropagation()}
-                 onClick={(e)=>{e.stopPropagation();onSelectFlow(flow.flow_id);}}>
-                <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={isSel?'#D4772C':'#6b6b6b'} strokeWidth={isSel?3:2}
+              <g key={flow.flow_id}
+                 className={`flow-line ${isSel?'selected':''} ${adjusting?'adjusting':''}`}
+                 onMouseDown={(e)=>e.stopPropagation()}>
+                <path d={pathWithHops(pts, hops[fid] || [])} fill="none"
+                      stroke={adjusting ? '#2E75B6' : (isSel?'#D4772C':'#6b6b6b')}
+                      strokeWidth={(isSel||adjusting)?3:2}
                       strokeDasharray={flow.change_state==='proposed' ? '7,5' : undefined}
                       opacity={flow.change_state==='removed' ? 0.45 : 1}
                       markerEnd={isSel?'url(#arrowhead-sel)':'url(#arrowhead)'} />
-                <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="transparent" strokeWidth="16" />
-                {/* The number is a generous click target — easier to hit than the line. */}
-                <rect className="flow-label-hit" x={(sx+ex)/2-22} y={(sy+ey)/2-23} width={44} height={16}
-                      rx="8" fill="#fff" fillOpacity="0.85" stroke={isSel?'#D4772C':'#d7dde5'} />
-                <text className="flow-label" x={(sx+ex)/2} y={(sy+ey)/2-12} textAnchor="middle"
-                      fontSize="10" fontWeight={isSel?'700':'400'}>{flow.flow_id}</text>
+
+                {/* Clicking the LINE adjusts the arrow; clicking the label opens
+                    the record. Two targets, two jobs — previously both did the
+                    same thing and the adjustment handles were undiscoverable. */}
+                <path d={pathWithHops(pts, [])} fill="none" stroke="transparent"
+                      strokeWidth="16"
+                      style={{ cursor: canEdit ? 'pointer' : 'default' }}
+                      onClick={(e)=>{
+                        e.stopPropagation();
+                        if (!canEdit) { onSelectFlow(flow.flow_id); return; }
+                        if (!adjusting) { setAdjustFlow(flow.flow_id); return; }
+                        // Already adjusting: a second click on the line adds a
+                        // bend where it was clicked.
+                        const p = diagramPoint(e);
+                        const near = closestOnPath(pts, p.x, p.y);
+                        if (!near) return;
+                        const bends = parseWaypoints(flow.waypoints).slice();
+                        bends.splice(near.segment, 0, { x: p.x, y: p.y });
+                        onUpdateRoute(flow.flow_id, { waypoints: bends });
+                      }} />
+
+                {/* The label opens the record. Sized to its text. */}
+                <rect className="flow-label-hit"
+                      x={mid.x - labelWidth(flow)/2} y={mid.y-23}
+                      width={labelWidth(flow)} height={16}
+                      rx="8" fill="#fff" fillOpacity="0.85"
+                      stroke={isSel?'#D4772C':'#d7dde5'}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e)=>{e.stopPropagation(); onSelectFlow(flow.flow_id);}} />
+                <text className="flow-label" x={mid.x} y={mid.y-12} textAnchor="middle"
+                      fontSize="10" fontWeight={isSel?'700':'400'}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e)=>{e.stopPropagation(); onSelectFlow(flow.flow_id);}}>
+                  {flowLabel(flow)}
+                </text>
               </g>
             );
           })}
+
           {systems.map(sys => {
             const c = getColor(sys.system_type);
             const isSel = selected && selected.type === 'system' && selected.id === sys.system_id;
@@ -799,6 +1212,80 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
               </g>
             );
           })}
+          {/* Everything below is painted AFTER the systems on purpose. SVG has
+              no z-index — document order is paint order — and an arrow's ends
+              land ON a box's border, which is also the box's drag handle. Drawn
+              earlier, the dots and grab handles sat underneath the boxes and
+              could not be clicked at all. */}
+
+          {/* Connection points on the two systems this arrow joins. Clicking
+              one attaches that end to it. */}
+          {adjustFlow && flowById[adjustFlow] && [
+            flowById[adjustFlow].source_system_id,
+            flowById[adjustFlow].destination_system_id,
+          ].map((sysId, whichEnd) => {
+            const sys = sysMap[sysId];
+            if (!sys) return null;
+            const end = whichEnd === 0 ? 'source' : 'dest';
+            const live = endpoints[adjustFlow];
+            const currentId = live && live[end === 'source' ? 'from' : 'to'].id;
+            return (
+              <g key={'anchors-' + end + '-' + sysId}>
+                {anchorPoints(sys, NODE_W, NODE_H).map(a => {
+                  const dragHot = routeDrag && routeDrag.kind === 'end'
+                    && routeDrag.over && routeDrag.over.system === sysId
+                    && routeDrag.over.anchor === a.id;
+                  const inUse = currentId === a.id;
+                  return (
+                    <circle key={a.id} cx={a.x} cy={a.y} r={dragHot ? 8 : 5}
+                            className={'anchor-dot' + (dragHot ? ' hot' : '')
+                                       + (inUse ? ' in-use' : '')}
+                            onMouseDown={(e)=>e.stopPropagation()}
+                            onClick={(e)=>{
+                              e.stopPropagation();
+                              onUpdateRoute(adjustFlow, end === 'source'
+                                ? { source_anchor: a.id } : { dest_anchor: a.id });
+                            }}>
+                      <title>Attach this end here</title>
+                    </circle>
+                  );
+                })}
+              </g>
+            );
+          })}
+
+          {/* The grab handles, on top of the dots: they share coordinates at the
+              arrow's current end, and the handle is the one you drag. */}
+          {adjustFlow && flowById[adjustFlow] && endpoints[adjustFlow] && (
+            <g className="route-overlay">
+              <circle className="route-handle"
+                      cx={endpoints[adjustFlow].from.x}
+                      cy={endpoints[adjustFlow].from.y} r={6}
+                      onMouseDown={(e)=>beginEndDrag(e, flowById[adjustFlow], 'source')}>
+                <title>Drag to move this end to another connection point</title>
+              </circle>
+              <circle className="route-handle"
+                      cx={endpoints[adjustFlow].to.x}
+                      cy={endpoints[adjustFlow].to.y} r={6}
+                      onMouseDown={(e)=>beginEndDrag(e, flowById[adjustFlow], 'dest')}>
+                <title>Drag to move this end to another connection point</title>
+              </circle>
+              {parseWaypoints(flowById[adjustFlow].waypoints).map((w, i) => (
+                <circle key={i} className="route-bend" cx={w.x} cy={w.y} r={5}
+                        onMouseDown={(e)=>beginBendDrag(e, flowById[adjustFlow], i)}
+                        onDoubleClick={(e)=>{
+                          e.stopPropagation();
+                          const bends = parseWaypoints(
+                            flowById[adjustFlow].waypoints).slice();
+                          bends.splice(i, 1);
+                          onUpdateRoute(adjustFlow, { waypoints: bends });
+                        }}>
+                  <title>Drag to move this bend, or double-click to remove it</title>
+                </circle>
+              ))}
+            </g>
+          )}
+
         </g>
       </svg>
       <div className="legend">
@@ -1060,8 +1547,6 @@ const PANEL_REQUIRED = {
     { key: 'source_system_id', label: 'Source' },
     { key: 'destination_system_id', label: 'Destination' },
     { key: 'frequency', label: 'Frequency' },
-    { key: 'transfer_method', label: 'Method' },
-    { key: 'format', label: 'Format' },
   ],
   element: [
     { key: 'name', label: 'Name' },
@@ -1074,7 +1559,7 @@ const PANEL_REQUIRED = {
 };
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden }) {
+function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [missing, setMissing] = useState([]);
@@ -1084,7 +1569,12 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
 
   useEffect(() => { setEditing(false); setMissing([]); setConfirmDelete(false); }, [data, type]);
 
-  const startEdit = () => { setForm({...data}); setMissing([]); setEditing(true); };
+  const startEdit = () => {
+    // 'proposed' is derived from change_state rather than stored separately, so
+    // it has to be unpacked for the checkbox and packed again on save.
+    setForm({ ...data, proposed: data.change_state === 'proposed' });
+    setMissing([]); setEditing(true);
+  };
   const cancelEdit = () => { setEditing(false); setMissing([]); };
 
   const requiredGaps = (f) => (PANEL_REQUIRED[type] || []).filter(r => {
@@ -1102,6 +1592,11 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
       return;
     }
     setMissing([]);
+    // Only systems and flows carry a change state, and only inside a scenario.
+    // Sending it on Current Architecture is refused by the server, so it is
+    // left out entirely rather than sent as false.
+    const proposedField = (inScenario && ['system', 'flow'].includes(type))
+      ? { proposed: !!form.proposed } : {};
     let url, saveData;
     if (type === 'system') {
       url = `/api/systems/${data.system_id}`;
@@ -1122,11 +1617,13 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
         entry_validation: form.entry_validation,
         entry_error_correction: form.entry_error_correction,
         target_system_id: form.target_system_id,
+        ...proposedField,
       };
     } else if (type === 'flow') {
       url = `/api/flows/${data.flow_id}`;
       saveData = {
         name: form.name, description: form.description,
+        display_name: form.display_name,
         source_system_id: form.source_system_id, destination_system_id: form.destination_system_id,
         direction: form.direction, frequency: form.frequency,
         transfer_method: form.transfer_method, format: form.format,
@@ -1140,6 +1637,7 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
         disclosure_avoidance: form.disclosure_avoidance,
         data_quality_measures: form.data_quality_measures, data_standard: form.data_standard,
         retention_at_destination: form.retention_at_destination, legal_authority: form.legal_authority,
+        ...proposedField,
       };
     } else if (type === 'element') {
       url = `/api/elements/${data.element_id}`;
@@ -1241,6 +1739,13 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
         </div>
         <div className="panel-actions">
           {!editing && canEdit && <button className="btn btn-edit" onClick={startEdit}>Edit</button>}
+          {!editing && canEdit && onResetRoute && type === 'flow' &&
+            (data.source_anchor || data.dest_anchor || data.waypoints) && (
+            <button className="btn"
+                    title="Put this arrow back to automatic routing"
+                    onClick={() => onResetRoute(data.flow_id)}>
+              Reset arrow
+            </button>)}
           {!editing && canEdit && onSetHidden && inScenario && ['system','flow'].includes(type) &&
             <button className="btn"
                     title={data.is_hidden
@@ -1267,11 +1772,11 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
           {type === 'system' && !editing && <SystemReadView data={data} onDrill={onDrill}
               contributors={contributors} canEdit={canEdit} notify={notify} isAdmin={isAdmin}
               systems={systems} onSchemaChanged={onSchemaChanged} />}
-          {type === 'system' && editing && <SystemEditView form={form} set={set}
+          {type === 'system' && editing && <SystemEditView form={form} set={set} inScenario={inScenario}
               contributors={contributors} systems={systems} systemTypes={systemTypes} missing={missing} />}
           {type === 'flow' && !editing && <FlowReadView data={data} contributors={contributors}
               canEdit={canEdit} notify={notify} />}
-          {type === 'flow' && editing && <FlowEditView form={form} set={set} systems={systems}
+          {type === 'flow' && editing && <FlowEditView form={form} set={set} systems={systems} inScenario={inScenario}
               contributors={contributors} missing={missing} />}
           {type === 'element' && !editing && <ElementReadView data={data} />}
           {type === 'element' && editing && <ElementEditView form={form} set={set} missing={missing} />}
@@ -1368,10 +1873,14 @@ function SystemReadView({ data, onDrill, contributors, canEdit, notify, isAdmin,
   </>);
 }
 
-function SystemEditView({ form, set, contributors, systems, systemTypes, missing }) {
+function SystemEditView({ form, set, contributors, systems, systemTypes, missing, inScenario }) {
   const bad = (k) => (missing || []).includes(k);
   return (<>
     <CollapsibleSection title="Overview">
+      {inScenario && (
+        <EditField label="Proposed" type="checkbox" value={form.proposed}
+                   onChange={v => set('proposed', !!v)} />
+      )}
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)} invalid={bad('name')} />
       <EditField label="Type" value={form.system_type} onChange={v=>set('system_type',v)}
                  type="select" options={(systemTypes||[]).map(t=>t.type_name)} invalid={bad('system_type')} />
@@ -1431,6 +1940,7 @@ function FlowReadView({ data, contributors, canEdit, notify }) {
   return (<>
     <CollapsibleSection title="Flow Overview">
       <ReadField label="ID" value={data.flow_id} />
+      <ReadField label="Display Name" value={data.display_name} />
       <ReadField label="Source" value={data.source_name} />
       <ReadField label="Destination" value={data.dest_name} />
       <ReadField label="Direction" value={data.direction} />
@@ -1495,11 +2005,22 @@ function FlowReadView({ data, contributors, canEdit, notify }) {
   </>);
 }
 
-function FlowEditView({ form, set, systems, contributors, missing }) {
+function FlowEditView({ form, set, systems, contributors, missing, inScenario }) {
   const bad = (k) => (missing || []).includes(k);
   return (<>
     <CollapsibleSection title="Flow Overview">
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)} invalid={bad('name')} />
+      {/* Short label for the diagram. The full name is usually a sentence and
+          would cover the picture, so this is separate rather than derived. */}
+      <div className="edit-field-row"><span className="field-label">Display Name</span>
+        <div style={{flex:1}}>
+          <input className="edit-input" value={form.display_name || ''} maxLength={20}
+                 placeholder="Optional — shown on the diagram instead of the ID"
+                 onChange={e=>set('display_name', e.target.value)} />
+          <div className="gov-hint">
+            {(form.display_name || '').length}/20 · leave blank to show {form.flow_id}
+          </div>
+        </div></div>
       <div className="edit-field-row"><span className="field-label">Source</span>
         <select className="edit-select" value={form.source_system_id || ''}
                 onChange={e=>set('source_system_id', e.target.value)}>
@@ -1510,6 +2031,10 @@ function FlowEditView({ form, set, systems, contributors, missing }) {
                 onChange={e=>set('destination_system_id', e.target.value)}>
           {byName(systems).map(s => <option key={s.system_id} value={s.system_id}>{systemOption(s)}</option>)}
         </select></div>
+      {inScenario && (
+        <EditField label="Proposed" type="checkbox" value={form.proposed}
+                   onChange={v => set('proposed', !!v)} />
+      )}
       <EditField label="Direction" value={form.direction} onChange={v=>set('direction',v)} type="select" options={['Inbound','Outbound','Bidirectional']} />
       <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Deprecated','Under Review','Broken']} />
       <EditField label="Description" value={form.description} onChange={v=>set('description',v)} type="textarea" />
@@ -1888,6 +2413,7 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
     frequency_detail:'', transfer_method:'', format:'', contains_pii:false, ferpa_protected:false,
     data_classification:'', encryption_method:'', data_standard:'', legal_authority:'',
     organization:'', managed_by:'', owner_id:'', data_steward_id:'',
+    display_name:'',
     proposed: true
   });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
@@ -1915,6 +2441,13 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
         <div className="modal-section-title">Flow Overview</div>
         <ReqField id="flow-name" label="Name *" value={form.name} onChange={v=>set('name',v)}
                   error={req.errorFor(form,'name')} placeholder="e.g., District Enrollment to Staging" />
+        <div className="form-group">
+          <label htmlFor="flow-display">Display Name</label>
+          <input id="flow-display" value={form.display_name || ''} maxLength={20}
+                 placeholder="Optional — shown on the diagram instead of the ID"
+                 onChange={e=>set('display_name', e.target.value)} />
+          <div className="gov-hint">{(form.display_name || '').length}/20</div>
+        </div>
         <div className="form-row">
           <ReqField id="flow-src" label="Source System *" type="select" value={form.source_system_id}
                     onChange={v=>set('source_system_id',v)} error={req.errorFor(form,'source_system_id')}
@@ -2645,6 +3178,36 @@ function ResourcesSection({ entityType, entityId, canEdit, notify }) {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const replaceRefs = useRef({});
 
+  // The field list is a fixed slot rather than an ordinary attachment. Manual
+  // Entry systems get one automatically because they cannot be described
+  // without it; a data flow can be given one when it carries a defined set of
+  // fields. Anywhere else the idea does not apply.
+  const FIELD_LIST_LABEL = 'Data entry field list';
+  const hasFieldList = items.some(r => r.label === FIELD_LIST_LABEL);
+  const canAddFieldList = canEdit && entityType === 'data_flow' && !hasFieldList;
+
+  const addFieldList = async () => {
+    setBusy(true);
+    try {
+      const rows = await api.post(`/api/resources/${entityType}/${entityId}/field-list`, {});
+      setItems(rows);
+      notify('Field list added.');
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
+  const clearResource = async (r) => {
+    setBusy(true);
+    try {
+      await api.post(`/api/resources/${r.resource_id}/clear`, {});
+      load();
+      notify(r.label_locked
+        ? 'Cleared. The slot stays because it is required here.'
+        : 'Cleared. Earlier versions are kept.');
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
   const load = useCallback(() => {
     if (!entityId) return;
     api.get(`/api/resources/${entityType}/${entityId}`).then(setItems).catch(() => {});
@@ -2758,8 +3321,17 @@ function ResourcesSection({ entityType, entityId, canEdit, notify }) {
                 {r.filename ? 'Upload new version' : 'Upload'}
               </button>
             </>}
-            {canEdit && !r.label_locked &&
-              <button className="btn" onClick={() => setConfirmDelete(r)}>Remove</button>}
+            {canEdit && (r.filename || r.url) &&
+              <button className="btn" disabled={busy} onClick={() => clearResource(r)}
+                      title={r.label_locked
+                        ? 'Empty this slot but keep it — it is required here'
+                        : 'Empty this without removing it'}>
+                Clear</button>}
+            {canEdit && (!r.label_locked || entityType === 'data_flow') &&
+              <button className="btn" onClick={() => setConfirmDelete(r)}
+                      title={r.label_locked
+                        ? 'Remove this slot — it is optional on a data flow'
+                        : undefined}>Remove</button>}
           </div>
           {previewing === r.resource_id && r.can_preview && (
             <div className="res-preview">
@@ -2784,6 +3356,11 @@ function ResourcesSection({ entityType, entityId, canEdit, notify }) {
             + Document</button>
           <button className="btn" onClick={() => { setForm({ label: '', url: '', description: '' }); setAdding('link'); }}>
             + Link</button>
+          {canAddFieldList && (
+            <button className="btn" disabled={busy} onClick={addFieldList}
+                    title="A fixed slot for the list of fields this carries">
+              + Field List</button>
+          )}
         </div>
       : <div style={{ marginTop: 10, borderTop: '1px solid #eee', paddingTop: 10 }}>
           <div className="form-group"><label>Label shown in the app *</label>
@@ -4012,7 +4589,7 @@ function ScenarioSettingsModal({ scenario, users, currentUserId, isSuper,
 
 // Creating a scenario: name, what to start from, an optional focus, and who
 // else can see it. Everything except the name can be changed afterwards.
-function AddScenarioModal({ scenarios, systems, users, currentUserId, onClose, onSave }) {
+function AddScenarioModal({ scenarios, users, currentUserId, onClose, onSave }) {
   const bodyRef = useRef(null);
   const [form, setForm] = useState({
     name: '', description: '', start_from: 'live', source_scenario_id: '',
@@ -4020,6 +4597,11 @@ function AddScenarioModal({ scenarios, systems, users, currentUserId, onClose, o
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const [focus, setFocus] = useState([]);        // systems to keep visible
   const [useFocus, setUseFocus] = useState(false);
+  // The systems available to focus on are the ones in whatever you chose to
+  // start from — NOT the view you happen to be looking at. Reading them from
+  // the current view offered systems belonging to other scenarios entirely.
+  const [sourceSystems, setSourceSystems] = useState([]);
+  const [loadingSystems, setLoadingSystems] = useState(false);
   const [invite, setInvite] = useState([]);      // [{user_id, role}]
   const [copyMembers, setCopyMembers] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -4031,6 +4613,25 @@ function AddScenarioModal({ scenarios, systems, users, currentUserId, onClose, o
     bodyRef);
 
   const parent = scenarios.find(s => String(s.scenario_id) === String(form.source_scenario_id));
+
+  useEffect(() => {
+    // Anything ticked belonged to the previous source, so it cannot carry over.
+    setFocus([]);
+    if (form.start_from === 'blank') { setSourceSystems([]); return; }
+    if (form.start_from === 'scenario' && !form.source_scenario_id) {
+      setSourceSystems([]); return;
+    }
+    const url = form.start_from === 'scenario'
+      ? `/api/systems?scenario=${form.source_scenario_id}`
+      : '/api/systems';
+    setLoadingSystems(true);
+    // Bypass the view-scoping helper deliberately: this list is about the
+    // chosen source, not the view the person is standing in.
+    request('GET', url)
+      .then(rows => setSourceSystems(Array.isArray(rows) ? rows : []))
+      .catch(() => setSourceSystems([]))
+      .finally(() => setLoadingSystems(false));
+  }, [form.start_from, form.source_scenario_id]);
 
   const submit = () => req.attempt(form, () => {
     setBusy(true);
@@ -4109,7 +4710,15 @@ function AddScenarioModal({ scenarios, systems, users, currentUserId, onClose, o
             </div>
             {useFocus && (
               <div className="pick-list" role="group" aria-label="Systems to keep visible">
-                {(systems || []).map(sy => (
+                {loadingSystems && <div className="gov-hint">Loading…</div>}
+                {!loadingSystems && sourceSystems.length === 0 && (
+                  <div className="gov-hint">
+                    {form.start_from === 'scenario' && !form.source_scenario_id
+                      ? 'Choose a scenario above first.'
+                      : 'Nothing to focus on — that starting point has no systems.'}
+                  </div>
+                )}
+                {sourceSystems.map(sy => (
                   <label key={sy.system_id} className="check-inline">
                     <input type="checkbox" checked={focus.includes(sy.system_id)}
                            onChange={() => toggleFocus(sy.system_id)} />
@@ -4355,6 +4964,28 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   };
 
   const closeDetail = () => { setSelected(null); setDetailData(null); setDetailType(null); };
+
+  // Saving where an arrow attaches and how it bends. Fire-and-forget like node
+  // dragging: it happens constantly while arranging a diagram, and a failed
+  // save is not worth interrupting someone for — the next load shows the truth.
+  const updateRoute = useCallback((flowId, patch) => {
+    setFlows(prev => prev.map(f => f.flow_id === flowId
+      ? { ...f, ...(patch.waypoints !== undefined
+                    ? { waypoints: JSON.stringify(patch.waypoints) } : {}),
+          ...(patch.source_anchor !== undefined ? { source_anchor: patch.source_anchor } : {}),
+          ...(patch.dest_anchor !== undefined ? { dest_anchor: patch.dest_anchor } : {}) }
+      : f));
+    api.quiet('PUT', `/api/flows/${flowId}/route`, patch);
+  }, []);
+
+  const resetRoute = useCallback((flowId) => {
+    setFlows(prev => prev.map(f => f.flow_id === flowId
+      ? { ...f, source_anchor: null, dest_anchor: null, waypoints: null } : f));
+    api.put(`/api/flows/${flowId}/route`,
+            { source_anchor: null, dest_anchor: null, waypoints: [] })
+      .then(() => notify('Arrow reset to automatic routing.'))
+      .catch(e => notify(e.message, true));
+  }, [notify]);
 
   const updatePosition = useCallback((id, x, y) => {
     setSystems(prev => prev.map(s => s.system_id === id ? { ...s, x_pos: x, y_pos: y } : s));
@@ -4603,6 +5234,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           {view==='diagram' && <DiagramCanvas systems={systems} flows={flows} selected={selected}
             onSelectSystem={selectSystem} onSelectFlow={selectFlow} onUpdatePosition={updatePosition}
             onDrill={drillIntoSchema} canEdit={canEditHere} systemTypes={systemTypes}
+            onUpdateRoute={updateRoute}
             inScenario={inScenario} zoom={diagramZoom} setZoom={setDiagramZoom}
             panelOpen={!!detailData} onDismissPanel={closeDetail} />}
           {view==='schema' && <SchemaCanvas tables={schemaTables} selected={selected} onSelectTable={selectSchemaTable} onSelectColumn={selectSchemaColumn} onUpdatePosition={updateSchemaPosition} canEdit={canEditHere}
@@ -4622,6 +5254,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
                          onDelete={deleteRecord}
                          systems={systems} onDrill={drillIntoSchema} canEdit={canEditHere}
                          inScenario={inScenario} onSetHidden={setRecordsHidden}
+                         onResetRoute={resetRoute}
                          notify={notify} contributors={contributors} isAdmin={isAdmin}
                          systemTypes={systemTypes} onSchemaChanged={refresh} />}
         </div>
@@ -4638,7 +5271,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             else refresh();
           })} />
       )}
-      {showAddScenario && <AddScenarioModal scenarios={scenarios} systems={systems}
+      {showAddScenario && <AddScenarioModal scenarios={scenarios}
         users={allUsers} currentUserId={user.user_id}
         onClose={()=>setShowAddScenario(false)} onSave={createScenario} />}
       {showAddSystem && <AddSystemModal systems={systems} systemTypes={systemTypes} inScenario={inScenario}
