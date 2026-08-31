@@ -224,6 +224,20 @@ Sign in as a **SuperAdmin** and confirm each:
 - [ ] **Help**: the **?** beside the version number opens the panel; search
   finds an article; opening it on the diagram and inside a scenario suggests
   different articles first; a Viewer does not see the administration article
+- [ ] **Diagram arrows**: click an arrow's **line** — it turns blue, connection
+  points appear on both systems, and each end shows a grab cursor. **Drag an end
+  onto a different point** and confirm it stays after a refresh; clicking a point
+  should also work. Confirm the **systems cannot be dragged** while adjusting.
+  Click the line again to add a bend and drag it; double-click the bend to remove
+  it; **Escape** leaves adjustment. Click the arrow's **label** and confirm it
+  opens the record instead. **Reset arrow** returns it to automatic. Two flows between
+  the same pair should already be drawn apart, and crossing lines should hop
+- [ ] **Display Name**: set one on a data flow (max 20 characters) and confirm
+  the diagram shows it instead of the ID; clear it and the ID returns
+- [ ] **Field List**: add one to a data flow, attach a document, then **Clear**
+  it — the slot stays and the earlier version is still listed. **Remove** takes
+  the slot away entirely on a data flow. On a Manual Entry system the slot can
+  only be cleared, never removed
 - [ ] Sign out, and confirm you are returned to the sign-in page
 
 Then, in a **private/incognito window**, sign in as a **Viewer** test account:

@@ -98,10 +98,13 @@ def run_migrations():
 # save successfully and leave an unnamed record behind. These are checked here.
 REQUIRED_FIELDS = {
     "system": [("name", "Name"), ("system_type", "Type"), ("managed_by", "Managed By")],
+    # Transfer Method and Format are deliberately not required: the Add Data
+    # Flow modal never collected them, so demanding them on edit meant a record
+    # you had just created could not be saved again without filling in fields
+    # the app never asked for.
     "data_flow": [("name", "Name"), ("source_system_id", "Source System"),
                   ("destination_system_id", "Destination System"),
-                  ("frequency", "Frequency"), ("transfer_method", "Transfer Method"),
-                  ("format", "Format")],
+                  ("frequency", "Frequency")],
     "data_element": [("name", "Name"), ("definition", "Definition")],
     "contributor": [("name", "Name"), ("organization_unit", "Organization Unit")],
 }
@@ -140,6 +143,23 @@ def fk(value):
         return None
     text = str(value).strip()
     return text or None
+
+
+# Connection points: three per side, twelve in all. Named rather than stored as
+# coordinates so an anchor follows its box when the box is moved or resized.
+ANCHOR_SIDES = ("top", "right", "bottom", "left")
+ANCHORS_PER_SIDE = 3
+MAX_WAYPOINTS = 12
+# About what fits on an arrow without covering the diagram behind it.
+MAX_DISPLAY_NAME = 20
+
+
+def valid_anchor(value):
+    """Whether ``value`` is a connection point such as ``top:1``."""
+    if not isinstance(value, str) or ":" not in value:
+        return False
+    side, _, index = value.partition(":")
+    return side in ANCHOR_SIDES and index.isdigit() and 0 <= int(index) < ANCHORS_PER_SIDE
 
 
 def change_state_for_new(handler, data):
@@ -907,7 +927,7 @@ SEED_RELEASES = [
 * Secondary text throughout the app is darker, to meet accessibility contrast
   requirements.
 """),
-    (VERSION, "Help when you need it", None, 1, 600, """\
+    ("0.4.0", "Help when you need it", None, 1, 600, """\
 ## What's new in this release
 
 **A help menu**
@@ -926,6 +946,50 @@ SEED_RELEASES = [
 
 * Release notes and help articles now wrap properly instead of breaking
   sentences across lines.
+"""),
+    (VERSION, "Diagram controls and fixes", None, 1, 700, """\
+## What's new in this release
+
+**Arrows you can arrange**
+
+* **Click an arrow's line** to adjust it. Connection points appear on the two
+  systems it joins, and each end of the arrow becomes a grab handle.
+* **Drag an end** to a different connection point, or click a point to attach
+  it there. Systems stay put while an arrow is being adjusted.
+* **Click the line again** to add a bend, then drag it. Double-click a bend to
+  remove it.
+* **Click an arrow's label** to open the data flow itself, as before.
+* Two flows between the same pair of systems now separate themselves
+  automatically, so a bidirectional pair recorded as two flows can be read as
+  two flows.
+* Where lines cross, one hops over the other so it is clear they do not meet.
+* **Reset arrow** in a flow's details returns it to automatic routing.
+* A data flow can be given a short **Display Name**, shown on the diagram in
+  place of its identifier. Up to 20 characters; leave it blank to keep the ID.
+
+**Field lists**
+
+* A data flow can now carry a **Field List**, alongside documents and links, for
+  the fields that flow carries.
+* An attached document can be **cleared** without removing the slot it sits in —
+  useful for a Manual Entry system's field list, which cannot be deleted because
+  it is required. Earlier versions are kept.
+* A field list added to a data flow can also be **removed** outright, since it
+  is optional there.
+
+**Fixes**
+
+* Adding a Manual Entry system inside a scenario no longer fails.
+* Attaching a document, or uploading a database schema, inside a scenario no
+  longer reports that the record cannot be found.
+* Transfer Method and Format are no longer required when editing a data flow —
+  the form that creates one never asked for them.
+* When creating a scenario, the systems offered under "focus on particular
+  systems" are now those in whatever you chose to start from.
+* Branching a scenario from another scenario keeps proposed, modified and
+  retired items in those states instead of resetting them.
+* **Proposed** can now be changed from a record's details, not only when it is
+  first created.
 """),
 ]
 
@@ -1797,8 +1861,8 @@ if HAS_TORNADO:
                 frequency_detail,organization,managed_by,data_steward_id,
                 data_classification,encryption_method,disclosure_avoidance,
                 data_quality_measures,data_standard,retention_at_destination,legal_authority,
-                created_date,updated_date,scenario_id,change_state)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_date,updated_date,scenario_id,change_state,display_name)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (fid, data.get('name',''), data.get('description',''),
                  data.get('source_system_id',''), data.get('destination_system_id',''),
                  data.get('direction','Inbound'), data.get('frequency','Daily'),
@@ -1816,7 +1880,8 @@ if HAS_TORNADO:
                  data.get('data_quality_measures'), data.get('data_standard'),
                  data.get('retention_at_destination'), data.get('legal_authority'),
                  now, now, self.scenario_id,
-                 change_state_for_new(self, data)))
+                 change_state_for_new(self, data),
+                 (data.get('display_name') or '').strip()[:MAX_DISPLAY_NAME] or None))
             # Attaching a flow to a system that had been tidied away brings it
             # back; otherwise the new flow would be invisible the moment it
             # was drawn.
@@ -1870,6 +1935,7 @@ if HAS_TORNADO:
                        'frequency','transfer_method','format','transformation_steps','business_rules',
                        'validations','error_handling','contains_pii','ferpa_protected','regulatory_driver',
                        'agreement_id','owner_id','status','known_issues',
+                       'display_name',
                        'frequency_detail','organization','managed_by','data_steward_id',
                        'data_classification','encryption_method','disclosure_avoidance',
                        'data_quality_measures','data_standard','retention_at_destination','legal_authority')
@@ -1904,8 +1970,16 @@ if HAS_TORNADO:
             vals = []
             for key in self.FLOW_FIELDS:
                 if key in data:
+                    value = data[key]
+                    if key in FK_FIELDS:
+                        value = fk(value)
+                    elif key == "display_name":
+                        # Capped here, not only in the browser: the API is the
+                        # boundary, and an over-long label would spill across
+                        # the diagram.
+                        value = (value or "").strip()[:MAX_DISPLAY_NAME] or None
                     fields.append(f"{key}=?")
-                    vals.append(fk(data[key]) if key in FK_FIELDS else data[key])
+                    vals.append(value)
             if fields:
                 fields.append("updated_date=?")
                 fields.append("updated_by=?")
@@ -3073,10 +3147,20 @@ if HAS_TORNADO:
     MANUAL_ENTRY = "Manual Entry"
     FIELD_LIST_LABEL = "Data entry field list"
 
-    def next_flow_id(conn):
-        last = conn.execute("SELECT flow_id FROM data_flow ORDER BY flow_id DESC LIMIT 1").fetchone()
-        num = int(re.search(r"\d+", last["flow_id"]).group()) + 1 if last else 1
-        return f"PL-{num:03d}"
+    def next_flow_id(conn, scenario_id=None):
+        """Next free flow identifier within one view.
+
+        Scoped, and parsed from the un-prefixed id: in a scenario the highest
+        id is something like ``S3-PL-007``, where a bare ``\d+`` search finds
+        the *scenario* number and generates a colliding ``PL-002``.
+        """
+        where, params = scenarios.scope(scenario_id)
+        last = conn.execute(
+            f"SELECT flow_id FROM data_flow WHERE {where} "
+            "ORDER BY flow_id DESC LIMIT 1", params).fetchone()
+        num = (int(re.search(r"\d+", scenarios.base_id(last["flow_id"])).group()) + 1
+               if last else 1)
+        return scenarios.scoped_id(scenario_id, f"PL-{num:03d}")
 
     def sync_manual_entry(handler, conn, system_id, data, creating=False):
         """Keep a Manual Entry system's inbound data flow in step with its target.
@@ -3094,9 +3178,10 @@ if HAS_TORNADO:
         if not conn.execute("SELECT 1 FROM system WHERE system_id=?", (target,)).fetchone():
             return None
 
+        where, params = scenarios.scope(handler.scenario_id)
         existing = conn.execute(
-            "SELECT * FROM data_flow WHERE source_system_id=? ORDER BY flow_id LIMIT 1",
-            (system_id,)).fetchone()
+            f"SELECT * FROM data_flow WHERE source_system_id=? AND {where} "
+            "ORDER BY flow_id LIMIT 1", (system_id,) + params).fetchone()
         now = iso(utcnow())
         target_name = conn.execute("SELECT name FROM system WHERE system_id=?",
                                    (target,)).fetchone()["name"]
@@ -3116,15 +3201,15 @@ if HAS_TORNADO:
                                      fields=("destination_system_id", "name"))
             return existing["flow_id"]
 
-        fid = next_flow_id(conn)
+        fid = next_flow_id(conn, handler.scenario_id)
         conn.execute(
             """INSERT INTO data_flow
                  (flow_id, name, description, source_system_id, destination_system_id,
                   direction, frequency, frequency_detail, transfer_method, format,
                   contains_pii, ferpa_protected, organization, managed_by,
                   data_steward_id, owner_id, status, created_date, updated_date,
-                  created_by, updated_by)
-               VALUES (?,?,?,?,?,'Inbound',?,?,?,?,?,?,?,?,?,?, 'Active',?,?,?,?)""",
+                  created_by, updated_by, scenario_id, change_state)
+               VALUES (?,?,?,?,?,'Inbound',?,?,?,?,?,?,?,?,?,?, 'Active',?,?,?,?,?,?)""",
             (fid, flow_name,
              data.get("flow_description") or
              f"Data entered manually via {sys_row['name']} and stored in {target_name}.",
@@ -3139,28 +3224,38 @@ if HAS_TORNADO:
              1 if data.get("flow_ferpa_protected") else 0,
              sys_row["organization"], sys_row["managed_by"], sys_row["data_steward_id"],
              sys_row["owner_id"], now, now,
-             handler.current_user["user_id"], handler.current_user["user_id"]))
+             handler.current_user["user_id"], handler.current_user["user_id"],
+             handler.scenario_id,
+             # The flow belongs to the same plan as the system that needs it,
+             # so it inherits that system's state rather than defaulting.
+             sys_row["change_state"] if handler.scenario_id else scenarios.UNCHANGED))
         handler.audit_create(conn, "data_flow", fid,
                              {"name": flow_name, "source_system_id": system_id,
                               "destination_system_id": target,
                               "created_with": "Manual Entry system"})
         return fid
 
-    def ensure_field_list_resource(handler, conn, system_id):
-        """Give every Manual Entry system a fixed slot for its field list."""
+    def ensure_field_list_resource(handler, conn, entity_id, entity_type="system"):
+        """Give a record a fixed slot for its field list.
+
+        Created automatically for Manual Entry systems, and on request for a
+        data flow. Tagged with the caller's scenario so a scenario's field list
+        does not appear on Current Architecture.
+        """
         exists = conn.execute(
-            "SELECT 1 FROM resource WHERE entity_type='system' AND entity_id=? AND label=?",
-            (system_id, FIELD_LIST_LABEL)).fetchone()
+            "SELECT 1 FROM resource WHERE entity_type=? AND entity_id=? AND label=?",
+            (entity_type, entity_id, FIELD_LIST_LABEL)).fetchone()
         if exists:
             return
         now = iso(utcnow())
         conn.execute(
             """INSERT INTO resource
                  (entity_type, entity_id, label, kind, label_locked, sort_order,
-                  created_date, updated_date, created_by, updated_by)
-               VALUES ('system',?,?,'file',1,0,?,?,?,?)""",
-            (system_id, FIELD_LIST_LABEL, now, now,
-             handler.current_user["user_id"], handler.current_user["user_id"]))
+                  created_date, updated_date, created_by, updated_by, scenario_id)
+               VALUES (?,?,?,'file',1,0,?,?,?,?,?)""",
+            (entity_type, entity_id, FIELD_LIST_LABEL, now, now,
+             handler.current_user["user_id"], handler.current_user["user_id"],
+             handler.scenario_id))
 
     # -----------------------------------------------------------------------
     # Version and release notes
@@ -3485,10 +3580,10 @@ if HAS_TORNADO:
             return None
 
     class ResourceHandler(BaseAPIHandler):
-        SCENARIO_AWARE = True
         """Relabel a resource, upload a new version over it, or remove it."""
         READ_ROLE = permissions.VIEWER
         WRITE_ROLE = permissions.EDITOR
+        SCENARIO_AWARE = True
 
         def _load(self, conn, rid):
             return conn.execute("SELECT * FROM resource WHERE resource_id=?", (rid,)).fetchone()
@@ -3581,7 +3676,11 @@ if HAS_TORNADO:
                 r = self._load(conn, rid)
                 if not r:
                     return self.fail(404, "Not found")
-                if r["label_locked"]:
+                # A locked slot is one the record cannot do without. That is
+                # true of a Manual Entry system's field list, which is why the
+                # system creates it; it is not true of a field list added to a
+                # data flow by choice, which can be removed again.
+                if r["label_locked"] and r["entity_type"] != "data_flow":
                     return self.fail(400, "This resource is maintained by the system "
                                           "and cannot be removed.")
                 conn.execute("DELETE FROM resource_version WHERE resource_id=?", (rid,))
@@ -3593,9 +3692,83 @@ if HAS_TORNADO:
                 conn.close()
             self.write_json(rows_to_list(rows))
 
-    class ResourceFileHandler(BaseAPIHandler):
+    class ResourceClearHandler(BaseAPIHandler):
+        """Empty a resource without removing the slot it lives in.
+
+        A Manual Entry system's field list is required, so it cannot simply be
+        deleted — but the document attached to it often needs replacing with
+        nothing at all. Clearing returns the slot to how it looks before
+        anything has been added.
+
+        Earlier versions are kept rather than destroyed: the audit trail should
+        stay honest about what was once attached, and a document cleared by
+        mistake is then recoverable.
+        """
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.EDITOR
         SCENARIO_AWARE = True
+
+        def post(self, rid):
+            conn = get_db()
+            try:
+                r = conn.execute("SELECT * FROM resource WHERE resource_id=?",
+                                 (rid,)).fetchone()
+                if not r:
+                    return self.fail(404, "Not found")
+                try:
+                    require_parent_in_view(self, conn, r["entity_type"],
+                                           r["entity_id"], write=True)
+                except scenarios.ScenarioError as e:
+                    return self.fail(e.status, e.message)
+                current = conn.execute(
+                    "SELECT * FROM resource_version WHERE resource_id=? AND is_current=1",
+                    (rid,)).fetchone()
+                if not current:
+                    return self.fail(400, "There is nothing attached to clear.")
+                # The version stays; it simply stops being the current one.
+                conn.execute("UPDATE resource_version SET is_current=0 WHERE resource_id=?",
+                             (rid,))
+                audit.record_event(
+                    conn, self.current_user, "update", "resource", rid,
+                    summary=f"Cleared the attachment on '{r['label']}' "
+                            f"(earlier versions kept)",
+                    scenario_id=self.scenario_id,
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                self.write_json({"resource_id": int(rid), "cleared": True})
+            finally:
+                conn.close()
+
+    class FieldListHandler(BaseAPIHandler):
+        """Add the fixed Field List slot to a data flow.
+
+        Manual Entry systems get one automatically because they cannot be
+        described without it. On a data flow it is optional and added on
+        request, which is why it can also be removed again.
+        """
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.EDITOR
+        SCENARIO_AWARE = True
+
+        def post(self, entity_type, entity_id):
+            if entity_type not in ("system", "data_flow"):
+                return self.fail(400, "Unknown entity type")
+            conn = get_db()
+            try:
+                try:
+                    require_parent_in_view(self, conn, entity_type, entity_id, write=True)
+                except scenarios.ScenarioError as e:
+                    return self.fail(e.status, e.message)
+                ensure_field_list_resource(self, conn, entity_id, entity_type)
+                conn.commit()
+                rows = resource_rows(conn, entity_type, entity_id)
+                self.write_json(rows_to_list(rows))
+            finally:
+                conn.close()
+
+    class ResourceFileHandler(BaseAPIHandler):
         """Serve a stored document, inline for preview or as a download."""
+        SCENARIO_AWARE = True
         READ_ROLE = permissions.VIEWER
 
         def get(self, rid):
@@ -4162,6 +4335,66 @@ if HAS_TORNADO:
             finally:
                 conn.close()
             self.write_json({"types": types, "palette": TYPE_PALETTE})
+
+    class FlowRouteHandler(BaseAPIHandler):
+        """Where a data flow's arrow attaches, and how it bends.
+
+        Separate from the flow's own fields because this is layout, not
+        content: it is not audited and does not mark a scenario record as
+        Modified, exactly like dragging a system box. Routing a diagram tidily
+        should not make a plan look like it changed.
+        """
+        SCENARIO_AWARE = True
+
+        def put(self, fid):
+            data = self.get_json_body()
+            conn = get_db()
+            try:
+                self.scenario_access(conn, write=True)
+                where, params = self.scope_sql()
+                row = conn.execute(
+                    f"SELECT flow_id FROM data_flow WHERE flow_id=? AND {where}",
+                    (fid,) + params).fetchone()
+                if not row:
+                    return self.fail(404, "Not found")
+
+                fields, vals = [], []
+                for key in ("source_anchor", "dest_anchor"):
+                    if key in data:
+                        # null or empty both mean "back to automatic"; anything
+                        # else has to be a real connection point.
+                        value = (data[key] or None)
+                        if value is not None and not valid_anchor(value):
+                            return self.fail(400, f"'{value}' is not a connection point.")
+                        fields.append(f"{key}=?")
+                        vals.append(value)
+                if "waypoints" in data:
+                    points = data["waypoints"] or []
+                    if not isinstance(points, list) or len(points) > MAX_WAYPOINTS:
+                        return self.fail(
+                            400, f"A data flow can have at most {MAX_WAYPOINTS} bends.")
+                    clean = []
+                    for p in points:
+                        try:
+                            clean.append({"x": round(float(p["x"]), 2),
+                                          "y": round(float(p["y"]), 2)})
+                        except (TypeError, KeyError, ValueError):
+                            return self.fail(400, "A bend point needs an x and a y.")
+                    fields.append("waypoints=?")
+                    vals.append(json.dumps(clean) if clean else None)
+
+                if fields:
+                    vals.append(fid)
+                    conn.execute(
+                        f"UPDATE data_flow SET {','.join(fields)} WHERE flow_id=?", vals)
+                    conn.commit()
+                out = conn.execute("SELECT source_anchor, dest_anchor, waypoints "
+                                   "FROM data_flow WHERE flow_id=?", (fid,)).fetchone()
+                self.write_json(row_to_dict(out))
+            except scenarios.ScenarioError as e:
+                return self.fail(e.status, e.message)
+            finally:
+                conn.close()
 
     # -----------------------------------------------------------------------
     # Help / knowledge base
@@ -4778,6 +5011,7 @@ if HAS_TORNADO:
             (r"/api/systems/([^/]+)/schema/snapshots", SchemaSnapshotsHandler),
             (r"/api/systems/([^/]+)/schema", SystemSchemaHandler),
             (r"/api/systems/([^/]+)/position", PositionHandler),
+            (r"/api/flows/([^/]+)/route", FlowRouteHandler),
             (r"/api/systems/([^/]+)", SystemHandler),
             (r"/api/schema/tables/([^/]+)/position", SchemaTablePositionHandler),
             (r"/api/schema/tables/([^/]+)", SchemaTableHandler),
@@ -4788,7 +5022,10 @@ if HAS_TORNADO:
             (r"/api/elements/([^/]+)", ElementHandler),
             (r"/api/schema/snapshots/([0-9]+)/revert", SchemaRevertHandler),
             # Resources (documents and links)
+            # More specific routes first, so they cannot be shadowed.
+            (r"/api/resources/(system|data_flow)/([^/]+)/field-list", FieldListHandler),
             (r"/api/resources/(system|data_flow)/([^/]+)", ResourcesHandler),
+            (r"/api/resources/([0-9]+)/clear", ResourceClearHandler),
             (r"/api/resources/([0-9]+)/file", ResourceFileHandler),
             (r"/api/resources/([0-9]+)/versions", ResourceVersionsHandler),
             (r"/api/resources/([0-9]+)", ResourceHandler),

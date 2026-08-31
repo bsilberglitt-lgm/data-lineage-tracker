@@ -87,16 +87,18 @@ Clicking anything in either place opens the same details panel on the right.
         "screens": ["diagram"],
         "min_role": permissions.VIEWER,
         "keywords": ["map", "picture", "nodes", "arrows", "zoom", "drag", "key",
-                     "legend", "colours", "colors"],
+                     "legend", "colours", "colors", "bend", "connect",
+                     "connection point", "anchor", "route", "overlap",
+                     "bidirectional", "crossing"],
         "body": """\
 Each box is a system. Its colour shows its **type** — Source, Destination, Data
 Store, Manual Entry — and the key in the corner lists them. The information
 button beside the key explains what each type means. Colour is never the only
 signal: the type is also printed inside the box and shown in the details panel.
 
-Arrows are data flows, drawn from source to destination. The small number on an
-arrow is the flow's identifier; **click the number** to open that flow — it is
-an easier target than the line itself.
+Arrows are data flows, drawn from source to destination. Each is labelled with
+its identifier, or with a short **display name** if the flow has one. Click the
+label to open that flow.
 
 ## Dragging versus clicking
 
@@ -113,6 +115,39 @@ rights to move anything.
 Use the **magnifier buttons** at the right of the bar showing the counts. Each
 click steps in or out; the percentage between them returns you to 100%.
 Trackpad pinch and scroll-to-zoom still work and change the same value.
+
+## Arranging the arrows
+
+Arrows route themselves, and several flows between the same two systems are
+drawn apart from each other so a bidirectional pair can be read as two separate
+flows. Where two lines cross, one hops over the other.
+
+An arrow has two click targets, and they do different things:
+
+* **Its label** — the identifier, or the display name if one is set — opens the
+  data flow's record.
+* **The line itself** puts the arrow into adjustment, drawn in blue with its
+  connection points shown.
+
+While an arrow is being adjusted:
+
+* **The two ends show a grab handle.** Drag one to any connection point on the
+  system it joins. Points appear on both systems as small circles; the one the
+  arrow currently uses is filled in.
+* **Or click a connection point** to attach that end to it without dragging.
+* Points only appear on the two systems the flow joins — changing *which*
+  systems it connects is an edit, made in the details panel.
+* **Click the line again** to add a bend where you clicked, then drag it.
+  Double-click a bend to remove it, or drag it back onto the straight line.
+* **The systems themselves cannot be moved** while an arrow is being adjusted.
+  The connection points sit on the same border you would drag the box by, so
+  one has to give way.
+* **Escape**, or a click on empty space, leaves adjustment.
+
+**Reset arrow** in the flow's details puts it back to automatic.
+
+Arrangement is shared, like the position of a box, and is not recorded in the
+audit log — it changes how the diagram reads, not what the data flow is.
 
 ## Database schemas
 
@@ -166,6 +201,10 @@ deep dive*.
 Systems and data flows can carry **resources** — links, or uploaded documents
 up to 10 MB. Each has a title and an optional description, and documents keep
 their earlier versions.
+
+A data flow can also be given a **Field List**, a fixed slot for the fields it
+carries; Manual Entry systems always have one. An attachment can be **cleared**
+without removing the slot, which is how a required field list is emptied.
 """,
     },
 
