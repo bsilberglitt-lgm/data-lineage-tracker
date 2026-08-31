@@ -134,6 +134,27 @@ Run the Python one after every frontend edit (it works in the assistant's
 sandbox, where npm and PyPI are blocked). Run the shell one before committing.
 Neither proves the page *renders* — only that it compiles.
 
+`check_jsx.py` is a scan, not a parser, and during 0.4.1 it **passed a region
+that had orphaned closing tags** left behind by a block that was moved. If you
+have reordered or spliced JSX rather than edited it in place, do not trust the
+scan alone: count braces, parens and `<g>` openers against closers over the
+region you touched, and run the Docker check before handing it over.
+
+### SVG has no z-index
+
+Paint order *is* stacking order: whatever is written later in the document is
+drawn on top and receives the clicks. This cost two rounds in 0.4.1. The
+connection points and grab handles for a data-flow arrow sit **on** a system's
+border, so while they were emitted inside the flow group — before
+`{systems.map(...)}` — the system box covered exactly the pixels you needed to
+hit, and nothing was wrong with the handler at all.
+
+The adjustment overlay is therefore rendered **after** the systems, in a
+deliberate order: anchor dots first, then grab handles on top, because the two
+share coordinates at the arrow's current end and the handle must be the one
+that receives the drag. Keep it there. A bug of this shape looks exactly like a
+dead event handler, so check the render order before debugging the handler.
+
 ## Accessibility
 
 `ACCESSIBILITY.md` records the WCAG contrast measurements for every system-type
