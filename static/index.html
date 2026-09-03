@@ -131,6 +131,53 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .sidebar-header input { width: 100%; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; color: #fff; font-family: inherit; padding: 2px 4px; margin: -2px -4px; outline: none; }
 .sidebar-header input.header-title { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
 .sidebar-header input.header-subtitle { font-size: 11px; margin-top: 4px; opacity: 0.8; }
+/* --- Logo ---------------------------------------------------------------
+   The sidebar is a fixed 260px with 20px of padding, so the header has 220px
+   to work with and the layout has to survive any image a user uploads.
+
+   Three rules keep it intact, and all three matter:
+     1. The image is NEVER laid out at its intrinsic size. Every position puts
+        it in a box with a fixed max height and `object-fit: contain`, so a
+        3000px-wide banner and a square icon both fit without distorting.
+     2. `min-width: 0` on the text column. A flex item defaults to
+        `min-width: auto`, which means a long unbroken title refuses to shrink
+        and pushes the logo out of the sidebar instead of wrapping.
+     3. Nothing here can change the sidebar's width — the image is capped at
+        100% and .sidebar is flex-shrink: 0.
+   `object-position: left` on the stacked positions lines the logo up with the
+   left edge of the text; centring it would look accidental against
+   left-aligned type. */
+.brand { display: flex; gap: 12px; }
+.brand-text { min-width: 0; flex: 1; }
+.brand-logo { display: block; flex-shrink: 0; }
+.brand-left, .brand-right { flex-direction: row; align-items: center; }
+.brand-right { flex-direction: row-reverse; }
+.brand-left .brand-logo, .brand-right .brand-logo {
+  max-height: 34px; max-width: 64px; width: auto; object-fit: contain; }
+.brand-above, .brand-below { flex-direction: column; gap: 10px; align-items: stretch; }
+.brand-below { flex-direction: column-reverse; }
+.brand-above .brand-logo, .brand-below .brand-logo {
+  max-height: 44px; max-width: 100%; width: auto;
+  object-fit: contain; object-position: left; }
+/* With the title hidden the logo is the header, so give it a little more room. */
+.brand-only .brand-logo { max-height: 52px; max-width: 100%; }
+.brand-only { gap: 0; }
+/* The Preferences editor. The preview is a real 260px sidebar header on the
+   real navy, so an image that would look wrong there looks wrong here first. */
+.logo-editor { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.logo-preview { width: 260px; background: #1B3A5C; color: #fff; border-radius: 6px;
+  overflow: hidden; flex-shrink: 0; }
+.logo-preview .sidebar-header { border-bottom: none; }
+.logo-preview-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  color: #6b6b6b; font-weight: 600; margin-bottom: 6px; }
+.logo-controls { flex: 1; min-width: 240px; }
+.logo-meta { font-size: 12px; color: #6b6b6b; margin-bottom: 10px; line-height: 1.5; }
+.logo-meta b { display: block; color: #1a2332; font-size: 13px; }
+.logo-buttons { display: flex; gap: 8px; margin-bottom: 10px; }
+.logo-hint { font-size: 11.5px; color: #6b6b6b; line-height: 1.55; }
+.logo-unsaved { text-transform: none; letter-spacing: 0; font-weight: 600;
+  background: #fff3cd; color: #856404; border-radius: 3px; padding: 1px 6px;
+  margin-left: 8px; }
 .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
 .nav-item { padding: 10px 20px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: background 0.15s; }
 .nav-item:hover { background: rgba(255,255,255,0.08); }
@@ -196,6 +243,13 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .data-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid #eee; }
 .data-table tr:hover td { background: #f8fafc; }
 .data-table tr.clickable { cursor: pointer; }
+/* Modals holding a form do NOT close when the backdrop is clicked. A stray
+   click beside a half-filled Add Data Flow used to throw the lot away with no
+   warning and no undo. The way out is the X, Cancel, or saving. The details
+   flyout is the opposite case and still closes on an outside click: it is a
+   panel you glance at, and it holds nothing unsaved.
+   Anything with inputs should follow this — do not add onClick={onClose} to a
+   .modal-overlay. */
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 12px; width: 600px; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-header { padding: 20px 24px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; color: #1B3A5C; display: flex; justify-content: space-between; align-items: center; }
@@ -211,8 +265,17 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .checkbox-row label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 .edit-input { width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; }
 .edit-textarea { width: 100%; padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; min-height: 60px; resize: vertical; }
-.edit-select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; font-family: inherit; }
+/* A <select> is as wide as its longest option unless told otherwise, and a flex
+   item will not shrink below its content by default. Together those made the
+   Source and Destination dropdowns — whose options read "Federal Reporting
+   (SYS-002)" — run off the edge of the details panel. width and min-width: 0
+   are both needed: the first stops it sizing to its content, the second lets
+   flex shrink it the rest of the way. */
+.edit-select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
+  font-size: 13px; font-family: inherit; width: 100%; max-width: 100%; min-width: 0; }
 .edit-field-row { display: flex; margin-bottom: 10px; font-size: 13px; align-items: flex-start; }
+/* Selects placed directly in the row, rather than inside a flex:1 wrapper. */
+.edit-field-row > .edit-select { flex: 1; }
 .edit-field-row .field-label { padding-top: 6px; }
 .panel-actions { display: flex; gap: 8px; padding: 12px 20px; border-bottom: 1px solid #eee; background: #fafbfc; }
 .stats-bar { display: flex; gap: 24px; padding: 10px 20px; background: #fff; border-bottom: 1px solid #eee; }
@@ -229,6 +292,9 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .login-screen { display: flex; align-items: center; justify-content: center; height: 100vh; background: #f0f4f8; }
 .login-box { background: #fff; border-radius: 12px; padding: 40px; width: 380px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); text-align: center; }
 .login-box h1 { font-size: 20px; color: #1B3A5C; margin-bottom: 6px; }
+/* Capped and contained like the sidebar's, so no upload can stretch the card. */
+.login-logo { display: block; max-height: 56px; max-width: 200px; width: auto;
+  object-fit: contain; margin: 0 auto 16px; }
 .login-box p { font-size: 13px; color: #6b6b6b; margin-bottom: 24px; }
 .login-box input { width: 100%; padding: 10px 14px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; font-family: inherit; margin-bottom: 12px; }
 .login-box input:focus { outline: none; border-color: #2E75B6; box-shadow: 0 0 0 3px rgba(46,117,182,0.15); }
@@ -368,6 +434,20 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .release-ver { font-size: 11px; font-weight: 700; background: #1B3A5C; color: #fff;
   border-radius: 9px; padding: 2px 9px; }
 .release-date { font-size: 11px; color: #6b6b6b; margin-left: auto; }
+/* On the Releases screen each entry sits inside a .pref-group, whose `h3` rule
+   paints a navy bar. That made the release title navy text on navy — invisible.
+   Rather than a stray navy block behind the title alone, the whole header
+   becomes the bar, matching a Preferences section heading, with everything on
+   it turned white. The what's-new modal and the release dialog do not use
+   .pref-group, so they keep the navy-on-white heading and are untouched. */
+.release-card .release-card-body { padding: 0 16px 12px; }
+.release-card .release-entry { padding-top: 0; border-bottom: none; }
+.release-card .release-head { background: #1B3A5C; align-items: center;
+  margin: 0 -16px 12px; padding: 9px 16px; }
+.release-card .release-head h3 { color: #fff; background: none; padding: 0;
+  font-size: 13px; text-transform: none; letter-spacing: 0; }
+.release-card .release-head .release-ver { background: rgba(255,255,255,0.22); color: #fff; }
+.release-card .release-head .release-date { color: rgba(255,255,255,0.8); }
 .md { font-size: 13px; line-height: 1.6; color: #33414f; }
 .md h2 { font-size: 13px; color: #1B3A5C; margin: 10px 0 6px; }
 .md ul { margin: 4px 0 8px 18px; }
@@ -478,7 +558,7 @@ const setViewShowHidden = (on) => { viewShowHidden = !!on; };
 const UNSCOPED_ENDPOINTS = [
   '/api/auth', '/api/users', '/api/sessions', '/api/preferences',
   '/api/releases', '/api/version', '/api/whats-new', '/api/notifications',
-  '/api/scenarios', '/api/system-types',
+  '/api/scenarios', '/api/system-types', '/api/branding',
 ];
 
 function scopedUrl(url) {
@@ -640,6 +720,36 @@ const byName = (list) => [...(list || [])].sort((a, b) =>
   String(a.name || '').localeCompare(String(b.name || '')));
 const systemOption = (s) => `${s.name} (${s.system_id})`;
 
+// A data flow's name is nearly always "<source> to <destination>", so the two
+// systems are chosen first and the name is offered ready-made.
+function autoFlowName(systems, sourceId, destId) {
+  if (!sourceId || !destId) return '';
+  const list = systems || [];
+  const a = list.find(s => s.system_id === sourceId);
+  const b = list.find(s => s.system_id === destId);
+  return (a && b) ? `${a.name} to ${b.name}` : '';
+}
+
+// Setter for Source and Destination that keeps a generated name in step.
+//
+// The rule is that the name follows the systems only while it is still the
+// generated one. A name the user has written is theirs: changing an endpoint
+// afterwards leaves it alone. An empty name counts as generated, so clearing
+// it and picking systems fills it in again.
+function endpointSetter(form, set, systems) {
+  return (key, value) => {
+    const generatedBefore = autoFlowName(systems, form.source_system_id,
+                                         form.destination_system_id);
+    const wasGenerated = !form.name || form.name === generatedBefore;
+    set(key, value);
+    if (!wasGenerated) return;
+    const next = { ...form, [key]: value };
+    const generatedAfter = autoFlowName(systems, next.source_system_id,
+                                        next.destination_system_id);
+    if (generatedAfter) set('name', generatedAfter);
+  };
+}
+
 // Views that belong to a particular scenario (or to Current Architecture).
 // The rest — users, preferences, releases — are the same wherever you are.
 const SCOPED_VIEWS = ['diagram', 'schema', 'systems', 'flows', 'elements', 'contributors', 'audit'];
@@ -650,6 +760,56 @@ const VIEW_TITLES = {
   contributors: 'Contributors', users: 'User Management',
   preferences: 'Preferences', audit: 'Audit Log', releases: 'Release Notes',
 };
+
+// ===== Branding =====
+const LOGO_POSITIONS = ['left', 'right', 'above', 'below'];
+
+// The etag is hashed from the image's bytes, so a replaced logo has a new URL
+// and any cached copy is bypassed. Without it, uploading a new logo would
+// appear to do nothing until a hard refresh.
+function logoUrl(settings) {
+  if (!settings || !settings.logo_etag) return null;
+  return '/api/branding/logo?v=' + encodeURIComponent(settings.logo_etag);
+}
+
+// The sidebar header: a logo in one of four positions, the title, or both.
+// Kept as one component so the sign-in screen and the sidebar cannot drift.
+function SidebarBrand({ settings, title, subtitle }) {
+  const [failed, setFailed] = useState(false);
+  const url = logoUrl(settings);
+  const text = (
+    <React.Fragment>
+      <h1 style={{cursor:'default'}}>{title}</h1>
+      {subtitle && <p style={{cursor:'default'}}>{subtitle}</p>}
+    </React.Fragment>
+  );
+  // If the image 404s — removed in another tab, say — fall back to the text
+  // rather than leaving a broken-image icon in the header.
+  if (!url || failed) return text;
+
+  const position = LOGO_POSITIONS.indexOf(settings.logo_position) >= 0
+    ? settings.logo_position : 'left';
+  // Hiding the text is only meaningful when a logo is standing in for it.
+  const textHidden = !!settings.hide_app_title;
+  return (
+    <div className={'brand brand-' + position + (textHidden ? ' brand-only' : '')}>
+      <img className="brand-logo" src={url} onError={() => setFailed(true)}
+           alt={textHidden ? title : ''} />
+      {!textHidden && <div className="brand-text">{text}</div>}
+    </div>
+  );
+}
+
+// The sign-in screen's logo. Always above the title and centred, because the
+// card itself is centred — the sidebar's four positions would look arbitrary
+// here. The title always stays: on a sign-in page the name of the thing you
+// are signing in to is worth stating in words.
+function LoginLogo({ settings }) {
+  const [failed, setFailed] = useState(false);
+  const url = logoUrl(settings);
+  if (!url || failed) return null;
+  return <img className="login-logo" src={url} alt="" onError={() => setFailed(true)} />;
+}
 
 // ===== Collapsible Section =====
 function CollapsibleSection({ title, domainTag, children, defaultOpen }) {
@@ -2007,9 +2167,35 @@ function FlowReadView({ data, contributors, canEdit, notify }) {
 
 function FlowEditView({ form, set, systems, contributors, missing, inScenario }) {
   const bad = (k) => (missing || []).includes(k);
+  const setEndpoint = endpointSetter(form, set, systems);
+  // Only true while the name is still the one generated from the two systems.
+  const nameIsGenerated = !form.name ||
+    form.name === autoFlowName(systems, form.source_system_id, form.destination_system_id);
   return (<>
     <CollapsibleSection title="Flow Overview">
-      <EditField label="Name" value={form.name} onChange={v=>set('name',v)} invalid={bad('name')} />
+      {/* Source and Destination sit above the name because the name follows
+          from them: while it is still the generated "A to B", changing either
+          system rewrites it. Once someone types their own name it is left
+          alone, however the systems change afterwards. */}
+      <div className="edit-field-row"><span className="field-label">Source</span>
+        <select className="edit-select" value={form.source_system_id || ''}
+                onChange={e=>setEndpoint('source_system_id', e.target.value)}>
+          {byName(systems).map(s => <option key={s.system_id} value={s.system_id}>{systemOption(s)}</option>)}
+        </select></div>
+      <div className="edit-field-row"><span className="field-label">Destination</span>
+        <select className="edit-select" value={form.destination_system_id || ''}
+                onChange={e=>setEndpoint('destination_system_id', e.target.value)}>
+          {byName(systems).map(s => <option key={s.system_id} value={s.system_id}>{systemOption(s)}</option>)}
+        </select></div>
+      <div className="edit-field-row"><span className="field-label">Name</span>
+        <div style={{flex:1}}>
+          <input className={'edit-input' + (bad('name') ? ' field-error' : '')}
+                 value={form.name || ''} aria-invalid={bad('name')}
+                 onChange={e=>set('name', e.target.value)} />
+          {bad('name') && <div className="field-error-msg">This field is required</div>}
+          {nameIsGenerated && form.name && !bad('name') &&
+            <div className="gov-hint">Follows the two systems above until you change it.</div>}
+        </div></div>
       {/* Short label for the diagram. The full name is usually a sentence and
           would cover the picture, so this is separate rather than derived. */}
       <div className="edit-field-row"><span className="field-label">Display Name</span>
@@ -2021,16 +2207,6 @@ function FlowEditView({ form, set, systems, contributors, missing, inScenario })
             {(form.display_name || '').length}/20 · leave blank to show {form.flow_id}
           </div>
         </div></div>
-      <div className="edit-field-row"><span className="field-label">Source</span>
-        <select className="edit-select" value={form.source_system_id || ''}
-                onChange={e=>set('source_system_id', e.target.value)}>
-          {byName(systems).map(s => <option key={s.system_id} value={s.system_id}>{systemOption(s)}</option>)}
-        </select></div>
-      <div className="edit-field-row"><span className="field-label">Destination</span>
-        <select className="edit-select" value={form.destination_system_id || ''}
-                onChange={e=>set('destination_system_id', e.target.value)}>
-          {byName(systems).map(s => <option key={s.system_id} value={s.system_id}>{systemOption(s)}</option>)}
-        </select></div>
       {inScenario && (
         <EditField label="Proposed" type="checkbox" value={form.proposed}
                    onChange={v => set('proposed', !!v)} />
@@ -2291,8 +2467,8 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes, inScenario }) {
   ].concat(form.system_type === 'Manual Entry'
       ? [{ key: 'target_system_id', label: 'Target data store' }] : []), bodyRef);
   return (
-    <div className="modal-overlay" onClick={onClose}><div className="modal" role="dialog"
-         aria-modal="true" aria-labelledby="add-sys-title" onClick={e=>e.stopPropagation()}>
+    <div className="modal-overlay"><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="add-sys-title">
       <div className="modal-header" id="add-sys-title">Add System
         <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body" ref={bodyRef}>
@@ -2417,6 +2593,7 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
     proposed: true
   });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const setEndpoint = endpointSetter(form, set, systems);
   const bodyRef = useRef(null);
   const req = useRequired([
     { key: 'name', label: 'Name' },
@@ -2424,8 +2601,8 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
     { key: 'destination_system_id', label: 'Destination System' },
   ], bodyRef);
   return (
-    <div className="modal-overlay" onClick={onClose}><div className="modal" role="dialog"
-         aria-modal="true" aria-labelledby="add-flow-title" onClick={e=>e.stopPropagation()}>
+    <div className="modal-overlay"><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="add-flow-title">
       <div className="modal-header" id="add-flow-title">Add Data Flow
         <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body" ref={bodyRef}>
@@ -2439,22 +2616,24 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
           </label>
         )}
         <div className="modal-section-title">Flow Overview</div>
+        {/* The two systems come first so the name can be offered ready-made
+            once both are chosen. Typing over it keeps whatever you typed. */}
+        <div className="form-row">
+          <ReqField id="flow-src" label="Source System *" type="select" value={form.source_system_id}
+                    onChange={v=>setEndpoint('source_system_id',v)} error={req.errorFor(form,'source_system_id')}
+                    options={byName(systems).map(s=>({value:s.system_id,label:systemOption(s)}))} />
+          <ReqField id="flow-dst" label="Destination System *" type="select" value={form.destination_system_id}
+                    onChange={v=>setEndpoint('destination_system_id',v)} error={req.errorFor(form,'destination_system_id')}
+                    options={byName(systems).map(s=>({value:s.system_id,label:systemOption(s)}))} />
+        </div>
         <ReqField id="flow-name" label="Name *" value={form.name} onChange={v=>set('name',v)}
-                  error={req.errorFor(form,'name')} placeholder="e.g., District Enrollment to Staging" />
+                  error={req.errorFor(form,'name')} placeholder="Filled in from the two systems — overwrite it if you like" />
         <div className="form-group">
           <label htmlFor="flow-display">Display Name</label>
           <input id="flow-display" value={form.display_name || ''} maxLength={20}
                  placeholder="Optional — shown on the diagram instead of the ID"
                  onChange={e=>set('display_name', e.target.value)} />
           <div className="gov-hint">{(form.display_name || '').length}/20</div>
-        </div>
-        <div className="form-row">
-          <ReqField id="flow-src" label="Source System *" type="select" value={form.source_system_id}
-                    onChange={v=>set('source_system_id',v)} error={req.errorFor(form,'source_system_id')}
-                    options={byName(systems).map(s=>({value:s.system_id,label:systemOption(s)}))} />
-          <ReqField id="flow-dst" label="Destination System *" type="select" value={form.destination_system_id}
-                    onChange={v=>set('destination_system_id',v)} error={req.errorFor(form,'destination_system_id')}
-                    options={byName(systems).map(s=>({value:s.system_id,label:systemOption(s)}))} />
         </div>
         <div className="form-row">
           <div className="form-group"><label htmlFor="flow-freq">Frequency</label>
@@ -3090,8 +3269,8 @@ function ReleasesScreen({ canEdit, notify, currentVersion }) {
     </div>
     {releases.length === 0 && <div className="empty-state">No releases recorded yet.</div>}
     {releases.map(r => (
-      <div className="pref-group" key={r.version}>
-        <div style={{ padding: '12px 16px' }}>
+      <div className="pref-group release-card" key={r.version}>
+        <div className="release-card-body">
           <ReleaseEntry release={r} />
           {canEdit && <div className="res-actions">
             <button className="btn btn-edit" onClick={() => {
@@ -3105,9 +3284,8 @@ function ReleasesScreen({ canEdit, notify, currentVersion }) {
       </div>
     ))}
 
-    {(adding || editing) && <div className="modal-overlay"
-        onClick={() => { setAdding(false); setEditing(null); }}>
-      <div className="modal release-modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+    {(adding || editing) && <div className="modal-overlay">
+      <div className="modal release-modal" role="dialog" aria-modal="true">
         <div className="modal-header">{editing ? `Edit v${editing.version}` : 'Add Release'}
           <button className="panel-close"
                   onClick={() => { setAdding(false); setEditing(null); }}>&times;</button></div>
@@ -3531,7 +3709,7 @@ function UserFormModal({ user, contributors, assignableRoles, onClose, onSave })
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}><div className="modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay"><div className="modal" role="dialog" aria-modal="true">
       <div className="modal-header">{editing ? `Edit ${user.email}` : 'Add User'}
         <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body">
@@ -3649,7 +3827,7 @@ function AddContributorModal({ onClose, onSave }) {
     phone:'', role_type:'', governance_role:'', governance_responsibilities:'', notes:'' });
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
   return (
-    <div className="modal-overlay" onClick={onClose}><div className="modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay"><div className="modal" role="dialog" aria-modal="true">
       <div className="modal-header">Add Contributor <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body">
         <div className="form-group"><label>Name *</label>
@@ -3693,6 +3871,14 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
   const [prefs, setPrefs] = useState([]);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
+  // The logo is staged here rather than inside LogoEditor because "Save
+  // preferences" has to commit it along with everything else on this screen.
+  // Choosing a file used to upload it straight away, which put a new logo in
+  // the sidebar before the user had agreed to anything.
+  const [logo, setLogo] = useState(null);          // what the server currently has
+  const [logoLimits, setLogoLimits] = useState({});
+  const [pendingLogo, setPendingLogo] = useState(null);   // {file,url,width,height,size}
+  const [pendingRemove, setPendingRemove] = useState(false);
 
   const load = useCallback(() => {
     api.get('/api/preferences').then(rows => {
@@ -3703,13 +3889,36 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
   }, [notify]);
   useEffect(() => { load(); }, [load]);
 
+  const loadBranding = useCallback(() => {
+    api.get('/api/branding').then(d => { setLogo(d.logo); setLogoLimits(d); })
+      .catch(e => notify(e.message, true));
+  }, [notify]);
+  useEffect(() => { loadBranding(); }, [loadBranding]);
+
+  // Object URLs for the staged preview are released when they stop being used,
+  // or they leak for as long as the page is open.
+  useEffect(() => () => { if (pendingLogo && pendingLogo.url) URL.revokeObjectURL(pendingLogo.url); },
+            [pendingLogo]);
+
   const save = async () => {
     setBusy(true);
     try {
+      // The image goes first: if the server rejects it, nothing else is saved
+      // and the message names the actual problem.
+      if (pendingRemove && logo) {
+        await api.del('/api/branding');
+      } else if (pendingLogo) {
+        const fd = new FormData();
+        fd.append('file', pendingLogo.file);
+        await uploadFile('/api/branding', fd);
+      }
       const editableKeys = prefs.filter(p => p.editable).map(p => p.key);
       const values = {}; editableKeys.forEach(k => { values[k] = draft[k]; });
       const rows = await api.put('/api/preferences', { values });
-      setPrefs(rows); notify('Preferences saved.'); onSaved && onSaved();
+      setPrefs(rows);
+      setPendingLogo(null); setPendingRemove(false);
+      loadBranding();
+      notify('Preferences saved.'); onSaved && onSaved();
     } catch (err) { notify(err.message, true); }
     finally { setBusy(false); }
   };
@@ -3735,6 +3944,14 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
       return <select value={v || 'Viewer'} onChange={e => setVal(p.key, e.target.value)}>
         {(roles || []).map(r => <option key={r} value={r}>{r}</option>)}</select>;
     }
+    if (p.value_type === 'logo_position') {
+      return <select value={LOGO_POSITIONS.indexOf(v) >= 0 ? v : 'left'}
+                     onChange={e => setVal(p.key, e.target.value)}>
+        <option value="left">Left of the title</option>
+        <option value="right">Right of the title</option>
+        <option value="above">Above the title</option>
+        <option value="below">Below the title</option></select>;
+    }
     return <input type="text" value={v || ''} onChange={e => setVal(p.key, e.target.value)} />;
   };
 
@@ -3757,6 +3974,14 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
             </div>
           ))}
         </div>
+        {/* The logo belongs with the title and subtitle it sits beside. */}
+        {cat === 'General' &&
+          <LogoEditor notify={notify} logo={logo} limits={logoLimits}
+                      pending={pendingLogo} setPending={setPendingLogo}
+                      pendingRemove={pendingRemove} setPendingRemove={setPendingRemove}
+                      position={draft.logo_position}
+                      hideTitle={String(draft.hide_app_title) === 'true'}
+                      title={draft.app_title} subtitle={draft.app_subtitle} />}
         {/* System types sit after the password rules, before the not-yet-available toggles. */}
         {cat === 'Password policy' &&
           <SystemTypesEditor notify={notify} onChanged={onTypesChanged} />}
@@ -3766,6 +3991,163 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
     {!categories.includes('Password policy') &&
       <SystemTypesEditor notify={notify} onChanged={onTypesChanged} />}
   </div></div>);
+}
+
+// ===== Logo (SuperAdmin, shown on the Preferences screen) =====
+// The preview deliberately reuses the real .sidebar-header and .brand classes
+// against the real navy, so what is shown here is what the sidebar will do —
+// including how a wide or tall image gets contained. A preview built from
+// separate styling would be free to disagree with the thing it previews.
+// Nothing here talks to the server. Choosing a file stages it and Save
+// preferences commits it, so the sidebar never changes before the user says so.
+function LogoEditor({ notify, logo, limits, pending, setPending,
+                      pendingRemove, setPendingRemove,
+                      position, hideTitle, title, subtitle }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const fileRef = useRef(null);
+  const maxBytes = limits.max_bytes || 512 * 1024;
+  const maxDim = limits.max_dimension || 2000;
+  const kb = (n) => Math.max(1, Math.round((n || 0) / 1024));
+
+  // Checked here as well as on the server, because deferring the upload would
+  // otherwise defer the error message with it — a wrong file would be accepted
+  // in silence and only rejected minutes later on Save. The server's check is
+  // still the authority; this one just fails fast.
+  const stage = async (file) => {
+    if (!file) return;
+    if (fileRef.current) fileRef.current.value = '';   // so the same file re-fires
+    try {
+      const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+      const isPng = head[0] === 0x89 && head[1] === 0x50 &&
+                    head[2] === 0x4E && head[3] === 0x47;
+      const isJpg = head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF;
+      if (!isPng && !isJpg) {
+        notify('That file is not a PNG or JPEG image. Only .png and .jpg files ' +
+               'can be used as a logo.', true);
+        return;
+      }
+      if (file.size > maxBytes) {
+        notify(`That image is ${kb(file.size)} KB. The limit is ${kb(maxBytes)} KB.`, true);
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth > maxDim || img.naturalHeight > maxDim) {
+          URL.revokeObjectURL(url);
+          notify(`That image is ${img.naturalWidth}x${img.naturalHeight} pixels. ` +
+                 `The limit is ${maxDim} pixels on either side.`, true);
+          return;
+        }
+        setPendingRemove(false);
+        setPending({ file, url, name: file.name, size: file.size,
+                     width: img.naturalWidth, height: img.naturalHeight,
+                     type: isPng ? 'image/png' : 'image/jpeg' });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        notify('That image could not be read.', true);
+      };
+      img.src = url;
+    } catch (e) {
+      notify('That file could not be read.', true);
+    }
+  };
+
+  // What the sidebar will look like once Save is pressed.
+  const shown = pendingRemove ? null : (pending || logo);
+  const src = pending ? pending.url
+            : (logo ? '/api/branding/logo?v=' + encodeURIComponent(logo.etag) : null);
+  const pos = LOGO_POSITIONS.indexOf(position) >= 0 ? position : 'left';
+  const showText = !shown || !hideTitle;
+  const unsaved = !!pending || (pendingRemove && !!logo);
+
+  return (
+    <div className="pref-group">
+      <h3>Logo</h3>
+      <div className="logo-editor">
+        <div>
+          <div className="logo-preview-label">
+            Sidebar preview{unsaved && <span className="logo-unsaved">not saved yet</span>}
+          </div>
+          <div className="logo-preview">
+            <div className="sidebar-header">
+              {shown ? (
+                <div className={'brand brand-' + pos + (showText ? '' : ' brand-only')}>
+                  <img className="brand-logo" src={src} alt="" />
+                  {showText && (
+                    <div className="brand-text">
+                      <h1 style={{cursor:'default'}}>{title || 'DATA LINEAGE TRACKER'}</h1>
+                      {subtitle && <p style={{cursor:'default'}}>{subtitle}</p>}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <React.Fragment>
+                  <h1 style={{cursor:'default'}}>{title || 'DATA LINEAGE TRACKER'}</h1>
+                  {subtitle && <p style={{cursor:'default'}}>{subtitle}</p>}
+                </React.Fragment>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="logo-controls">
+          {shown ? (
+            <div className="logo-meta">
+              <b>{pending ? pending.name : logo.filename}</b>
+              <span>
+                {pending ? pending.width : logo.width}&times;
+                {pending ? pending.height : logo.height} pixels ·
+                {' '}{kb(pending ? pending.size : logo.size_bytes)} KB ·
+                {' '}{(pending ? pending.type : logo.content_type) === 'image/png'
+                      ? 'PNG' : 'JPEG'}
+              </span>
+            </div>
+          ) : (
+            <div className="logo-meta">
+              <span>{pendingRemove && logo ? 'Will be removed when you save.'
+                                           : 'No logo uploaded.'}</span>
+            </div>
+          )}
+          <input ref={fileRef} type="file" style={{display:'none'}}
+                 accept="image/png,image/jpeg,.png,.jpg,.jpeg"
+                 onChange={e => stage(e.target.files && e.target.files[0])} />
+          <div className="logo-buttons">
+            <button className="btn"
+                    onClick={() => fileRef.current && fileRef.current.click()}>
+              {shown ? 'Choose a different image' : 'Choose an image'}</button>
+            {/* Discarding just drops the staged file; the object URL is released
+                by the effect that watches it. */}
+            {shown && (logo || pending) &&
+              <button className="btn btn-danger"
+                      onClick={() => (pending ? setPending(null) : setConfirmRemove(true))}>
+                {pending ? 'Discard' : 'Remove'}</button>}
+            {pendingRemove && logo &&
+              <button className="btn" onClick={() => setPendingRemove(false)}>
+                Keep it after all</button>}
+          </div>
+          <div className="logo-hint">
+            PNG or JPEG, up to {kb(maxBytes)} KB and {maxDim} pixels on a side.
+            The sidebar is dark navy, so a PNG with a transparent background and
+            light-coloured marks will sit best on it.
+            {' '}<b>Nothing here changes until you click Save preferences</b>,
+            including the position and the option to hide the title.
+          </div>
+        </div>
+      </div>
+      {confirmRemove && (
+        <ConfirmDialog
+          title="Remove the logo?"
+          message="When you save, the sidebar and the sign-in screen will go back to showing the title on its own."
+          detail={<div className="gov-hint" style={{ marginTop: 8 }}>
+                    Nothing is removed until you click Save preferences.
+                  </div>}
+          confirmLabel="Remove on save" danger
+          onConfirm={() => { setPending(null); setPendingRemove(true); setConfirmRemove(false); }}
+          onCancel={() => setConfirmRemove(false)} />
+      )}
+    </div>
+  );
 }
 
 // ===== System types editor (SuperAdmin, shown on the Preferences screen) =====
@@ -3852,9 +4234,8 @@ function SystemTypesEditor({ notify, onChanged }) {
         </div>
       ))}
 
-      {(adding || editing) && <div className="modal-overlay"
-          onClick={() => { setAdding(false); setEditing(null); }}>
-        <div className="modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+      {(adding || editing) && <div className="modal-overlay">
+        <div className="modal" role="dialog" aria-modal="true">
           <div className="modal-header">{adding ? 'Add System Type' : `Edit ${editing.type_name}`}
             <button className="panel-close" aria-label="Close"
                     onClick={() => { setAdding(false); setEditing(null); }}>&times;</button></div>
@@ -4099,6 +4480,7 @@ function LoginScreen({ onSignedIn, settings }) {
   return (
     <div className="login-screen">
       <form className="login-box" onSubmit={submit}>
+        <LoginLogo settings={settings} />
         <h1>{(settings && settings.app_title) || 'Data Lineage Tracker'}</h1>
         <p>Sign in to continue</p>
         {error && <div className="login-error">{error}</div>}
@@ -4198,7 +4580,12 @@ function AppWrapper() {
       setState({ status: me.user.must_change_password ? 'must-change' : 'ready',
                  user: me.user, settings: me.settings || {} });
     } catch (err) {
-      setState({ status: 'signed-out', user: null, settings: {} });
+      // No session. The sign-in screen still needs the title and logo, so ask
+      // for the public subset rather than leaving settings empty — which is
+      // why the configured title never used to appear on that screen.
+      let pub = {};
+      try { pub = await api.get('/api/branding/public'); } catch (e) { /* defaults */ }
+      setState({ status: 'signed-out', user: null, settings: pub || {} });
     }
   }, []);
 
@@ -4211,7 +4598,10 @@ function AppWrapper() {
   const signOut = useCallback(async () => {
     try { await api.post('/api/auth/logout'); } catch (e) { /* already gone */ }
     session.csrf = null;
-    setState({ status: 'signed-out', user: null, settings: {} });
+    // Keep the branding after signing out, for the same reason as above.
+    let pub = {};
+    try { pub = await api.get('/api/branding/public'); } catch (e) { /* defaults */ }
+    setState({ status: 'signed-out', user: null, settings: pub || {} });
   }, []);
 
   if (state.status === 'loading') {
@@ -4439,8 +4829,8 @@ function ScenarioSettingsModal({ scenario, users, currentUserId, isSuper,
   const nameOf = (m) => `${m.first_name} ${m.last_name}`;
 
   return (
-    <div className="modal-overlay" onClick={onClose}><div className="modal" role="dialog"
-         aria-modal="true" aria-labelledby="scn-set-title" onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay"><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="scn-set-title">
       <div className="modal-header" id="scn-set-title">
         {scenario.name} (Scenario)
         <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button>
@@ -4651,8 +5041,8 @@ function AddScenarioModal({ scenarios, users, currentUserId, onClose, onSave }) 
     setFocus(focus.includes(id) ? focus.filter(x => x !== id) : [...focus, id]);
 
   return (
-    <div className="modal-overlay" onClick={onClose}><div className="modal" role="dialog"
-         aria-modal="true" aria-labelledby="add-scn-title" onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay"><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="add-scn-title">
       <div className="modal-header" id="add-scn-title">Add Scenario
         <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body" ref={bodyRef}>
@@ -5079,8 +5469,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     <div className="app">
       <div className="sidebar">
         <div className="sidebar-header">
-          <h1 style={{cursor:'default'}}>{appTitle}</h1>
-          {appSubtitle && <p style={{cursor:'default'}}>{appSubtitle}</p>}
+          <SidebarBrand settings={settings} title={appTitle} subtitle={appSubtitle} />
         </div>
         <nav className="sidebar-nav" aria-label="Main">
           <div className="nav-section">Views</div>

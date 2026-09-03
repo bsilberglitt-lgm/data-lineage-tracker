@@ -63,10 +63,20 @@ backups and point-in-time recovery.
 
 Ben plans to add an S3 bucket when he sets up scheduled database backups.
 **When that happens, remind him to migrate file storage to S3 as well** — the
-two jobs belong together. The relevant code is `resource_version.file_data` and
-`schema_snapshot.source_sql` in `app.py`, plus the `ResourceFileHandler`.
+two jobs belong together. The relevant code is `resource_version.file_data`,
+`schema_snapshot.source_sql` and `app_branding.logo_data` in `app.py`, plus the
+`ResourceFileHandler` and `BrandingLogoHandler`.
 
-Until then, uploads are capped at 10 MB (`MAX_UPLOAD_BYTES`).
+Until then, uploads are capped at 10 MB (`MAX_UPLOAD_BYTES`). The logo has its
+own, much lower caps — `MAX_LOGO_BYTES` and `MAX_LOGO_DIMENSION` — because it is
+rendered about 32px tall and because a byte cap alone does not stop a
+decompression bomb.
+
+**Uploaded images are identified by their magic bytes, never by extension or by
+the browser's content type** (`inspect_image`). The type that comes back is what
+gets stored and what the endpoint serves, so the two can never disagree. Do not
+add SVG to the accepted list: an SVG can carry script, and this one is served
+from our own origin.
 
 ## Architecture
 

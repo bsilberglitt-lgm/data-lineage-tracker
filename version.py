@@ -10,4 +10,4 @@ Versioning follows semantic versioning, staying on 0.x while in beta:
     0.MINOR.PATCH   — MINOR for new features, PATCH for fixes only.
 """
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
