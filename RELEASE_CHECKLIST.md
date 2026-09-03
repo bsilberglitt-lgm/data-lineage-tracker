@@ -238,6 +238,29 @@ Sign in as a **SuperAdmin** and confirm each:
   it — the slot stays and the earlier version is still listed. **Remove** takes
   the slot away entirely on a data flow. On a Manual Entry system the slot can
   only be cleared, never removed
+- [ ] **Data flow naming**: in Add Data Flow, pick a source and a destination
+  and confirm the **Name fills in as "<source> to <destination>"**; change one
+  system and it should follow; type your own name and it must then survive
+  changing a system. Repeat in a flow's details panel
+- [ ] **Release titles** are legible on the Releases screen (they were once dark
+  blue on a dark blue bar)
+- [ ] **A modal does not close on an outside click.** Open Add Data Flow, type
+  something, click the dark area beside the window: it must stay open with the
+  text intact. Confirm the **X** and **Cancel** both still close it. Check the
+  same for Add System, Add Contributor, Add/Edit User, Add Scenario, Manage
+  Scenario, Add Release and Add System Type
+- [ ] **Dropdowns fit.** In a data flow's details panel, the Source and
+  Destination dropdowns stay inside the panel with a long system name selected
+- [ ] **Logo**: in Preferences → General, choose a PNG and confirm the preview
+  and the real sidebar both show it. Try each of the four **positions**, and
+  **Hide the title text**, saving preferences after each. Check the sidebar
+  still looks right and the navigation has not shifted. Confirm the logo also
+  appears on the **sign-in screen** (sign out to see it), along with the
+  configured **title** rather than the built-in default. Confirm that choosing
+  an image changes **nothing until Save preferences** is clicked. Try
+  something that is not an image — rename a `.txt` to `.png` — and confirm it
+  is refused straight away. Then **Remove** it, save, and confirm both screens
+  go back to the title
 - [ ] Sign out, and confirm you are returned to the sign-in page
 
 Then, in a **private/incognito window**, sign in as a **Viewer** test account:

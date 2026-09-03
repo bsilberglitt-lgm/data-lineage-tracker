@@ -60,6 +60,9 @@ governance information such as its data classification and retention schedule.
 
 **Data flows** connect two systems. A flow records how data moves: how often,
 by what method, in what format, under what legal authority, and who owns it.
+When you add one you choose the two systems first, and the name is offered
+ready-made as "<source> to <destination>" — overwrite it if you want something
+else.
 
 **Data elements** are the individual pieces of information that travel along
 those flows — a student identifier, an enrolment date. They are defined once
@@ -500,6 +503,62 @@ Work inside a scenario is recorded in that scenario's log, reached with the same
 picker. Current Architecture's log stays clean apart from scenario lifecycle
 events — created, deleted, membership changed — so an administrator can see what
 is being planned without opening each one.
+""",
+    },
+    {
+        "id": "branding",
+        "title": "Adding your logo",
+        "summary": "Uploading a logo, where it can sit, and what makes one look "
+                   "right against the dark sidebar.",
+        "screens": ["preferences"],
+        "min_role": permissions.SUPERADMIN,
+        "keywords": ["logo", "brand", "branding", "image", "png", "jpg", "jpeg",
+                     "upload", "title", "sidebar", "sign-in", "icon"],
+        "body": """\
+A SuperAdmin can put an organisation's logo in the sidebar and on the sign-in
+screen. It is in **Preferences**, under General, beside the title and subtitle
+it sits with.
+
+## Uploading one
+
+Click **Upload logo** and choose a **PNG or JPEG** file, up to **512 KB** and
+**2000 pixels** on either side. The file is checked by its contents rather than
+its name, so renaming something to `.png` will not get it accepted.
+
+The preview beside the settings is a real sidebar header at its real width and
+colour, so it shows what you will actually get — including how a very wide or
+very tall image is scaled to fit.
+
+## Where it can sit
+
+Choose **left, right, above or below** the title. The logo is always scaled to
+fit a fixed space, so no image can stretch the sidebar or push the navigation
+around, whatever shape it is.
+
+If your logo already contains the name, turn on **Hide the title text** so the
+name is not shown twice. It is still used for the browser tab and read out to
+screen readers, so nothing is lost.
+
+**Nothing takes effect until you click Save preferences** — the image, the
+position and the hide-the-title option alike. Until then the preview is the only
+thing that changes, and it is marked as not saved.
+
+## What looks good
+
+The sidebar is dark navy. A logo drawn for white paper — dark marks on a white
+rectangle — will look like a sticker stuck onto it. What works best is a **PNG
+with a transparent background and light-coloured marks**.
+
+Because it is displayed about 32 pixels tall, fine detail and small lettering
+will not survive. A simple mark reads better at that size than a detailed one.
+
+## Replacing and removing
+
+Choosing a new image replaces what is there once you save; there is no version
+history for a logo, unlike a document attached to a record. **Remove** takes it
+away entirely and the title goes back to standing on its own — also on save, so
+**Keep it after all** is there if you change your mind. Both are recorded in the
+audit log.
 """,
     },
 ]

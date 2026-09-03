@@ -9,7 +9,7 @@ Uses Tornado + PostgreSQL. The schema is managed by Alembic migrations
 the sqlite3-style calling convention used throughout this file.
 """
 
-import asyncio, csv, io, json, os, datetime, re, sys, time
+import asyncio, csv, hashlib, io, json, os, datetime, re, struct, sys, time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -35,6 +35,18 @@ from version import VERSION  # noqa: E402
 # database's existing backups and point-in-time recovery with nothing extra to
 # provision. See CLAUDE.md: this moves to S3 when object storage is set up.
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# The logo is capped far lower than a general upload: it is drawn about 32px
+# tall, so 512 KB is already generous for a retina-resolution PNG.
+MAX_LOGO_BYTES = 512 * 1024
+
+# A byte cap alone does not protect the browser. A 10000x10000 PNG of flat
+# colour compresses to a few kilobytes and still has to be decoded into ~400 MB
+# of bitmap. Cap the pixels as well.
+MAX_LOGO_DIMENSION = 2000
+
+# Where the logo may sit in relation to the title in the sidebar.
+LOGO_POSITIONS = ["left", "right", "above", "below"]
 
 # Colours a SuperAdmin may choose for a system type. Every combination has been
 # checked against WCAG 2.1 AA — text on fill exceeds 4.5:1 and the border
@@ -160,6 +172,117 @@ def valid_anchor(value):
         return False
     side, _, index = value.partition(":")
     return side in ANCHOR_SIDES and index.isdigit() and 0 <= int(index) < ANCHORS_PER_SIDE
+
+
+class ImageRejected(Exception):
+    """An uploaded image failed inspection. The message is shown to the user."""
+
+
+def inspect_image(body):
+    """Identify an uploaded logo from its *contents*, and measure it.
+
+    Returns ``(content_type, width, height)`` for a PNG or JPEG, and raises
+    ``ImageRejected`` for anything else.
+
+    **The file extension and the browser-supplied content type are both
+    ignored**, deliberately. Either can be set to anything by whoever uploads
+    the file; renaming ``payload.html`` to ``logo.png`` would defeat a check
+    based on the name. What comes back from here is what gets stored and what
+    the endpoint later serves, so the served type always matches the bytes.
+
+    SVG is *not* accepted, and should not be added: an SVG is a document that
+    can carry script, and this one would be served from our own origin.
+
+    Reading the dimensions needs no imaging library — both formats state them
+    in the header — which keeps the dependency list as it is.
+    """
+    if not body:
+        raise ImageRejected("The file is empty.")
+
+    if body[:8] == b"\x89PNG\r\n\x1a\n":
+        # IHDR is required by the specification to be the first chunk, so the
+        # dimensions are always at a fixed offset.
+        if len(body) < 24 or body[12:16] != b"IHDR":
+            raise ImageRejected("That PNG file appears to be damaged.")
+        width, height = struct.unpack(">II", body[16:24])
+        return "image/png", width, height
+
+    if body[:3] == b"\xff\xd8\xff":
+        width, height = _jpeg_dimensions(body)
+        return "image/jpeg", width, height
+
+    raise ImageRejected(
+        "That file is not a PNG or JPEG image. Only .png and .jpg files can be "
+        "used as a logo.")
+
+
+def _jpeg_dimensions(body):
+    """Width and height from a JPEG's frame header.
+
+    A JPEG is a chain of segments; the dimensions live in the start-of-frame
+    one, whose position varies because the metadata before it does. So walk the
+    chain rather than guessing an offset.
+    """
+    i, n = 2, len(body)
+    while i < n - 1:
+        if body[i] != 0xFF:               # resynchronise on padding
+            i += 1
+            continue
+        marker = body[i + 1]
+        i += 2
+        if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+            continue                      # standalone markers carry no payload
+        if marker == 0xD9 or marker == 0xDA:
+            break                         # end of image, or start of the scan
+        if i + 2 > n:
+            break
+        length = struct.unpack(">H", body[i:i + 2])[0]
+        # SOF0-SOF15 hold the frame size. C4, C8 and CC are in the same numeric
+        # range but are Huffman/arithmetic tables, not frames.
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            if i + 7 > n:
+                break
+            height, width = struct.unpack(">HH", body[i + 3:i + 7])
+            return width, height
+        if length < 2:
+            break                         # malformed: would not advance
+        i += length
+    raise ImageRejected("That JPEG file appears to be damaged.")
+
+
+def validate_logo(body):
+    """Full check for an uploaded logo: type, byte size, and pixel size.
+
+    Order matters. The size check comes first because it is the cheapest, and
+    the dimension check comes last because it needs the file parsed.
+    """
+    if len(body) > MAX_LOGO_BYTES:
+        raise ImageRejected(
+            f"That image is {len(body)//1024} KB. The limit is "
+            f"{MAX_LOGO_BYTES//1024} KB — the logo is displayed about 32 "
+            f"pixels tall, so it does not need to be large.")
+    content_type, width, height = inspect_image(body)
+    if width <= 0 or height <= 0:
+        raise ImageRejected("That image reports no size and cannot be used.")
+    if width > MAX_LOGO_DIMENSION or height > MAX_LOGO_DIMENSION:
+        raise ImageRejected(
+            f"That image is {width}x{height} pixels. The limit is "
+            f"{MAX_LOGO_DIMENSION} pixels on either side.")
+    return content_type, width, height
+
+
+def branding_summary(row):
+    """Describe the stored logo without carrying the image itself.
+
+    The bytes are fetched separately from ``/api/branding/logo``, so this stays
+    small enough to sit in the settings payload that every page load fetches.
+    """
+    if not row:
+        return None
+    return {"filename": row["filename"], "content_type": row["content_type"],
+            "size_bytes": row["size_bytes"], "width": row["width"],
+            "height": row["height"], "etag": row["etag"],
+            "uploaded_at": row["uploaded_at"]}
 
 
 def change_state_for_new(handler, data):
@@ -656,6 +779,15 @@ DEFAULT_PREFERENCES = [
      "Shown in the sidebar header.", "General", 1, 10),
     ("app_subtitle", "Dept. of Education", "string", "Application subtitle",
      "Shown under the title in the sidebar.", "General", 1, 20),
+    # The logo itself is in app_branding, not here; see migration 0009. These
+    # two are how it is arranged, which is small enough to be a preference.
+    ("logo_position", "left", "logo_position", "Logo position",
+     "Where the logo sits in relation to the title, in the sidebar.",
+     "General", 1, 22),
+    ("hide_app_title", "false", "boolean", "Hide the title text when a logo is set",
+     "Use this when the logo already contains the name, so it is not shown "
+     "twice. The title is still used for the browser tab and for screen "
+     "readers.", "General", 1, 24),
 
     ("allowed_email_domains", "", "string", "Allowed email domains",
      "Comma-separated list of domains permitted for new accounts "
@@ -947,7 +1079,7 @@ SEED_RELEASES = [
 * Release notes and help articles now wrap properly instead of breaking
   sentences across lines.
 """),
-    (VERSION, "Diagram controls and fixes", None, 1, 700, """\
+    ("0.4.1", "Diagram controls and fixes", None, 1, 700, """\
 ## What's new in this release
 
 **Arrows you can arrange**
@@ -990,6 +1122,31 @@ SEED_RELEASES = [
   retired items in those states instead of resetting them.
 * **Proposed** can now be changed from a record's details, not only when it is
   first created.
+"""),
+    (VERSION, "Your own logo", None, 1, 800, """\
+## What's new in this release
+
+**A logo of your own**
+
+* A SuperAdmin can upload a logo in **Preferences**, under General. It appears
+  in the sidebar and on the sign-in screen.
+
+**Adding a data flow is quicker**
+
+* **Source System** and **Destination System** now come first when adding a
+  data flow, and the name is filled in for you by default. Type over it
+  whenever you want something different.
+* The same applies when editing a flow: while the name is still the generated
+  one, changing either system keeps it in step. A name you have written
+  yourself is never overwritten.
+
+**Fixes**
+
+* **A stray click no longer discards what you were typing.** The Add and Edit
+  windows used to close if you clicked beside them, losing everything entered.
+  They now close only from the **X**, **Cancel**, or saving.
+* The Source and Destination dropdowns in a data flow's details ran off the
+  edge of the panel.
 """),
 ]
 
@@ -2596,9 +2753,17 @@ if HAS_TORNADO:
 
     def public_settings(conn):
         prefs = get_preferences(conn)
+        # Only the logo's arrangement and a cache token travel with the
+        # settings; the image is fetched once from its own endpoint. The token
+        # is what makes a replaced logo appear immediately.
+        row = get_branding(conn)
+        position = prefs.get("logo_position", "left")
         return {
             "app_title": prefs.get("app_title", "DATA LINEAGE TRACKER"),
             "app_subtitle": prefs.get("app_subtitle", ""),
+            "logo_etag": row["etag"] if row else None,
+            "logo_position": position if position in LOGO_POSITIONS else "left",
+            "hide_app_title": str(prefs.get("hide_app_title", "false")).lower() == "true",
             "password_policy": auth.describe_password_policy(prefs),
         }
 
@@ -3042,6 +3207,15 @@ if HAS_TORNADO:
                         return self.fail(400, f"'{key}' is not editable yet.")
                     new_value = "true" if value is True else \
                                 "false" if value is False else str(value)
+                    # Preferences are otherwise free text, but this one drives a
+                    # CSS class, so a junk value would reach the stylesheet.
+                    # public_settings falls back to "left" as well; refusing it
+                    # here keeps the bad value out of the database in the first
+                    # place.
+                    if key == "logo_position" and new_value not in LOGO_POSITIONS:
+                        return self.fail(
+                            400, "Logo position must be one of: "
+                                 + ", ".join(LOGO_POSITIONS) + ".")
                     if new_value != (pref["value"] or ""):
                         changes[key] = (pref["value"], new_value)
                         conn.execute(
@@ -3266,6 +3440,166 @@ if HAS_TORNADO:
 
         def get(self):
             self.write_json({"version": VERSION})
+
+    # -----------------------------------------------------------------------
+    # Branding
+    # -----------------------------------------------------------------------
+    def get_branding(conn):
+        """The single branding row, or None if no logo has been uploaded."""
+        return conn.execute(
+            "SELECT * FROM app_branding WHERE branding_id=1").fetchone()
+
+    class PublicBrandingHandler(BaseAPIHandler):
+        """Branding for the sign-in screen, which by definition has no session.
+
+        Without this the sign-in screen has no settings at all: it asks
+        ``/api/auth/me``, that fails because nobody is signed in, and the
+        frontend falls back to the title hard-coded in the JavaScript. The
+        configured title has therefore never appeared there; the logo made it
+        obvious.
+
+        Deliberately *not* the whole of ``public_settings`` — the password
+        policy is in there, and describing the password rules to anyone who
+        loads the page gives away more than a name and a picture. This returns
+        only what is already visible to anyone looking at the sign-in screen.
+        """
+        requires_auth = False
+
+        def get(self):
+            conn = get_db()
+            try:
+                s = public_settings(conn)
+            finally:
+                conn.close()
+            self.write_json({k: s[k] for k in
+                             ("app_title", "app_subtitle", "logo_etag",
+                              "logo_position", "hide_app_title")})
+
+    class BrandingLogoHandler(BaseAPIHandler):
+        """The logo image itself.
+
+        **Deliberately readable without a session.** The sign-in screen shows
+        it, and that page is by definition unauthenticated. This is a narrow,
+        considered exception to "require a valid session for API endpoints":
+        what it exposes is a brand mark a SuperAdmin chose to display on the
+        public sign-in page — no record, no name, nothing about the data the
+        application holds. Uploading and removing stay behind SuperAdmin.
+
+        The response is always one of two content types, both established by
+        inspecting the bytes at upload rather than trusting the browser.
+        """
+        requires_auth = False
+
+        def get(self):
+            conn = get_db()
+            try:
+                row = get_branding(conn)
+                if not row or row["logo_data"] is None:
+                    return self.fail(404, "No logo has been uploaded.")
+                data, ctype = bytes(row["logo_data"]), row["content_type"]
+                etag = row["etag"]
+            finally:
+                conn.close()
+
+            # Revalidate rather than cache outright: a SuperAdmin who replaces
+            # the logo should see the new one at once. A 304 is cheap, and a
+            # stale logo looks exactly like a bug.
+            self.set_header("ETag", f'"{etag}"')
+            self.set_header("Cache-Control", "no-cache, must-revalidate")
+            if self.request.headers.get("If-None-Match", "").strip('"') == etag:
+                self.set_status(304)
+                return self.finish()
+
+            self.set_header("Content-Type", ctype or "image/png")
+            self.set_header("X-Content-Type-Options", "nosniff")
+            self.set_header("Content-Security-Policy", "default-src 'none'")
+            self.finish(data)
+
+    class BrandingHandler(BaseAPIHandler):
+        """Upload, describe and remove the logo. SuperAdmin only, like Preferences."""
+        READ_ROLE = permissions.SUPERADMIN
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def get(self):
+            conn = get_db()
+            try:
+                self.write_json({"logo": branding_summary(get_branding(conn)),
+                                 "max_bytes": MAX_LOGO_BYTES,
+                                 "max_dimension": MAX_LOGO_DIMENSION,
+                                 "positions": LOGO_POSITIONS})
+            finally:
+                conn.close()
+
+        def post(self):
+            uploaded = self.request.files.get("file")
+            if not uploaded:
+                return self.fail(400, "Choose a .png or .jpg file to upload.")
+            f = uploaded[0]
+            body = f["body"]
+            try:
+                content_type, width, height = validate_logo(body)
+            except ImageRejected as e:
+                return self.fail(400, str(e))
+
+            filename = (f.get("filename") or "logo")[:200]
+            etag = hashlib.sha256(body).hexdigest()[:32]
+            now = iso(utcnow())
+            conn = get_db()
+            try:
+                had_one = get_branding(conn) is not None
+                # One row, always id 1: replacing the logo overwrites it rather
+                # than accumulating versions. Unlike a resource, there is no
+                # history worth keeping for a piece of decoration.
+                if had_one:
+                    conn.execute(
+                        """UPDATE app_branding
+                              SET logo_data=?, content_type=?, filename=?,
+                                  size_bytes=?, width=?, height=?, etag=?,
+                                  uploaded_at=?, uploaded_by=?
+                            WHERE branding_id=1""",
+                        (body, content_type, filename, len(body), width, height,
+                         etag, now, self.current_user["user_id"]))
+                else:
+                    conn.execute(
+                        """INSERT INTO app_branding
+                             (branding_id, logo_data, content_type, filename,
+                              size_bytes, width, height, etag, uploaded_at,
+                              uploaded_by)
+                           VALUES (1,?,?,?,?,?,?,?,?,?)""",
+                        (body, content_type, filename, len(body), width, height,
+                         etag, now, self.current_user["user_id"]))
+                # The bytes are never written to the audit log — only the fact
+                # of the change and enough detail to identify what was put
+                # there. An audit row is not a file store.
+                audit.record_event(
+                    conn, self.current_user,
+                    audit.UPDATE if had_one else audit.CREATE,
+                    entity_type="branding", entity_id="logo",
+                    summary=("Replaced the logo" if had_one else "Uploaded a logo")
+                            + f" ({filename}, {width}x{height}, {len(body)//1024} KB)",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                summary = branding_summary(get_branding(conn))
+            finally:
+                conn.close()
+            self.write_json({"logo": summary})
+
+        def delete(self):
+            conn = get_db()
+            try:
+                row = get_branding(conn)
+                if not row:
+                    return self.fail(404, "There is no logo to remove.")
+                conn.execute("DELETE FROM app_branding WHERE branding_id=1")
+                audit.record_event(
+                    conn, self.current_user, audit.DELETE,
+                    entity_type="branding", entity_id="logo",
+                    summary=f"Removed the logo ({row['filename'] or 'logo'})",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"logo": None})
 
     class ReleasesHandler(BaseAPIHandler):
         """Published notes are readable by everyone; drafts and editing are SuperAdmin."""
@@ -5002,6 +5336,9 @@ if HAS_TORNADO:
             (r"/api/audit/([0-9]+)/revert", AuditRevertHandler),
             (r"/api/audit", AuditHandler),
             # Release notes
+            (r"/api/branding", BrandingHandler),
+            (r"/api/branding/logo", BrandingLogoHandler),
+            (r"/api/branding/public", PublicBrandingHandler),
             (r"/api/releases", ReleasesHandler),
             (r"/api/releases/([^/]+)", ReleaseHandler),
             (r"/api/whats-new", WhatsNewHandler),
