@@ -61,11 +61,23 @@ stored **in PostgreSQL** as binary columns. That was a deliberate interim choice
 it needs no extra vendor, and the files are covered by the database's existing
 backups and point-in-time recovery.
 
-Ben plans to add an S3 bucket when he sets up scheduled database backups.
-**When that happens, remind him to migrate file storage to S3 as well** — the
-two jobs belong together. The relevant code is `resource_version.file_data`,
-`schema_snapshot.source_sql` and `app_branding.logo_data` in `app.py`, plus the
-`ResourceFileHandler` and `BrandingLogoHandler`.
+**The bucket now exists** (September 2026) — it was created for the nightly
+database backups, so the precondition this reminder was waiting on is met. The
+migration itself has not been done. The relevant code is
+`resource_version.file_data`, `schema_snapshot.source_sql` and
+`app_branding.logo_data` in `app.py`, plus `ResourceFileHandler` and
+`BrandingLogoHandler`.
+
+Two things make it worth doing rather than leaving: every uploaded document is
+currently inside every nightly dump, so the backups grow with the uploads; and
+the app's own memory footprint scales with the largest file anyone attaches,
+because a download reads the whole column into Python.
+
+**The backup job's credential must not be reused for this.** It deliberately
+holds `s3:PutObject` on one prefix and nothing else — no read, no delete — so
+that a leaked key cannot destroy the backup history. The app needs read, write
+*and* delete on a different prefix. Two IAM users, two prefixes. See
+`backup/README.md`.
 
 Until then, uploads are capped at 10 MB (`MAX_UPLOAD_BYTES`). The logo has its
 own, much lower caps — `MAX_LOGO_BYTES` and `MAX_LOGO_DIMENSION` — because it is
@@ -77,6 +89,26 @@ the browser's content type** (`inspect_image`). The type that comes back is what
 gets stored and what the endpoint serves, so the two can never disagree. Do not
 add SVG to the accepted list: an SVG can carry script, and this one is served
 from our own origin.
+
+### 4. Backups: the job never deletes
+
+`backup/` holds a Render Cron Job that dumps the database nightly to S3 —
+30 daily, 12 monthly, 3 years of annual snapshots. Two properties are load-
+bearing and easy to undo by accident:
+
+- **Retention is done by S3 lifecycle rules, not by the script.** The IAM user
+  has `s3:PutObject` only. A credential that cannot delete is one that
+  ransomware cannot use to destroy the backup history. Do not "simplify" this
+  by having the script prune old files.
+- **A dump smaller than 10 KB is refused.** `pg_dump | gzip` reports *gzip's*
+  exit status, so an unreachable database yields a valid empty archive and a
+  script that believes it succeeded. Without that guard the job would upload a
+  stub every night and look healthy until someone needed it.
+
+`sh backup/test_backup.sh` exercises both, plus the date logic, with no
+database, AWS account or Docker. The restore procedure is Part 3 of
+`backup/README.md`, and the release checklist carries a quarterly reminder to
+actually run it.
 
 ## Architecture
 

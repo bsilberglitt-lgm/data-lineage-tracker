@@ -327,6 +327,11 @@ Finally:
   downloaded copy is the one that survives anything happening to the
   account.)*
 
+  > **The nightly S3 backup does not replace this step.** It runs at 07:00
+  > UTC, so by mid-afternoon it is most of a day stale — and a migration that
+  > goes wrong destroys exactly the hours since it ran. Take the export
+  > immediately before deploying. See `backup/README.md`.
+
 - [ ] **Check production environment variables.** Render → your **web service**
   → **Environment**:
   - `DATABASE_URL` — present, pointing at the Internal Database URL
@@ -408,6 +413,31 @@ If you deliberately left the release as a draft, publish it here instead:
   Don't edit a draft's wording in the app — drafts are re-seeded from the code
   at every startup, so the change would be lost. Change it in `SEED_RELEASES`
   and deploy. Once published, in-app edits are safe.
+
+---
+
+## Quarterly — prove a backup restores
+
+Not part of a release, but it belongs on the same list because it is the step
+everyone means to do and nobody does.
+
+- [ ] **Restore the latest nightly backup into a scratch database and sign in
+  to it.** The full procedure is Part 3 of `backup/README.md`; it takes about
+  ten minutes.
+
+  A backup nobody has restored is a file, not a backup. Counting rows is the
+  minimum — a restore into an empty schema exits successfully and looks fine
+  until you look at what arrived.
+
+- [ ] **While you are there, confirm the backups are actually arriving:**
+
+  ```bash
+  aws s3 ls s3://YOUR-BUCKET/data-lineage-tracker/daily/ --human-readable
+  ```
+
+  Expect roughly 30 files, the newest from this morning, none of them tiny.
+  A backup job that has silently stopped looks exactly like one that is
+  working until you go and look.
 
 ---
 
