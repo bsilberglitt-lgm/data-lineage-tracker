@@ -614,6 +614,20 @@ disturbed — it must stay pinned.
 The backend is running old code. `docker compose restart app`, then confirm at
 `/api/version`.
 
+**`these Docker images are configured to store database data in a format which is compatible with pg_ctlcluster` / `unused mount/volume`**
+Postgres 18+ moved its data directory to a version-specific path and declares
+its volume one level up. The mount must be `/var/lib/postgresql`, **not**
+`/var/lib/postgresql/data`. Fix `docker-compose.yml`, then:
+
+```bash
+docker compose down -v
+docker compose up
+```
+
+Mounting the old path does not just warn — the container exits, and had it
+started, the data would have gone to an anonymous volume and disappeared on the
+next re-create.
+
 **`database files are incompatible with server` on `docker compose up`**
 The local Postgres major version changed and the existing volume was written by
 the old one. Postgres will not upgrade a data directory in place. Recreate it:

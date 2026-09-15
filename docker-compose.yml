@@ -18,9 +18,19 @@
 #   * Behaviour differences between majors are exactly what local testing is
 #     supposed to catch before production does.
 #
-# **Changing this line is not enough on its own.** Postgres refuses to start on
-# a data directory written by a different major version ("database files are
-# incompatible with server"). Recreate the volume:
+# **Two things change together for 18+, and missing the second one fails.**
+#
+#   1. The image tag.
+#   2. **The volume mount path.** In 18 and above the official image puts data
+#      in a version-specific directory (`/var/lib/postgresql/18/docker`) and
+#      declares its volume at `/var/lib/postgresql`, one level up. Mounting at
+#      the old `/var/lib/postgresql/data` makes the container refuse to start,
+#      complaining about data in an "unused mount/volume" — the data would go
+#      to an anonymous volume and vanish on re-creation.
+#      See https://github.com/docker-library/postgres/pull/1259
+#
+# Postgres also will not start on a data directory written by a different major
+# version, so recreate the volume when changing either:
 #
 #     docker compose down -v      # deletes the local database
 #     docker compose up           # re-seeds from scratch
@@ -38,7 +48,9 @@ services:
       # Exposed so you can also connect with a GUI tool (TablePlus, DBeaver, psql)
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # One level above the data directory — required for 18+. See the note at
+      # the top of this file before changing it.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lineage -d lineage"]
       interval: 5s
