@@ -1123,7 +1123,7 @@ SEED_RELEASES = [
 * **Proposed** can now be changed from a record's details, not only when it is
   first created.
 """),
-    (VERSION, "Your own logo", None, 1, 800, """\
+    ("0.4.2", "Your own logo", None, 1, 800, """\
 ## What's new in this release
 
 **A logo of your own**
@@ -1147,6 +1147,27 @@ SEED_RELEASES = [
   They now close only from the **X**, **Cancel**, or saving.
 * The Source and Destination dropdowns in a data flow's details ran off the
   edge of the panel.
+"""),
+    (VERSION, "Reliability, and a note on what this is for", None, 1, 900, """\
+## What's new in this release
+
+**An introduction in the help panel**
+
+* A new **About this software** article opens the help panel, covering what the
+  tracker is for, who it is being built for, how it is run, and what it makes
+  possible — from clearer vendor contracts to knowing who to ask when a figure
+  looks wrong. It sits at the top of the list on every screen.
+
+**Behind the scenes**
+
+* **The application no longer goes to sleep.** It used to shut down after a
+  quiet period and take up to a minute to wake and bring you to the login
+  screen. It now stays running, and a cold visit is immediate.
+* **The database is backed up every night to encrypted off-site storage**, kept
+  separately from the application itself. Thirty days of daily copies are held,
+  alongside monthly and annual ones. Restoring from those backups has been
+  tested rather than assumed.
+* Updates are now applied without taking the application offline.
 """),
 ]
 
@@ -4753,11 +4774,14 @@ if HAS_TORNADO:
         def get(self):
             role = self.current_user["role"]
             screen = self.get_argument("screen", None)
-            relevant, rest = help_articles.list_articles(role, screen)
+            pinned, relevant, rest = help_articles.list_articles(role, screen)
             self.write_json({
+                "pinned": [help_articles.public(a) for a in pinned],
                 "for_this_screen": [help_articles.public(a) for a in relevant],
+                # Order matters: the panel renders this list, and search
+                # filters it, so pinned has to come first here too.
                 "articles": [help_articles.public(a, include_body=True)
-                             for a in relevant + rest],
+                             for a in pinned + relevant + rest],
             })
 
     class HelpArticleHandler(BaseAPIHandler):
