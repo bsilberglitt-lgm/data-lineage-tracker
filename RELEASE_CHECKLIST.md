@@ -614,6 +614,13 @@ disturbed — it must stay pinned.
 The backend is running old code. `docker compose restart app`, then confirm at
 `/api/version`.
 
+**`aws s3 cp` hangs with no output**
+The AWS CLI has no credentials configured and is waiting on the EC2
+instance-metadata service looking for a role, which does not exist on a laptop.
+Confirm with `aws sts get-caller-identity`. Download from the S3 console in a
+browser instead, or run `aws configure` with a key for your own IAM user — the
+backup writer's key is write-only and cannot read backups back.
+
 **`these Docker images are configured to store database data in a format which is compatible with pg_ctlcluster` / `unused mount/volume`**
 Postgres 18+ moved its data directory to a version-specific path and declares
 its volume one level up. The mount must be `/var/lib/postgresql`, **not**
