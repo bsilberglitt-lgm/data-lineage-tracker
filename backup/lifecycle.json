@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "S3 lifecycle rules: what deletes old backups. The backup job never does —",
+    "it holds PutObject only, so a leaked key cannot destroy the history.",
+    "",
+    "Apply with:",
+    "  aws s3api put-bucket-lifecycle-configuration \\",
+    "    --bucket YOUR-BUCKET \\",
+    "    --lifecycle-configuration file://backup/lifecycle.json",
+    "",
+    "Remove this _comment key first — the S3 API rejects unknown fields.",
+    "",
+    "Retention: 30 daily, 12 monthly, 3 years of annual snapshots. Days are",
+    "counted from when an object is created, so the monthly rule is 395 days",
+    "(13 months) rather than 365: a backup taken on 1 January must survive",
+    "until the one taken on 1 January the following year exists, or you would",
+    "briefly hold only 11.",
+    "",
+    "AbortIncompleteMultipartUpload matters more than it looks. A failed",
+    "upload leaves parts that are invisible in the console but still billed,",
+    "for as long as the bucket exists."
+  ],
+  "Rules": [
+    {
+      "ID": "expire-daily-after-30-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "data-lineage-tracker/daily/" },
+      "Expiration": { "Days": 30 },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    },
+    {
+      "ID": "expire-monthly-after-13-months",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "data-lineage-tracker/monthly/" },
+      "Expiration": { "Days": 395 },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    },
+    {
+      "ID": "expire-yearly-after-3-years",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "data-lineage-tracker/yearly/" },
+      "Expiration": { "Days": 1096 },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    }
+  ]
+}

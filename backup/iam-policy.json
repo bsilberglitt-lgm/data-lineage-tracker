@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Permissions for the backup job's IAM user. Replace YOUR-BUCKET, remove",
+    "this _comment key, and attach it as an inline policy.",
+    "",
+    "It can write new objects under one prefix of one bucket. It cannot read",
+    "them back, cannot delete or overwrite anything, and cannot see any other",
+    "bucket in the account.",
+    "",
+    "**No s3:DeleteObject, and no s3:GetObject.** Deletion belongs to the",
+    "lifecycle rules, so a leaked key cannot destroy the backup history — the",
+    "first thing ransomware looks for. Withholding read matters too: these",
+    "files contain every password hash and a full map of which state systems",
+    "hold which data, and a job that only writes has no reason to read.",
+    "",
+    "Restoring is done by you, signed in as yourself, not by this user.",
+    "",
+    "s3:PutObject is scoped to the object path; ListBucket is not granted at",
+    "all, because the AWS CLI does not need it for a single-file `cp`."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WriteBackupsOnly",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::YOUR-BUCKET/data-lineage-tracker/*"
+    },
+    {
+      "Sid": "RequireEncryptionAtRest",
+      "Effect": "Deny",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::YOUR-BUCKET/*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:x-amz-server-side-encryption": "AES256"
+        }
+      }
+    }
+  ]
+}
