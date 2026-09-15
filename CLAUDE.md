@@ -68,10 +68,17 @@ migration itself has not been done. The relevant code is
 `app_branding.logo_data` in `app.py`, plus `ResourceFileHandler` and
 `BrandingLogoHandler`.
 
-Two things make it worth doing rather than leaving: every uploaded document is
-currently inside every nightly dump, so the backups grow with the uploads; and
-the app's own memory footprint scales with the largest file anyone attaches,
-because a download reads the whole column into Python.
+Two things make it worth doing rather than leaving, and the first is now
+measured rather than assumed: **uploaded documents are the largest thing in the
+database.** As of September 2026 `resource_version` is 3.2 MB against 808 KB
+for `schema_column` and 560 KB for the entire audit trail, and every byte of it
+is carried in each of the 45 retained nightly backups. Second, the app's memory
+footprint scales with the largest file anyone attaches, because a download
+reads the whole column into Python.
+
+Neither is urgent: at this size the storage costs cents a year, so the decision
+to wait for a Maine DOE AWS account rather than migrate into a personal one is
+about avoiding a production dependency, not about cost.
 
 **The backup job's credential must not be reused for this.** It deliberately
 holds `s3:PutObject` on one prefix and nothing else — no read, no delete — so

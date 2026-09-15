@@ -72,9 +72,10 @@ run $FULL_ENV FAKE_DUMP_BYTES=1000
 ck "exits non-zero on a suspiciously small dump" "$RC" "1"
 ck "and uploads nothing" "$([ -f "$LOG/aws-calls" ] && echo some || echo none)" "none"
 
-# The floor must sit below a real dump. This database compresses to roughly
-# 60 KB, and the guard was once set at 50 KB — close enough that a good backup
-# would eventually have been refused. 20 KB stands in for a small real dump.
+# The floor must sit below a real dump. Production dumps are around 2.7 MB, and
+# the guard was once set at 50 KB against a 60 KB estimate taken from seed data
+# — close enough that a good backup could have been refused. 20 KB stands in
+# for a small real dump.
 run $FULL_ENV FAKE_DUMP_BYTES=20480
 ck "a small but plausible dump is accepted" "$RC" "0"
 

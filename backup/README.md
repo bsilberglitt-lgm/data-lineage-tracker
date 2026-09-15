@@ -30,9 +30,9 @@ someone needed it.
 
 The threshold sits in a wide gap: a failed dump is under 1 KB, while a
 successful one carries the schema DDL even with no rows and is several KB at
-minimum. This database currently compresses to about **60 KB**, nine tenths of
-it the `schema_column` catalog. If that figure ever approaches 10 KB something
-has gone badly wrong anyway.
+minimum. Production dumps are around **2.7 MB**, so there is roughly 270x of
+headroom. If that figure ever approaches 10 KB something has gone badly wrong
+anyway.
 
 ---
 
@@ -134,15 +134,21 @@ and use it consistently; `us-east-1` is fine.
 
   ```
   Dumping database
-  Dump complete: 0.1 MB
+  Dump complete: 2.7 MB
   Uploading to daily/
   Backup finished
   ```
 
-  **0.1 MB is correct, not a truncated dump.** This is a metadata catalog, not
-  a data warehouse: about 60 KB compressed, nine tenths of which is the 3,300
-  rows of `schema_column`. The figure only becomes worth questioning if it
-  *drops* sharply between nights.
+  **2.7 MB was the real figure on the first production run** (September 2026).
+  Measured against the restored copy, the size is almost entirely **uploaded
+  documents**: `resource_version` alone is 3.2 MB uncompressed, against 808 KB
+  for the schema catalog and 560 KB for the whole audit trail. Documents are
+  already-compressed formats sitting in binary columns, so gzip barely touches
+  them.
+
+  That means **the dump grows with attachments, not with usage** — and each one
+  is carried in all 45 retained copies. Expect it to creep up, not down; a
+  sharp **drop** is the thing worth investigating.
 
 - [ ] **Confirm the object is really there**, with the size you expect:
 
@@ -157,13 +163,29 @@ and use it consistently; `us-east-1` is fine.
 Do this when you set the job up, and once a quarter afterwards. It takes about
 ten minutes and is the only thing that turns "we have backups" into a fact.
 
-- [ ] Download the newest backup:
+- [ ] **Download the newest backup.** Easiest from the browser: S3 console →
+  your bucket → `data-lineage-tracker/daily/` → tick the newest object →
+  **Download**. Then:
+
+  ```bash
+  mv ~/Downloads/data-lineage-tracker-*.dump.gz .
+  gunzip data-lineage-tracker-*.dump.gz
+  ```
+
+  Or with the AWS CLI, if it is configured on this machine:
 
   ```bash
   aws s3 cp s3://YOUR-BUCKET/data-lineage-tracker/daily/ . --recursive \
     --exclude "*" --include "$(date -u +%Y-%m-%d)*"
   gunzip data-lineage-tracker-*.dump.gz
   ```
+
+  > **If `aws s3 cp` hangs with no output**, the CLI has no credentials and is
+  > waiting on the EC2 instance-metadata endpoint looking for a role that does
+  > not exist on a laptop. `aws sts get-caller-identity` confirms it in a
+  > second. Use the browser instead, or run `aws configure` with a key for
+  > **your own** IAM user — the backup writer's key holds `PutObject` only and
+  > cannot read the backups back.
 
 - [ ] Restore it into a scratch database beside your local one:
 
