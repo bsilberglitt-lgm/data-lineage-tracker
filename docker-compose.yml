@@ -7,10 +7,29 @@
 # Then open http://localhost:8765
 #
 # The database lives in the named volume "pgdata", so it survives restarts.
+#
+# **The Postgres major version must match production**, which is 18 on Render.
+# Two reasons, and the second is easy to miss:
+#
+#   * `pg_restore` cannot read a dump from a newer server, so the quarterly
+#     restore drill in backup/README.md fails against an older local Postgres —
+#     and fails in a way that looks like a corrupt backup rather than a version
+#     mismatch.
+#   * Behaviour differences between majors are exactly what local testing is
+#     supposed to catch before production does.
+#
+# **Changing this line is not enough on its own.** Postgres refuses to start on
+# a data directory written by a different major version ("database files are
+# incompatible with server"). Recreate the volume:
+#
+#     docker compose down -v      # deletes the local database
+#     docker compose up           # re-seeds from scratch
+#
+# Local data is seed data, so this costs nothing but the time to re-run it.
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: lineage
       POSTGRES_PASSWORD: lineage

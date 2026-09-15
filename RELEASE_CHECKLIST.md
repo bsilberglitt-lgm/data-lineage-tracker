@@ -614,6 +614,25 @@ disturbed — it must stay pinned.
 The backend is running old code. `docker compose restart app`, then confirm at
 `/api/version`.
 
+**`database files are incompatible with server` on `docker compose up`**
+The local Postgres major version changed and the existing volume was written by
+the old one. Postgres will not upgrade a data directory in place. Recreate it:
+
+```bash
+docker compose down -v
+docker compose up
+```
+
+`-v` deletes the local database and it re-seeds from scratch, which is fine —
+local data is seed data. This happened when the image moved from 16 to 18 to
+match production.
+
+**`pg_restore: error: unsupported version` during a restore drill**
+`pg_restore` cannot read a dump produced by a newer server. The local Postgres
+is older than production's. Check `docker-compose.yml` matches the Render
+database's major version, then recreate the volume as above. The symptom looks
+like a corrupt backup and is not one.
+
 **`docker compose restart app` prints nothing**
 That's normal — it doesn't stream logs. Use `docker compose logs --tail=20 app`,
 or `docker compose logs -f app` to follow.
