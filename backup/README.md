@@ -87,11 +87,30 @@ and use it consistently; `us-east-1` is fine.
   | Field | Value |
   |---|---|
   | Name | `lineage-nightly-backup` |
-  | Runtime | Docker |
-  | Dockerfile Path | `./backup/Dockerfile` |
-  | Docker Build Context Directory | `./backup` |
+  | Region | **the same Render region as the database** |
+  | Language / Runtime | Docker |
+  | Root Directory | `backup` |
   | Schedule | `0 7 * * *` |
   | Compute Plan | the smallest available |
+
+  **Set Language to Docker first.** The Dockerfile fields do not appear until
+  you do — before that Render shows Build Command and Start Command instead,
+  and it looks as though the options are missing.
+
+  Setting **Root Directory** to `backup` is the short way: Render then finds
+  `Dockerfile` there and uses that directory as the build context. The longer
+  equivalent is Dockerfile Path `./backup/Dockerfile` **and** Docker Build
+  Context Directory `./backup`, which may be hidden under *Advanced*. The
+  context has to be `backup/`, because the Dockerfile says `COPY backup.sh ./`
+  — point it at the repository root and the build fails saying it cannot find
+  the script.
+
+  **Region is Render's own region, not AWS's.** It must match the database, so
+  the internal connection string resolves. Where the S3 bucket lives is
+  unrelated and is set by `AWS_DEFAULT_REGION` below — a bucket in Ohio
+  (`us-east-2`) works perfectly well with a job running in Virginia. Uploads
+  into S3 are free from anywhere, so there is no reason to move a bucket to
+  match.
 
   `0 7 * * *` is **07:00 UTC**, which is 2am Eastern in winter and 3am in
   summer — Render schedules in UTC and does not follow daylight saving. Pick
@@ -104,7 +123,7 @@ and use it consistently; `us-east-1` is fine.
   | `DATABASE_URL` | The database's **Internal** connection string |
   | `AWS_ACCESS_KEY_ID` | From Part 1 |
   | `AWS_SECRET_ACCESS_KEY` | From Part 1 |
-  | `AWS_DEFAULT_REGION` | e.g. `us-east-1` |
+  | `AWS_DEFAULT_REGION` | The **bucket's** AWS region — `us-east-1` Virginia, `us-east-2` Ohio |
   | `BACKUP_BUCKET` | Bucket name only, no `s3://` |
 
   Use the **Internal** connection string, not the external one. It keeps the
@@ -190,6 +209,37 @@ ten minutes and is the only thing that turns "we have backups" into a fact.
 
   Delete the downloaded dump. It is a full copy of production, including every
   password hash, sitting in your Downloads folder.
+
+## When it breaks
+
+**`pg_dump: error: aborting because of server version mismatch`**
+
+`pg_dump` refuses to dump from a server newer than itself. The message gives
+both versions. Fix by bumping `postgresql<N>-client` in the `Dockerfile` — and
+the Alpine base along with it, since each Alpine release only carries certain
+client majors. Check first at
+<https://pkgs.alpinelinux.org/packages?name=postgresql18-client>.
+
+This will happen again whenever Render upgrades the database, and it will
+happen silently at 3am rather than when you upgrade. The size guard is what
+turns it into a failed run you can see instead of a stub quietly uploaded.
+
+**`AccessDenied` on the upload**
+
+The bucket name in the IAM policy does not match `BACKUP_BUCKET`, or the
+policy's `Resource` is missing the `/data-lineage-tracker/*` suffix. Both
+`Resource` lines need the real bucket name.
+
+**`could not translate host name`**
+
+The external database URL was used instead of the internal one, or the cron job
+is in a different **Render** region from the database. Render's region and the
+bucket's AWS region are unrelated — see Part 2.
+
+**The job stops running and nobody notices**
+
+There is no alerting yet. Set `HEALTHCHECK_URL` to a dead-man's-switch service
+if you want one, or check the bucket during the quarterly restore drill.
 
 ## Known follow-ups
 
