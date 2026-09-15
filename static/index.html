@@ -3060,6 +3060,7 @@ function HelpPanel({ screen, onClose, notify }) {
 
   const open = data.articles.find(a => a.id === openId);
   const relevantIds = new Set((data.for_this_screen || []).map(a => a.id));
+  const pinnedIds = new Set((data.pinned || []).map(a => a.id));
 
   // A short piece of the article around the first match, so a search result
   // shows why it matched rather than just repeating the summary.
@@ -3127,6 +3128,11 @@ function HelpPanel({ screen, onClose, notify }) {
 
         {!loading && !open && !q && (
           <React.Fragment>
+            {/* Pinned articles sit above everything with no heading of their
+                own — an introduction does not belong under "For this screen",
+                but it should still be the first thing anyone sees. */}
+            {data.articles.filter(a => pinnedIds.has(a.id))
+              .map(a => <Item key={a.id} a={a} />)}
             {relevantIds.size > 0 && (
               <React.Fragment>
                 <div className="help-section">For this screen</div>
@@ -3135,7 +3141,7 @@ function HelpPanel({ screen, onClose, notify }) {
                 <div className="help-section">Everything else</div>
               </React.Fragment>
             )}
-            {data.articles.filter(a => !relevantIds.has(a.id))
+            {data.articles.filter(a => !relevantIds.has(a.id) && !pinnedIds.has(a.id))
               .map(a => <Item key={a.id} a={a} />)}
           </React.Fragment>
         )}

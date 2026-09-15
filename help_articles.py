@@ -42,6 +42,104 @@ SCREENS = ["diagram", "schema", "systems", "flows", "elements", "contributors",
 
 ARTICLES = [
     # ---------------------------------------------------------------- basics
+    # "About this software" comes first deliberately: it is the introduction to
+    # the project — who it is for, how it is run, and why it is worth the
+    # effort. "Application overview", immediately after, covers what the
+    # application tracks and how the screens relate. They are kept separate
+    # because they answer different questions for different readers.
+    {
+        "id": "about-this-software",
+        "title": "About this software",
+        "summary": "What the tracker is, who it is being built for, how it is "
+                   "run, and what it makes possible.",
+        # Always at the top of the index, whatever screen you are on. It is not
+        # tagged to any screen: it is about the project, not about a view.
+        "pinned": True,
+        "screens": [],
+        "min_role": permissions.VIEWER,
+        "keywords": ["about", "purpose", "why", "introduction", "open source",
+                     "licence", "license", "backup", "hosting", "architecture",
+                     "portable", "vendor", "contract", "procurement", "CEDS",
+                     "SLDS", "EDUcore", "standards", "documentation",
+                     "Maine", "Department of Education"],
+        "body": """\
+The Data Lineage Tracker answers three questions about the department's data:
+where it comes from, where it goes, and who is responsible for it along the way.
+
+It keeps four kinds of records: the systems that hold or move data, the data
+flows that connect them, the data elements that travel along those flows, and
+the contributors accountable for each. You can read all of it as an interactive
+diagram or as searchable catalogs, drill into a mapped database schema field by
+field, attach supporting documents, and model a proposed change privately in a
+scenario before anything is built.
+
+It is being developed for the Maine Department of Education. The intention is to
+release it under an open source license, so that other states and agencies can
+run their own copy.
+
+## How it works
+
+It is a web application: you sign in with a browser, and there is nothing to
+install. Behind that sits a Python application and a PostgreSQL database,
+packaged as a container.
+
+All of its configuration comes from environment variables rather than being
+baked in, making it portable.
+
+The database is backed up automatically every night to separate, encrypted
+off-site storage, with thirty days of daily copies kept alongside monthly and
+annual ones.
+
+## What it makes possible
+
+**One shared record instead of many private ones.** Most of this knowledge
+already exists, but in people's heads, in a spreadsheet on somebody's desktop,
+or in a document written for a project that ended a while ago. When several
+people each maintain their own copy, all of them drift. A single shared record
+means one thing to keep current and one thing to trust.
+
+**Explaining where a number came from.** When a superintendent asks how a figure
+in a report was produced, the diagram traces it back through the flows and
+systems that fed it. The answer stops depending on which staff member happens to
+be available.
+
+**Knowing who to ask.** If something looks wrong, the record names the data
+owner and data steward, with their contact details. A question can go to the
+right person immediately instead of circulating until it finds them.
+
+**Keeping documentation from falling behind.** People are busy and want to build
+things and solve problems; going back afterwards to write a data dictionary is
+rarely the most urgent task, and often never happens at all. Making the gaps
+visible changes that; it is much easier to keep documentation current as you
+build when everyone can see what is missing.
+
+**Clearer conversations with vendors.** When a contract is being written for a
+new system, this is where the integration requirements come from: which data
+must move, in what form, by what method, under what authority. Being specific up
+front about both the data mapping and the technology sets expectations about
+scope on both sides, and surfaces gaps while they are still cheap to fix.
+
+**Planning a change before committing to it.** A scenario is a private copy of
+the diagram where you can map out a migration or a new integration in advance —
+adding proposed systems and flows, retiring old ones — without touching the live
+picture. The point is to confirm before the work starts that the intended
+outputs still hold: that every field a given report needs is still accounted for
+once the new architecture is in place.
+
+**Checking new data against your standards.** Before bringing a new source into
+the ecosystem (e.g., another department's data into the SLDS) scenario planning
+alongside a standards mapping tool like EDUcore lets you consider how that
+source maps to the standard you have adopted, such as CEDS. That shows which
+transformations will be needed, and which gaps will remain, before anyone builds
+the pipeline.
+
+## Where to go next
+
+**Application overview** describes what the application tracks and how the
+diagram and the catalogs relate to each other. **Scenario planning: the basics**
+is the quickest way into the planning features described above.
+""",
+    },
     {
         "id": "what-this-is",
         "title": "Application overview",
@@ -574,17 +672,30 @@ def _visible(article, role):
 
 
 def list_articles(role, screen=None):
-    """Every article this role may read, with the current screen's first.
+    """Every article this role may read, in three groups.
+
+    Returns ``(pinned, relevant, rest)``:
+
+        pinned    always first, whatever screen you are on
+        relevant  about the current screen
+        rest      everything else
 
     Ordering, not filtering: an article that is not about this screen is still
     listed, just lower down. Hiding it would make the index feel unreliable.
+
+    **Pinned is a separate group rather than a screen tag.** Tagging an
+    introduction with every screen would put it under the "For this screen"
+    heading on the Audit Log, which is not what that heading means. Within each
+    group the order of ``ARTICLES`` is preserved.
     """
     items = [a for a in ARTICLES if _visible(a, role)]
+    pinned = [a for a in items if a.get("pinned")]
+    items = [a for a in items if not a.get("pinned")]
     if screen:
         relevant = [a for a in items if screen in a.get("screens", [])]
         rest = [a for a in items if screen not in a.get("screens", [])]
-        return relevant, rest
-    return [], items
+        return pinned, relevant, rest
+    return pinned, [], items
 
 
 def get_article(article_id, role):
