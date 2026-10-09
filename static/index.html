@@ -250,6 +250,30 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
    panel you glance at, and it holds nothing unsaved.
    Anything with inputs should follow this — do not add onClick={onClose} to a
    .modal-overlay. */
+/* --- Tooltips -----------------------------------------------------------
+   z-index 200 puts these above the modal overlay (100), so a tooltip inside a
+   modal is not hidden by it. The anchor is inline-flex so it wraps a button
+   without changing how the button lays out — the whole control is the hover
+   target, not just its text. Opacity is animated but position is not, or the
+   bubble would visibly slide in from wherever it was last shown. */
+.tip-anchor { display: inline-flex; }
+.tip-bubble { position: fixed; z-index: 200; transform: translate(-50%, -100%);
+  background: #1a2332; color: #fff; font-size: 12px; line-height: 1.45;
+  padding: 7px 10px; border-radius: 6px; pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.22); animation: tip-in 0.12s ease-out; }
+.tip-bubble.tip-bottom { transform: translate(-50%, 0); }
+.tip-bubble::after { content: ''; position: absolute; left: 50%; margin-left: -5px;
+  border: 5px solid transparent; }
+.tip-bubble.tip-top::after { top: 100%; border-top-color: #1a2332; }
+.tip-bubble.tip-bottom::after { bottom: 100%; border-bottom-color: #1a2332; }
+@keyframes tip-in { from { opacity: 0; } to { opacity: 1; } }
+/* A field label with a definition gets this marker. Deliberately quiet: it
+   should be findable without competing with the value beside it. */
+.tip-mark { display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; margin-left: 5px; border-radius: 50%;
+  background: #dde3ea; color: #4a5764; font-size: 10px; font-weight: 700;
+  cursor: help; flex-shrink: 0; }
+.tip-mark:hover, .tip-mark:focus { background: #2E75B6; color: #fff; outline: none; }
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 12px; width: 600px; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-header { padding: 20px 24px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; color: #1B3A5C; display: flex; justify-content: space-between; align-items: center; }
@@ -637,6 +661,11 @@ let TYPE_COLORS = {
   'Manual Entry': { fill: '#fce5cd', stroke: '#b35c00', text: '#7a3e00' },
 };
 const getColor = (type) => TYPE_COLORS[type] || FALLBACK_TYPE;
+// "Deprecated" is no longer offered in any dropdown and migration 0010
+// converted the records that had it. The mapping stays so that a stray value —
+// one written through the API between the deploy and the migration, or in a
+// database restored from before it — still renders as a styled badge instead
+// of an unstyled one. Cheap insurance against a value that should not exist.
 const STATUS_BADGE = { Active: 'active', Deprecated: 'deprecated', Planned: 'planned', Broken: 'broken', 'Under Review': 'planned' };
 const CLASS_BADGE = { Confidential: 'confidential', Sensitive: 'sensitive', Internal: 'internal', Public: 'public' };
 
@@ -1023,6 +1052,64 @@ function midpointOf(points) {
   return points[points.length - 1];
 }
 
+// Where a flow's label sits.
+//
+// The midpoint is right almost everywhere, and wrong in exactly one case: a
+// SHORT flow pointing UPWARD puts the label box on top of its own arrowhead,
+// hiding the one thing that shows which way the data moves.
+//
+// The clearance is derived, not guessed. The label box is drawn 23px above its
+// anchor and is 16px tall, so it occupies [anchor-23, anchor-7]. The arrowhead
+// marker is 10 wide with refX 10, so it reaches 10px back from the tip — for an
+// upward flow, from end.y down to end.y+10. Clearing it needs
+// anchor-23 > end.y+10, so the anchor must sit at least 33px below the tip.
+// 36 leaves a little air.
+//
+// Only upward, predominantly-vertical flows move. Everything else keeps the
+// midpoint it already had, because everything else already reads correctly.
+const LABEL_CLEARANCE = 36;
+
+function pathLengthOf(points) {
+  let total = 0;
+  for (let i = 1; i < points.length; i++)
+    total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  return total;
+}
+
+// A point `dist` back along the polyline from its final point.
+function pointBackFromEnd(points, dist) {
+  for (let i = points.length - 1; i > 0; i--) {
+    const a = points[i], b = points[i - 1];
+    const seg = Math.hypot(b.x - a.x, b.y - a.y);
+    if (dist <= seg) {
+      const f = seg ? dist / seg : 0;
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+    }
+    dist -= seg;
+  }
+  return points[0];
+}
+
+// Below the clearance there is nowhere good to put the label at all: the gap
+// between the two boxes is smaller than the box's own height, so every position
+// collides with the arrowhead, a system, or both. An earlier attempt moved the
+// label *below* the anchor in that range, which hid it behind the source box —
+// so dragging two systems together made the name vanish abruptly instead of
+// being gradually covered, which is how every other flow behaves. Falling back
+// to the midpoint keeps that familiar behaviour; the arrowhead only needs
+// protecting on flows long enough to read in the first place.
+function labelPointOf(points) {
+  if (points.length < 2) return midpointOf(points);
+  const start = points[0], end = points[points.length - 1];
+  const dx = end.x - start.x, dy = end.y - start.y;
+  // Upward puts the arrowhead at the top; predominantly vertical means the
+  // label has nowhere sideways to escape to.
+  if (!(dy < 0 && Math.abs(dy) > Math.abs(dx))) return midpointOf(points);
+  const total = pathLengthOf(points);
+  if (total < LABEL_CLEARANCE) return midpointOf(points);
+  return pointBackFromEnd(points, Math.max(total / 2, LABEL_CLEARANCE));
+}
+
 // Closest point on a polyline to (px,py), and which segment it fell on — used
 // to decide where a new bend goes when someone drags the line itself.
 function closestOnPath(points, px, py) {
@@ -1285,7 +1372,7 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
             const isSel = selected && selected.type === 'flow' && selected.id === flow.flow_id;
             const adjusting = adjustFlow === flow.flow_id;
             const pts = livePoints(flow, ends);
-            const mid = midpointOf(pts);
+            const mid = labelPointOf(pts);
             return (
               <g key={flow.flow_id}
                  className={`flow-line ${isSel?'selected':''} ${adjusting?'adjusting':''}`}
@@ -1675,8 +1762,24 @@ function EditField({ label, value, onChange, type, options, invalid }) {
         aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)}>
         {options.map(o=><option key={o} value={o}>{o}</option>)}</select>{note}</div></div>
   );
+  // The box used to be followed by the word "Yes" or "No" reflecting the
+  // current value, which read as a choice being offered rather than a state —
+  // an unticked box beside the word "No" looks like "No" is what you are about
+  // to select, and ticking it made the word change, which is stranger still.
+  // The field's own label is the question; the box is the answer.
+  //
+  // Nothing explains individual fields here on purpose: field-level definitions
+  // are coming, and one mechanism for that is better than captions hard-coded
+  // at each call site.
+  //
+  // aria-label is needed because the wrapping label has no text of its own —
+  // without it the checkbox would have no accessible name at all.
   if (type === 'checkbox') return (
-    <div className="edit-field-row"><span className="field-label">{label}</span><label style={{display:'flex',alignItems:'center',gap:6,fontSize:13}}><input type="checkbox" checked={!!value} onChange={e=>onChange(e.target.checked?1:0)} /> {value ? 'Yes' : 'No'}</label></div>
+    <div className="edit-field-row"><span className="field-label">{label}</span>
+      <div style={{flex:1}}>
+        <input type="checkbox" checked={!!value} aria-label={label}
+               onChange={e=>onChange(e.target.checked?1:0)} />
+      </div></div>
   );
   return (
     <div className="edit-field-row"><span className="field-label">{label}</span>
@@ -1719,11 +1822,13 @@ const PANEL_REQUIRED = {
 };
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
+function DetailPanel({ data, type, onClose, onSave, onDelete, onRetire, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [missing, setMissing] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // null = no dialog; true = about to retire; false = about to bring back.
+  const [confirmRetire, setConfirmRetire] = useState(null);
   const bodyRef = useRef(null);
   const isOpen = !!data;
 
@@ -1917,8 +2022,28 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
                       !data.is_hidden)}>
               {data.is_hidden ? 'Show on diagram' : 'Hide from diagram'}
             </button>}
+          {/* Retire sits beside Delete because the two are easily confused and
+              the distinction matters: retiring says "this plan takes it out of
+              service" and keeps it visible, struck through; deleting says "this
+              never existed" and removes it from the picture entirely. Only
+              inside a scenario, and never for something the scenario proposed —
+              there is nothing to retire from. */}
+          {!editing && canEdit && onRetire && inScenario && ['system','flow'].includes(type) &&
+            data.change_state !== 'proposed' &&
+            <Tooltip text={data.change_state === 'removed'
+                      ? 'Stop marking this as retired by this plan. It goes back to being shown normally.'
+                      : 'Mark this as taken out of service by this plan. It stays on the diagram, faded and struck through, so the plan shows what goes as well as what arrives. Nothing is deleted.'}>
+              <button className="btn"
+                      onClick={() => setConfirmRetire(data.change_state !== 'removed')}>
+                {data.change_state === 'removed' ? 'Not retired after all' : 'Retire in this scenario'}
+              </button>
+            </Tooltip>}
           {!editing && canEdit && onDelete && ['system','flow'].includes(type) &&
-            <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>Delete</button>}
+            <Tooltip text={inScenario
+                      ? 'Delete this from the scenario entirely, as though it had never been there. To show it being taken out of service instead, use Retire.'
+                      : 'Delete this permanently.'}>
+              <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>Delete</button>
+            </Tooltip>}
           {!editing && !canEdit && <span style={{fontSize:'12px',color:'#6b6b6b'}}>
             Read-only — your role does not permit editing.</span>}
           {editing && <button className="btn btn-save" onClick={saveEdit}>Save Changes</button>}
@@ -1960,6 +2085,22 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, systems, onDrill, 
         </div>}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => { setConfirmDelete(false); onDelete(type, data); }} />}
+      {confirmRetire !== null && <ConfirmDialog
+        title={confirmRetire
+          ? (type === 'system' ? 'Retire this system in the scenario?'
+                               : 'Retire this data flow in the scenario?')
+          : 'No longer retired?'}
+        confirmLabel={confirmRetire ? 'Retire it' : 'Bring it back'}
+        message={confirmRetire
+          ? `"${titleOf()}" will be shown as being taken out of service by this plan.`
+          : `"${titleOf()}" will go back to being shown normally in this scenario.`}
+        detail={<div className="gov-hint" style={{ marginTop: 8 }}>
+          {confirmRetire
+            ? 'It stays on the diagram, faded and struck through, so the plan shows what goes as well as what arrives. Nothing is deleted, Current Architecture is untouched, and you can undo this at any time.'
+            : 'Nothing was ever deleted, so there is nothing to restore — this only changes how the scenario describes it.'}
+        </div>}
+        onCancel={() => setConfirmRetire(null)}
+        onConfirm={() => { const r = confirmRetire; setConfirmRetire(null); onRetire(type, data, r); }} />}
     </div>
   );
 }
@@ -2044,7 +2185,7 @@ function SystemEditView({ form, set, contributors, systems, systemTypes, missing
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)} invalid={bad('name')} />
       <EditField label="Type" value={form.system_type} onChange={v=>set('system_type',v)}
                  type="select" options={(systemTypes||[]).map(t=>t.type_name)} invalid={bad('system_type')} />
-      <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Deprecated','Under Review']} />
+      <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Under Review']} />
       <EditField label="Organization" value={form.organization} onChange={v=>set('organization',v)} />
       <EditField label="Managed By" value={form.managed_by} onChange={v=>set('managed_by',v)} invalid={bad('managed_by')} />
       <EditField label="Vendor" value={form.vendor} onChange={v=>set('vendor',v)} />
@@ -2212,7 +2353,7 @@ function FlowEditView({ form, set, systems, contributors, missing, inScenario })
                    onChange={v => set('proposed', !!v)} />
       )}
       <EditField label="Direction" value={form.direction} onChange={v=>set('direction',v)} type="select" options={['Inbound','Outbound','Bidirectional']} />
-      <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Deprecated','Under Review','Broken']} />
+      <EditField label="Status" value={form.status} onChange={v=>set('status',v)} type="select" options={['Active','Planned','Under Review','Broken']} />
       <EditField label="Description" value={form.description} onChange={v=>set('description',v)} type="textarea" />
     </CollapsibleSection>
 
@@ -2490,7 +2631,7 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes, inScenario }) {
                     options={(systemTypes||[]).map(t=>t.type_name)} />
           <div className="form-group"><label htmlFor="sys-status">Status</label>
             <select id="sys-status" value={form.status} onChange={e=>set('status',e.target.value)}>
-              <option>Active</option><option>Planned</option><option>Deprecated</option><option>Under Review</option>
+              <option>Active</option><option>Planned</option><option>Under Review</option>
             </select></div>
         </div>
         <div className="form-row"><div className="form-group"><label>Vendor</label><input value={form.vendor} onChange={e=>set('vendor',e.target.value)} /></div><div className="form-group"><label>Technology</label><input value={form.technology} onChange={e=>set('technology',e.target.value)} /></div></div>
@@ -3328,6 +3469,94 @@ function ReleasesScreen({ canEdit, notify, currentVersion }) {
 }
 
 // ===== Confirm dialog =====
+// ===== Tooltip =====
+// Replaces the browser's own `title` attribute, which could not be used for
+// this app's explanatory text for three reasons:
+//
+//   * **The delay is the browser's and cannot be changed** — roughly a second,
+//     and the timer restarts on every cursor movement, so it feels as though
+//     you have to find one exact spot and hold still.
+//   * **It is invisible to keyboard users.** A `title` appears on hover only,
+//     so anyone tabbing through never sees it. ACCESSIBILITY.md lists that as
+//     a gap; this closes it rather than adding another.
+//   * **It cannot be styled or measured**, so a long field definition is
+//     rendered by the browser however it likes.
+//
+// Rendered through a portal rather than as a CSS pseudo-element on the
+// trigger. The details flyout scrolls (`overflow-y: auto`), and anything drawn
+// inside it is clipped at the panel edge — which is exactly where the field
+// definitions live. A portal escapes that.
+const TOOLTIP_DELAY_MS = 120;
+
+function Tooltip({ text, children, placement = 'top' }) {
+  const [shown, setShown] = useState(false);
+  const [pos, setPos] = useState(null);
+  const anchorRef = useRef(null);
+  const timer = useRef(null);
+  // Stable id so aria-describedby can point at the bubble.
+  const idRef = useRef('tip-' + Math.random().toString(36).slice(2, 9));
+
+  const measure = () => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ left: r.left + r.width / 2, top: r.top, bottom: r.bottom });
+  };
+
+  const open = () => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => { measure(); setShown(true); }, TOOLTIP_DELAY_MS);
+  };
+  // Keyboard focus shows it at once: someone tabbing has already committed to
+  // this control and should not be made to wait.
+  const openNow = () => { clearTimeout(timer.current); measure(); setShown(true); };
+  const close = () => { clearTimeout(timer.current); setShown(false); };
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+  // A tooltip left behind by a scroll or a resize would point at nothing.
+  useEffect(() => {
+    if (!shown) return;
+    const bail = () => close();
+    window.addEventListener('scroll', bail, true);
+    window.addEventListener('resize', bail);
+    const esc = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('scroll', bail, true);
+      window.removeEventListener('resize', bail);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [shown]);
+
+  if (!text) return children;
+
+  // Clamped to the viewport so a tooltip near an edge stays readable rather
+  // than hanging off the side.
+  const W = 260;
+  const style = pos ? {
+    left: Math.min(Math.max(pos.left, W / 2 + 8), window.innerWidth - W / 2 - 8),
+    top: placement === 'bottom' ? pos.bottom + 8 : pos.top - 8,
+    maxWidth: W,
+  } : null;
+
+  return (
+    <React.Fragment>
+      <span ref={anchorRef} className="tip-anchor"
+            onMouseEnter={open} onMouseLeave={close}
+            onFocus={openNow} onBlur={close}
+            aria-describedby={shown ? idRef.current : undefined}>
+        {children}
+      </span>
+      {shown && pos && ReactDOM.createPortal(
+        <div id={idRef.current} role="tooltip"
+             className={'tip-bubble tip-' + placement} style={style}>
+          {text}
+        </div>,
+        document.body)}
+    </React.Fragment>
+  );
+}
+
 function ConfirmDialog({ title, message, detail, confirmLabel, danger, onConfirm, onCancel }) {
   return (
     <div className="modal-overlay" onClick={onCancel}>
@@ -3360,6 +3589,12 @@ function ResourcesSection({ entityType, entityId, canEdit, notify }) {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // Editing an existing resource. The API has always supported this — label,
+  // description and URL are all updatable — but nothing ever called it, so
+  // fixing a typo in a title meant deleting the resource and adding it again,
+  // losing its version history in the process.
+  const [editing, setEditing] = useState(null);     // {resource_id,...}
+  const [editForm, setEditForm] = useState({ label: '', url: '', description: '' });
   const replaceRefs = useRef({});
 
   // The field list is a fixed slot rather than an ordinary attachment. Manual
@@ -3376,6 +3611,27 @@ function ResourcesSection({ entityType, entityId, canEdit, notify }) {
       const rows = await api.post(`/api/resources/${entityType}/${entityId}/field-list`, {});
       setItems(rows);
       notify('Field list added.');
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
+  const startEdit = (r) => {
+    setEditing(r);
+    setEditForm({ label: r.label || '', url: r.url || '', description: r.description || '' });
+  };
+
+  const saveEdit = async () => {
+    // Send only what this resource can actually change: a locked label is
+    // refused by the server, and a file has no URL to set.
+    const payload = { description: editForm.description };
+    if (!editing.label_locked) payload.label = editForm.label;
+    if (editing.kind === 'link') payload.url = editForm.url;
+    setBusy(true);
+    try {
+      await api.put(`/api/resources/${editing.resource_id}`, payload);
+      setEditing(null);
+      load();
+      notify('Resource updated.');
     } catch (err) { notify(err.message, true); }
     finally { setBusy(false); }
   };
@@ -3505,17 +3761,35 @@ function ResourcesSection({ entityType, entityId, canEdit, notify }) {
                 {r.filename ? 'Upload new version' : 'Upload'}
               </button>
             </>}
+            {/* Edit changes the title, description and (for a link) the URL.
+                The file itself is replaced with "Upload new version", which
+                keeps the history; this only touches the wording around it. */}
+            {canEdit &&
+              <Tooltip text={r.label_locked
+                        ? 'Change the description. This title is fixed by the system.'
+                        : 'Change the title, description' +
+                          (r.kind === 'link' ? ' or web address' : '') +
+                          ' without losing the version history'}>
+                <button className="btn" disabled={busy}
+                        onClick={() => startEdit(r)}>Edit</button>
+              </Tooltip>}
             {canEdit && (r.filename || r.url) &&
-              <button className="btn" disabled={busy} onClick={() => clearResource(r)}
-                      title={r.label_locked
-                        ? 'Empty this slot but keep it — it is required here'
-                        : 'Empty this without removing it'}>
-                Clear</button>}
+              <Tooltip text={r.label_locked
+                        ? 'Empties this slot but keeps it, because a field list is required here. Earlier versions are kept.'
+                        : 'Empties the contents but keeps this entry in the list. Earlier versions are kept.'}>
+                <button className="btn" disabled={busy} onClick={() => clearResource(r)}>
+                  Clear</button>
+              </Tooltip>}
+            {/* Remove had a tooltip only when the label was locked, so for an
+                ordinary document or link there was nothing to discover — the
+                attribute was simply undefined. Both states explain themselves
+                now, and the contrast with Clear is the point. */}
             {canEdit && (!r.label_locked || entityType === 'data_flow') &&
-              <button className="btn" onClick={() => setConfirmDelete(r)}
-                      title={r.label_locked
-                        ? 'Remove this slot — it is optional on a data flow'
-                        : undefined}>Remove</button>}
+              <Tooltip text={r.label_locked
+                        ? 'Deletes this slot entirely. Allowed here because a field list is optional on a data flow.'
+                        : 'Deletes this entry and everything attached to it, including earlier versions.'}>
+                <button className="btn" onClick={() => setConfirmDelete(r)}>Remove</button>
+              </Tooltip>}
           </div>
           {previewing === r.resource_id && r.can_preview && (
             <div className="res-preview">
@@ -3573,6 +3847,58 @@ function ResourcesSection({ entityType, entityId, canEdit, notify }) {
             <button className="btn" onClick={() => { setAdding(null); setFile(null); }}>Cancel</button>
           </div>
         </div>)}
+
+    {/* Editing happens in a modal rather than inline, so a long description
+        has room and so it cannot be confused with the add form below. */}
+    {editing && <div className="modal-overlay"><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="res-edit-title">
+      <div className="modal-header" id="res-edit-title">
+        Edit this {editing.kind === 'link' ? 'link' : 'document'}
+        <button className="panel-close" onClick={() => setEditing(null)}
+                aria-label="Close">&times;</button></div>
+      <div className="modal-body">
+        <div className="form-group">
+          <label htmlFor="res-edit-label">Label shown in the app{editing.label_locked ? '' : ' *'}</label>
+          <input id="res-edit-label" value={editForm.label}
+                 disabled={!!editing.label_locked}
+                 onChange={e => setEditForm(f => ({ ...f, label: e.target.value }))} />
+          {/* !! matters: label_locked is an INTEGER 0/1 per the project's
+              convention, and `{0 && <div/>}` renders the number 0 rather than
+              nothing — which is exactly what appeared under this field. */}
+          {!!editing.label_locked &&
+            <div className="gov-hint">This title is fixed by the system and cannot be changed.</div>}
+        </div>
+        {editing.kind === 'link' &&
+          <div className="form-group"><label htmlFor="res-edit-url">URL *</label>
+            <input id="res-edit-url" value={editForm.url} placeholder="https://…"
+                   onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} />
+            <div className="gov-hint">
+              Changing this keeps the previous address in the version history.
+            </div>
+          </div>}
+        {editing.kind !== 'link' && editing.filename &&
+          <div className="form-group"><label>File</label>
+            <div className="gov-hint">
+              <strong>{editing.filename}</strong> — to replace the file itself,
+              close this and use <strong>Upload new version</strong>.
+            </div>
+          </div>}
+        <div className="form-group">
+          <label htmlFor="res-edit-desc">Description (optional)</label>
+          <textarea id="res-edit-desc" value={editForm.description} maxLength={500}
+                    onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder="A short note about what this is and why it matters" />
+          <div className={`char-count ${(editForm.description || '').length > 500 ? 'over' : ''}`}>
+            {(editForm.description || '').length} / 500
+          </div>
+        </div>
+      </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy} onClick={saveEdit}>
+          {busy ? 'Saving…' : 'Save changes'}</button>
+      </div>
+    </div></div>}
 
     {confirmDelete && <ConfirmDialog
       title="Remove this resource?" danger confirmLabel="Remove"
@@ -5114,7 +5440,10 @@ function AddScenarioModal({ scenarios, users, currentUserId, onClose, onSave }) 
                       : 'Nothing to focus on — that starting point has no systems.'}
                   </div>
                 )}
-                {sourceSystems.map(sy => (
+                {/* Sorted by name: the API returns them in whatever order the
+                    database produced, which for a long list makes a specific
+                    system hard to find. */}
+                {byName(sourceSystems).map(sy => (
                   <label key={sy.system_id} className="check-inline">
                     <input type="checkbox" checked={focus.includes(sy.system_id)}
                            onChange={() => toggleFocus(sy.system_id)} />
@@ -5449,6 +5778,28 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     try { await api.post('/api/flows', data); refresh(); setShowAddFlow(false); notify('Data flow added.'); }
     catch (err) { notify(err.message, true); }
   };
+  // Retiring is not deleting. The capability has existed on the server since
+  // 0.3.0 — it draws the item faded and struck through, so a plan reads as
+  // "we retire these, we add those" — but nothing ever called it, so the only
+  // way to express a retirement was to delete the item, which looked instead
+  // like it had never existed.
+  const retireRecord = useCallback(async (kind, record, retired) => {
+    const base = kind === 'system'
+      ? `/api/systems/${record.system_id}`
+      : `/api/flows/${record.flow_id}`;
+    const label = record.name || record.system_id || record.flow_id;
+    try {
+      await api.del(`${base}?mode=${retired ? 'remove' : 'restore'}`);
+      closeDetail();
+      refresh();
+      notify(retired
+        ? `"${label}" is marked as retired in this scenario.`
+        : `"${label}" is no longer marked as retired.`);
+    } catch (err) {
+      notify(err.message, true);
+    }
+  }, [refresh, notify]);
+
   const deleteRecord = useCallback(async (kind, record) => {
     const url = kind === 'system'
       ? `/api/systems/${record.system_id}`
@@ -5646,7 +5997,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
                                                 currentVersion={version} />}
           {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
             <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave}
-                         onDelete={deleteRecord}
+                         onDelete={deleteRecord} onRetire={retireRecord}
                          systems={systems} onDrill={drillIntoSchema} canEdit={canEditHere}
                          inScenario={inScenario} onSetHidden={setRecordsHidden}
                          onResetRoute={resetRoute}

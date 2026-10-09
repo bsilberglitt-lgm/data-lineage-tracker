@@ -474,16 +474,25 @@ New records are marked Proposed by default. Clear the checkbox to say "assume
 this already exists". Outside a scenario nothing can be Proposed — Current
 Architecture describes what exists today, so there is nothing to propose to.
 
-## Deleting: retire or remove?
+## Retiring versus deleting
 
-Deleting something in a scenario asks which you mean:
+These are different statements about a plan, and the record's details offer
+both:
 
-* **Retire it** — it exists today and your plan removes it. It stays visible,
-  struck through.
-* **Delete it outright** — it goes.
+* **Retire in this scenario** — it exists today and your plan takes it out of
+  service. It stays on the diagram, faded and struck through, so the plan shows
+  what goes as well as what arrives. Nothing is deleted, and **Not retired
+  after all** undoes it.
+* **Delete** — it goes, as though it had never been in the scenario. Use this
+  for something you added here and no longer want.
 
-Something you invented inside the scenario cannot be "retired", because there is
-nothing real to retire; delete it instead.
+Something invented inside the scenario cannot be retired, because there is
+nothing real to retire from; the app says so and points at Delete instead.
+
+Retiring is a scenario idea, not a status. A record's **Status** field
+describes its real-world lifecycle — Active, Planned, Under Review — while
+retiring describes what *this plan* does to it. A system can be Active today
+and still be retired by a proposal.
 
 ## Hiding is not deleting
 

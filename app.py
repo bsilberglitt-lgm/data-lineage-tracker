@@ -1148,7 +1148,7 @@ SEED_RELEASES = [
 * The Source and Destination dropdowns in a data flow's details ran off the
   edge of the panel.
 """),
-    (VERSION, "Reliability, and a note on what this is for", None, 1, 900, """\
+    ("0.4.3", "Reliability, and a note on what this is for", None, 1, 900, """\
 ## What's new in this release
 
 **An introduction in the help panel**
@@ -1168,6 +1168,49 @@ SEED_RELEASES = [
   alongside monthly and annual ones. Restoring from those backups has been
   tested rather than assumed.
 * Updates are now applied without taking the application offline.
+"""),
+    (VERSION, "Retiring, editing, and clearer buttons", None, 1, 1000, """\
+## What's new in this release
+
+**Retiring something in a scenario**
+
+* A scenario can now show that a plan **takes a system or data flow out of
+  service**, rather than only that it adds one. Open the record and choose
+  **Retire in this scenario**: it stays on the diagram, faded and struck
+  through, so the plan shows what goes as well as what arrives.
+* Nothing is deleted, Current Architecture is untouched, and you can undo it
+  with **Not retired after all**.
+* **Delete** still works exactly as before, for something the scenario
+  invented and no longer wants. Retiring is refused for those, since there is
+  nothing to retire from — the message says so and points at Delete.
+
+**Editing a document or link**
+
+* Resources have an **Edit** button. Correcting a title, a description or a web
+  address no longer means deleting the entry and adding it again, which used to
+  throw away its version history.
+* **Clear** and **Remove** now explain the difference. Clear empties an entry
+  but keeps it, which matters for a Manual Entry system's field list because
+  that one is required. Remove deletes the entry outright.
+
+**Tooltips that appear when you point at them**
+
+* Explanatory tooltips appear promptly, anywhere on the control rather than one
+  exact spot, and can be read by keyboard as well as mouse.
+* Several buttons that should have had an explanation and silently did not —
+  **Remove** among them — now have one.
+
+**Elsewhere**
+
+* The name of a data flow no longer covers its own arrowhead when the flow is
+  short and points upward.
+* Creating a scenario from another scenario and choosing to **invite the same
+  people** now actually invites them, with the roles they already had. The box
+  had never worked.
+* The systems listed under **focus on particular systems** are sorted by name.
+* **Deprecated** has been removed as a status. Nothing was using it, and
+  retiring in a scenario is now the way to express that something is going
+  away.
 """),
 ]
 
@@ -1907,10 +1950,17 @@ if HAS_TORNADO:
                 vals.append(sid)
                 conn.execute(f"UPDATE system SET {','.join(fields)} WHERE system_id=?", vals)
             if "proposed" in data and self.scenario_id is not None:
+                # Never overwrite "removed" from here. The Proposed checkbox
+                # wrote change_state unconditionally, so saving a retired
+                # record with the box clear quietly un-retired it, and with
+                # the box ticked claimed a live system was invented here.
+                # Retiring has its own action; this only moves between
+                # proposed and unchanged.
                 conn.execute(
-                    "UPDATE system SET change_state=? WHERE system_id=? AND scenario_id=?",
+                    "UPDATE system SET change_state=? "
+                    "WHERE system_id=? AND scenario_id=? AND change_state!=?",
                     (scenarios.PROPOSED if data["proposed"] else scenarios.UNCHANGED,
-                     sid, self.scenario_id))
+                     sid, self.scenario_id, scenarios.REMOVED))
             elif fields:
                 mark_modified(conn, "system", "system_id", sid, self.scenario_id)
             row = conn.execute("SELECT * FROM system WHERE system_id=?", (sid,)).fetchone()
@@ -1945,23 +1995,21 @@ if HAS_TORNADO:
             # different statement from deleting something you invented here.
             # "Removed" keeps it on the diagram, struck through, so the plan
             # reads as "we retire these, we add those" rather than as a gap.
-            if self.scenario_id is not None and \
-                    self.get_argument("mode", "") == "remove":
-                if before["change_state"] == scenarios.PROPOSED:
+            mode = self.get_argument("mode", "")
+            if self.scenario_id is not None and mode in ("remove", "restore"):
+                try:
+                    state = scenarios.set_retired(
+                        conn, "system", "system_id", sid, self.scenario_id,
+                        retired=(mode == "remove"))
+                except scenarios.RetireRefused as e:
                     conn.close()
-                    return self.fail(
-                        400, "This system only exists in the scenario, so there "
-                             "is nothing to retire. Delete it instead.")
-                conn.execute(
-                    "UPDATE system SET change_state=? WHERE system_id=? AND scenario_id=?",
-                    (scenarios.REMOVED, sid, self.scenario_id))
+                    return self.fail(400, str(e))
                 self.audit_update(conn, "system", sid, dict(before),
-                                  {**dict(before), "change_state": scenarios.REMOVED},
+                                  {**dict(before), "change_state": state},
                                   fields=["change_state"])
                 conn.commit()
                 conn.close()
-                return self.write_json({"system_id": sid,
-                                        "change_state": scenarios.REMOVED})
+                return self.write_json({"system_id": sid, "change_state": state})
 
             flow_where, flow_params = self.scope_sql()
             flows = conn.execute(
@@ -2166,10 +2214,17 @@ if HAS_TORNADO:
                 vals.append(fid)
                 conn.execute(f"UPDATE data_flow SET {','.join(fields)} WHERE flow_id=?", vals)
             if "proposed" in data and self.scenario_id is not None:
+                # Never overwrite "removed" from here. The Proposed checkbox
+                # wrote change_state unconditionally, so saving a retired
+                # record with the box clear quietly un-retired it, and with
+                # the box ticked claimed a live system was invented here.
+                # Retiring has its own action; this only moves between
+                # proposed and unchanged.
                 conn.execute(
-                    "UPDATE data_flow SET change_state=? WHERE flow_id=? AND scenario_id=?",
+                    "UPDATE data_flow SET change_state=? "
+                    "WHERE flow_id=? AND scenario_id=? AND change_state!=?",
                     (scenarios.PROPOSED if data["proposed"] else scenarios.UNCHANGED,
-                     fid, self.scenario_id))
+                     fid, self.scenario_id, scenarios.REMOVED))
             elif fields:
                 mark_modified(conn, "data_flow", "flow_id", fid, self.scenario_id)
             after_row = conn.execute("SELECT * FROM data_flow WHERE flow_id=?", (fid,)).fetchone()
@@ -2210,23 +2265,20 @@ if HAS_TORNADO:
 
                 # In a scenario, retiring an existing flow is a proposal, not a
                 # deletion: it stays on the diagram struck through.
-                if self.scenario_id is not None and \
-                        self.get_argument("mode", "") == "remove":
-                    if before["change_state"] == scenarios.PROPOSED:
-                        return self.fail(
-                            400, "This data flow only exists in the scenario, so "
-                                 "there is nothing to retire. Delete it instead.")
-                    conn.execute(
-                        "UPDATE data_flow SET change_state=? "
-                        "WHERE flow_id=? AND scenario_id=?",
-                        (scenarios.REMOVED, fid, self.scenario_id))
+                mode = self.get_argument("mode", "")
+                if self.scenario_id is not None and mode in ("remove", "restore"):
+                    try:
+                        state = scenarios.set_retired(
+                            conn, "data_flow", "flow_id", fid, self.scenario_id,
+                            retired=(mode == "remove"))
+                    except scenarios.RetireRefused as e:
+                        return self.fail(400, str(e))
                     self.audit_update(
                         conn, "data_flow", fid, dict(before),
-                        {**dict(before), "change_state": scenarios.REMOVED},
+                        {**dict(before), "change_state": state},
                         fields=["change_state"])
                     conn.commit()
-                    return self.write_json({"flow_id": fid,
-                                            "change_state": scenarios.REMOVED})
+                    return self.write_json({"flow_id": fid, "change_state": state})
                 # Its links to data elements and any attached resources go with
                 # it; nothing else references a flow.
                 conn.execute("DELETE FROM flow_element WHERE flow_id=?", (fid,))
@@ -4890,6 +4942,36 @@ if HAS_TORNADO:
                             conn, sid, systems=others, hidden=True)
                         focused = hidden["system"]
 
+                # Carry the source scenario's people across, with the roles
+                # they already had. The modal has always offered this and sent
+                # `copy_members`, but nothing here ever read it, so the box
+                # silently did nothing and the new scenario arrived with only
+                # its owner.
+                #
+                # The owner is skipped rather than demoted: they are already a
+                # member of the new scenario as its owner, and the source's own
+                # owner becomes an ordinary editor here, because owning one
+                # scenario confers nothing over another.
+                # Routed through add_members rather than inserting directly, so
+                # carried-over people get the same treatment as named invitees:
+                # the active-account check, the role validation, a notification
+                # telling them they now have access, and the duplicate guard
+                # that stops someone both carried over and explicitly invited
+                # from breaking the primary key.
+                copied_members = 0
+                if start == "scenario" and source_id and data.get("copy_members"):
+                    carried = [
+                        # The source's owner becomes an ordinary editor here:
+                        # owning one scenario confers nothing over another, and
+                        # a scenario has exactly one owner — whoever made it.
+                        {"user_id": m["user_id"],
+                         "role": (scenarios.S_EDITOR if m["role"] == scenarios.S_OWNER
+                                  else m["role"])}
+                        for m in conn.execute(
+                            "SELECT user_id, role FROM scenario_member WHERE scenario_id=?",
+                            (source_id,)).fetchall()]
+                    copied_members = self.add_members(conn, sid, carried, now)
+
                 # Invitees named at creation time.
                 invited = self.add_members(conn, sid, data.get("invite") or [], now)
 
@@ -4903,6 +4985,8 @@ if HAS_TORNADO:
                                 f"{counts.get('data_flow', 0)} data flow(s)")
                 if focused:
                     summary += f", {focused} hidden to focus the diagram"
+                if copied_members:
+                    summary += f", {copied_members} collaborator(s) carried over"
                 # One event for the whole clone, per the bulk-operation rule.
                 audit.record_event(
                     conn, self.current_user, "create", "scenario", sid,
@@ -4914,6 +4998,7 @@ if HAS_TORNADO:
                 payload = scenario_payload(conn, created, self.current_user)
                 payload["copied"] = counts
                 payload["invited"] = invited
+                payload["copied_members"] = copied_members
                 payload["hidden_for_focus"] = focused
             finally:
                 conn.close()
@@ -4935,6 +5020,14 @@ if HAS_TORNADO:
                     "SELECT * FROM app_user WHERE user_id=? AND is_active=1",
                     (uid,)).fetchone()
                 if not user:
+                    continue
+                # Already a member: skip rather than insert. scenario_member is
+                # keyed on (scenario_id, user_id), so a second insert for the
+                # same person is a 500 rather than a no-op — reachable as soon
+                # as copy_members and an explicit invite name the same person.
+                if conn.execute(
+                        "SELECT 1 FROM scenario_member WHERE scenario_id=? AND user_id=?",
+                        (sid, uid)).fetchone():
                     continue
                 conn.execute(
                     """INSERT INTO scenario_member

@@ -189,6 +189,39 @@ have reordered or spliced JSX rather than edited it in place, do not trust the
 scan alone: count braces, parens and `<g>` openers against closers over the
 region you touched, and run the Docker check before handing it over.
 
+### `{0 && <div/>}` renders a zero
+
+Boolean-ish columns are `INTEGER` 0/1 by convention (see above), and JSX renders
+the number `0` rather than nothing. So this puts a stray "0" on the page:
+
+```jsx
+{record.label_locked && <div className="gov-hint">…</div>}
+```
+
+Write `{!!record.label_locked && …}` or a ternary. This reached Ben in 0.4.4,
+under the resource edit form's label field. The INTEGER convention makes it a
+standing hazard rather than a one-off, and it is invisible to
+`tools/check_jsx.py` — the JSX is perfectly valid.
+
+### Tooltips: not the `title` attribute
+
+Explanatory text uses the `Tooltip` component, not `title`. Three reasons, all
+found the hard way:
+
+- **The browser owns the delay** — about a second — and the timer restarts on
+  every cursor movement, so a `title` feels like it needs one exact spot and a
+  steady hand.
+- **It is invisible to keyboard users.** `ACCESSIBILITY.md` lists that gap;
+  `Tooltip` shows on focus as well as hover and sets `aria-describedby`.
+- **A conditional `title` silently disappears.** The Remove button on a
+  resource had `title={locked ? '…' : undefined}`, so for ordinary documents
+  there was no tooltip at all and nothing to discover.
+
+`Tooltip` renders through a **portal**, deliberately. The details flyout
+scrolls, so anything drawn inside it is clipped at the panel edge — which is
+where field definitions will live. It sits at `z-index: 200`, above the modal
+overlay at 100.
+
 ### SVG has no z-index
 
 Paint order *is* stacking order: whatever is written later in the document is

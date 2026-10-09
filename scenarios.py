@@ -57,6 +57,58 @@ COPY_ON_WRITE_TABLES = ["data_element", "contributor", "schema_snapshot",
                         "schema_table", "schema_column"]
 
 
+class RetireRefused(Exception):
+    """Retiring or restoring was not possible. The message is shown to the user."""
+
+
+def set_retired(conn, table, pk_column, pk_value, scenario_id, retired):
+    """Mark a scenario record as retired by this plan, or bring it back.
+
+    Returns the new change state.
+
+    Retiring and restoring live here together, in one function, because they
+    are a single piece of reasoning about what a scenario *means* and they used
+    to disagree. Two rules:
+
+    * **Something the scenario itself proposed cannot be retired.** There is
+      nothing to retire — it does not exist outside the plan — so the honest
+      action is to delete it. Retiring it would draw a struck-through box for
+      something that was never there.
+    * **Restoring returns a record to ``unchanged``, not to ``modified``.**
+      Whether the row was edited before being retired is no longer knowable
+      once the state has been overwritten, and claiming "modified" when
+      nothing differs from live would be a lie in the change set. If it is
+      edited again afterwards, ``mark_modified`` will say so truthfully.
+    """
+    if scenario_id is None:
+        raise RetireRefused("Retiring only applies inside a scenario.")
+    row = conn.execute(
+        f"SELECT change_state FROM {table} "
+        f"WHERE {pk_column}=? AND scenario_id=?",
+        (pk_value, scenario_id)).fetchone()
+    if not row:
+        raise RetireRefused("Not found in this scenario.")
+    state = row["change_state"]
+
+    if retired:
+        if state == PROPOSED:
+            raise RetireRefused(
+                "This only exists in the scenario, so there is nothing to "
+                "retire. Delete it instead.")
+        if state == REMOVED:
+            return REMOVED                      # already there; not an error
+        new_state = REMOVED
+    else:
+        if state != REMOVED:
+            raise RetireRefused("This is not retired, so there is nothing to bring back.")
+        new_state = UNCHANGED
+
+    conn.execute(
+        f"UPDATE {table} SET change_state=? WHERE {pk_column}=? AND scenario_id=?",
+        (new_state, pk_value, scenario_id))
+    return new_state
+
+
 class ScenarioError(Exception):
     """Raised when a scenario rule is broken. Carries an HTTP status.
 
