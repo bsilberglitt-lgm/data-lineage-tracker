@@ -91,11 +91,24 @@ ignored, so a checkbox can never look saved when it isn't.
 `modified` is detected automatically: edit a copied record and it flips. Editing
 a proposed record leaves it proposed, because it is still new.
 
-**Deleting inside a scenario asks which you mean**, as you chose: retire
-something that exists today (becomes `removed`, stays visible so the plan reads
-as "we retire these, we add those"), or delete outright. Trying to *retire*
-something that only ever existed in the scenario is refused with an explanation,
-since there is nothing real to retire.
+**Retiring and deleting are separate actions**, as you chose. Retiring
+something that exists today makes it `removed` — it stays visible so the plan
+reads as "we retire these, we add those" — while deleting removes it outright.
+Trying to *retire* something that only ever existed in the scenario is refused
+with an explanation, since there is nothing real to retire.
+
+Both directions live in `scenarios.set_retired()`, and `DELETE` takes
+`mode=remove` or `mode=restore`. They were separated deliberately: retiring was
+one-way until 0.4.4, because `mark_modified` leaves `removed` alone on purpose,
+so a mis-click could not be undone without rebuilding the scenario. Restoring
+returns a record to `unchanged` rather than `modified`, because whether it had
+local edits before being retired is no longer knowable, and claiming "modified"
+when nothing differs from live would misreport the change set.
+
+**The Proposed checkbox does not touch a retired record.** It used to write
+`change_state` unconditionally, so saving a retired system with the box clear
+quietly un-retired it, and with the box ticked claimed a live system had been
+invented in the scenario.
 
 ---
 

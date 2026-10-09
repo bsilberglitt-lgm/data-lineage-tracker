@@ -261,6 +261,24 @@ Sign in as a **SuperAdmin** and confirm each:
   something that is not an image — rename a `.txt` to `.png` — and confirm it
   is refused straight away. Then **Remove** it, save, and confirm both screens
   go back to the title
+- [ ] **Retire in a scenario**: open a system copied from Current Architecture,
+  choose **Retire in this scenario**, and confirm it stays on the diagram faded
+  and struck through. **Not retired after all** should undo it. On something the
+  scenario itself proposed, Retire should be absent. Check Current Architecture
+  is unaffected, and that saving the record with the **Proposed** box changed
+  does not quietly un-retire it
+- [ ] **Edit a resource**: correct the title, description and — on a link — the
+  web address, and confirm the version history survives. Check **Clear** and
+  **Remove** both explain themselves on hover
+- [ ] **Tooltips** appear promptly, from anywhere on the button rather than one
+  spot, and appear when you reach a control by **Tab** as well as by mouse
+- [ ] **Short upward data flow**: place two systems almost on top of each other
+  with a flow from the lower to the upper, and confirm the label does not cover
+  the arrowhead. Check a long flow and a sideways flow still look as they did
+- [ ] **Invite the same people**: branch a scenario that has collaborators, tick
+  the box, and confirm they arrive with the roles they had. Try it with someone
+  both carried over and separately invited — it should not error
+- [ ] **Status** no longer offers Deprecated, for systems or data flows
 - [ ] Sign out, and confirm you are returned to the sign-in page
 
 Then, in a **private/incognito window**, sign in as a **Viewer** test account:

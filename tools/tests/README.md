@@ -17,14 +17,23 @@ it, and they are kept so the same bug cannot come back quietly:
 | `t_publish.py` | Publishing a release: a draft is re-seeded from the code, a published one is never overwritten, and the what's-new marker is left so the modal fires |
 | `t_branding.py` | The logo: only real PNG/JPEG bytes are stored, both caps hold, the image is public but everything else is SuperAdmin, and the ETag changes when the image does |
 | `t_autoname.js` | The generated data flow name follows the two systems while it is still generated, and never overwrites one the user typed |
+| `t_044.py` | Retiring and un-retiring in a scenario; the Proposed box not clobbering it; copy_members with roles and overlapping invites; editing a resource's label, description and URL |
+| `t_labelpos.js` | Where a flow's label sits: clear of the arrowhead on short upward flows, unchanged everywhere else |
+| `t_migration_0010.py` | The Deprecated conversion, and that the original value is preserved in the audit log |
 
-Two are odd ones out. `t_publish.py` drives `ensure_releases()` directly rather
-than the HTTP API, so it needs no running server — only the harness database.
-`t_autoname.js` needs neither: it reads the naming rules straight out of
-`index.html` and replays them in Node, which is the only way to exercise that
-logic without a browser.
+Four need no running server. `t_publish.py` and `t_migration_0010.py` drive the
+code directly rather than the HTTP API; the two JavaScript suites read geometry
+and naming rules straight out of `index.html` and replay them in Node, which is
+the only way to exercise browser-only logic here.
+
+`t_migration_0010.py` is worth a note: the harness builds its schema by
+extracting DDL from the migrations, so a migration that only moves *data* is
+invisible to it. That suite runs the migration's real SQL against SQLite with a
+stub `op`, which is as close as the sandbox gets.
 
     node tools/tests/t_autoname.js
+    node tools/tests/t_labelpos.js
+    python3 tools/tests/t_migration_0010.py
 
     PYTHONPATH=/tmp/h2/fakelibs FAKE_SQLITE=/tmp/h2/test.db \
       DATABASE_URL=postgresql://fake/fake python3 tools/tests/t_publish.py
