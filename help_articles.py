@@ -613,6 +613,82 @@ is being planned without opening each one.
 """,
     },
     {
+        "id": "field-definitions",
+        "title": "Explaining what a field means",
+        "summary": "Writing definitions that appear as tooltips beside fields, "
+                   "so the meaning travels with the form.",
+        "screens": ["preferences"],
+        "min_role": permissions.SUPERADMIN,
+        "keywords": ["definition", "definitions", "tooltip", "help text",
+                     "field", "glossary", "meaning", "explain", "data dictionary"],
+        "body": """\
+Some field names explain themselves. *Name*, *Email*, *Organization* need no
+help. Others carry a precise meaning that only the person who set the policy
+knows — *Disclosure Avoidance*, *Regulatory Driver*, *Validation at Entry* —
+and that meaning usually lives in a document nobody opens while filling in a
+form.
+
+A definition written here appears as a small **information marker** beside that
+field in the details panel, for every user. Point at it or reach it with the
+**Tab** key and the definition appears.
+
+## Writing one
+
+**Preferences → General → Field definitions.** Choose a field from the list,
+which shows where each one lives:
+
+    Data Flow → Transfer Details → Frequency
+
+That path matters because a bare label is not enough to choose from. There are
+seventy-seven fields, *Classification* exists on both systems and data flows,
+and *Format* means different things in different sections.
+
+Write a sentence or two in the words someone filling the field in would use,
+and save. A tick in the list marks the fields that already have a definition,
+and the count beside it shows how many are done — the gaps are the point as
+much as the definitions.
+
+To remove one, clear the box and save, or use **Remove definition**.
+
+## One definition across record types
+
+Some fields exist on more than one kind of record. **Data Steward** is a field
+on systems, data flows and data elements; eleven fields are like this.
+
+When you pick one of those, there is a tick box: **use one definition
+everywhere this field appears**. Tick it and you are editing a single shared
+definition — change it once and all three update. The list of definitions marks
+these as **shared**.
+
+Leave it clear and you are defining the field for that record type only, which
+is right where the meaning genuinely differs: a system's **Description** says
+what the system is for, while a data flow's says what the flow carries.
+
+You can do both. A record type's own definition overrides the shared one, so
+Data Steward can be defined once for everything while a data flow says
+something more specific. Remove the override and the shared wording reappears —
+nothing is lost by trying it.
+
+## One definition, every spelling
+
+A few fields are labelled slightly differently depending on where they appear:
+a classification reads *Classification* in the details panel and *Data
+Classification* in the Add window. These are the same field — the application
+stores them in one place — so **one definition covers all of its labels**.
+Preferences tells you when a field has more than one spelling.
+
+## What this is not
+
+It is not a data dictionary for the data itself. A definition here explains
+**the field on the form** — what to put in it and why — rather than what a
+particular system's column contains. For that, use a data element, which is
+defined once and referenced wherever it travels.
+
+Changes are recorded in the audit log like any other, so it is clear who
+defined what and when.
+""",
+    },
+    {
         "id": "branding",
         "title": "Adding your logo",
         "summary": "Uploading a logo, where it can sit, and what makes one look "

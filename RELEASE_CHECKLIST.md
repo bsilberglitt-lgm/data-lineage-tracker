@@ -145,6 +145,17 @@ Run all of these. They are ordered cheapest-first.
   python3 tools/check_jsx.py
   ```
 
+- [ ] **1b. Field catalogue is current** — it is generated from the UI, so a
+  field added or relabelled since the last run leaves it stale, and a stale
+  catalogue means that field cannot be given a definition:
+
+  ```bash
+  python3 tools/gen_field_catalog.py --check
+  ```
+
+  If it reports being out of date, run it without `--check` and commit the
+  result.
+
 - [ ] **2. Real Babel compile** (authoritative — this is the compiler the
   browser uses)
 
@@ -279,6 +290,23 @@ Sign in as a **SuperAdmin** and confirm each:
   the box, and confirm they arrive with the roles they had. Try it with someone
   both carried over and separately invited — it should not error
 - [ ] **Status** no longer offers Deprecated, for systems or data flows
+- [ ] **Field definitions**: in Preferences → General, pick a field, write a
+  definition and save. Open a record of that type and confirm an information
+  marker appears beside the field in **both** the read and the edit view, and
+  that pointing at it and reaching it with **Tab** both show the text. Pick a
+  field whose label differs by view — *Classification* on a system — and check
+  the marker appears in both places from the single definition. Then clear it
+  and confirm the marker disappears
+- [ ] **Shared definitions**: pick **Data Steward**, tick *use one definition
+  everywhere this field appears*, and save. Confirm the marker shows the same
+  text on a system, a data flow and a data element. Then write a different
+  definition for the data flow alone and confirm it overrides there while the
+  others keep the shared wording; remove that override and the shared wording
+  should reappear
+- [ ] **Person-picker fields appear in the list**: *Data Steward* under System →
+  Data Management, and *Owner* and *Data Steward* under Data Flow → Ownership.
+  Those are drawn by a different component and were missing from the catalogue
+  at first
 - [ ] Sign out, and confirm you are returned to the sign-in page
 
 Then, in a **private/incognito window**, sign in as a **Viewer** test account:

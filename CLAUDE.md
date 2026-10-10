@@ -189,6 +189,51 @@ have reordered or spliced JSX rather than edited it in place, do not trust the
 scan alone: count braces, parens and `<g>` openers against closers over the
 region you touched, and run the Docker check before handing it over.
 
+### `field_catalog.py` is generated — do not edit it
+
+`tools/gen_field_catalog.py` parses `static/index.html` and writes
+`field_catalog.py`: every field a record has, its section, and the label each
+surface uses. Regenerate it after adding, removing or relabelling a field:
+
+```bash
+python3 tools/gen_field_catalog.py            # write it
+python3 tools/gen_field_catalog.py --check    # fail if stale (run before commit)
+```
+
+Generated rather than hand-written because a hand-kept list of 77 fields drifts
+the first time someone adds a field and forgets it — and the failure is silent:
+the new field simply cannot be given a definition, with no error anywhere.
+Every field already states its own database column at its call site, so the
+list is derived from what is actually rendered.
+
+**Keyed on the column, never the label.** The same column is labelled
+differently depending on where it is drawn:
+
+    system.encryption_at_rest    edit "Encrypt at Rest" / read "Encryption at Rest"
+    data_flow.transfer_method    edit "Method" / modal "Transfer Method"
+
+Seventeen of the 77 have more than one spelling. A definition keyed on text
+would attach to one view and be missing from the others, which looks like the
+feature half-working. The server resolves every spelling to one column and
+emits the definition under each, so a component can look itself up knowing only
+the label it was handed — which is what makes this work without editing all 81
+field call sites.
+
+**Not every field is an `EditField`.** `ContributorSelect` and
+`ContributorField` draw the person pickers, and the first version of the
+generator knew only about `EditField` — so six fields, Data Steward among them,
+were absent from the catalogue with no error anywhere, and could not be given a
+definition. The generator now **fails** on any labelled component it does not
+recognise rather than quietly producing a short list. Add new field components
+to `EDIT_COMPONENTS` / `READ_COMPONENTS`.
+
+**Shared definitions use `entity_type = "*"`.** A row stored that way applies
+to every record type carrying the column, and a row for a specific record type
+overrides it (`effective_definition`). Eleven columns appear on more than one
+record type; that is what lets Data Steward be defined once for all three while
+Description stays different per type. No schema change was needed — the primary
+key already allowed it.
+
 ### `{0 && <div/>}` renders a zero
 
 Boolean-ish columns are `INTEGER` 0/1 by convention (see above), and JSX renders
@@ -202,6 +247,31 @@ Write `{!!record.label_locked && …}` or a ternary. This reached Ben in 0.4.4,
 under the resource edit form's label field. The INTEGER convention makes it a
 standing hazard rather than a one-off, and it is invisible to
 `tools/check_jsx.py` — the JSX is perfectly valid.
+
+### Reused CSS classes carry their original layout assumptions
+
+`.form-group input` sets `width: 100%` with padding and a border, and
+`.form-group label` sets `display: block`. Both are more specific than
+`.check-inline`, so a checkbox row dropped into a `form-group` gets stretched
+across the full width and its caption wraps to the next line — the box ends up
+looking stranded at the right-hand end of the line above its own text. This
+reached Ben in 0.5.0, on the "Use one definition everywhere this field appears"
+toggle.
+
+`.form-group label.check-inline` and `.check-inline input[type="checkbox"]`
+now out-specify both, so the pattern is safe wherever it is used.
+
+The same release produced the same bug from the other direction: the
+"Already defined" list reused `.res-title-link`, which is `flex: 1` because a
+resource row wants the title to take the slack and push its buttons to the
+right edge. In a row that ends with an information marker and a badge, that
+stretch flung both to the far side of the panel. `.fd-row .res-title-link`
+resets it to `flex: 0 1 auto`.
+
+The lesson for both: a class carries the layout assumptions of the place it
+was written for. Before reusing one, read what it does in a flex context, not
+just what it looks like. Nothing automated catches a bug of this shape — the
+JSX is valid, the API is correct, and every suite passes. Look at the page.
 
 ### Tooltips: not the `title` attribute
 

@@ -20,6 +20,7 @@ it, and they are kept so the same bug cannot come back quietly:
 | `t_044.py` | Retiring and un-retiring in a scenario; the Proposed box not clobbering it; copy_members with roles and overlapping invites; editing a resource's label, description and URL |
 | `t_labelpos.js` | Where a flow's label sits: clear of the arrowhead on short upward flows, unchanged everywhere else |
 | `t_migration_0010.py` | The Deprecated conversion, and that the original value is preserved in the audit log |
+| `t_fielddefs.py` | Field definitions: one definition found under every spelling of its field, the same label on two record types kept separate, permissions, and the audit trail |
 
 Four need no running server. `t_publish.py` and `t_migration_0010.py` drive the
 code directly rather than the HTTP API; the two JavaScript suites read geometry

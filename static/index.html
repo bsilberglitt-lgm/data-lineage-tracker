@@ -31,6 +31,15 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
   border-radius: 4px; background: #fff; max-width: 260px; }
 .check-inline { display: flex; align-items: center; gap: 6px; font-size: 13px;
   margin: 6px 0; cursor: pointer; }
+/* A checkbox row inside a .form-group has to beat two rules written for text
+   inputs: `.form-group label` is display:block, which outranks .check-inline's
+   flex on specificity, and `.form-group input` sets width:100% with padding and
+   a border — which stretches the checkbox across the whole line and pushes its
+   caption onto the next one, so the box looks stranded at the right. Both
+   selectors below are deliberately more specific than those. */
+.form-group label.check-inline { display: flex; }
+.check-inline input[type="checkbox"] { width: auto; flex: 0 0 auto;
+  padding: 0; border: none; border-radius: 0; margin: 0; }
 .pick-list { max-height: 190px; overflow-y: auto; border: 1px solid #dde3ea;
   border-radius: 4px; padding: 8px 10px; margin: 6px 0 12px; background: #fff; }
 .invite-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -175,6 +184,28 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .logo-meta b { display: block; color: #1a2332; font-size: 13px; }
 .logo-buttons { display: flex; gap: 8px; margin-bottom: 10px; }
 .logo-hint { font-size: 11.5px; color: #6b6b6b; line-height: 1.55; }
+/* One line per definition: the name, its marker, and whether it is shared.
+   The text itself lives on the marker — with 80 fields definable, printing
+   every definition in full pushed the picker off the screen. */
+.fd-row { display: flex; align-items: center; gap: 5px; padding: 5px 0;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #f0f0f0; }
+.fd-row:last-child { border-bottom: none; }
+/* `.res-title-link` is `flex: 1` where it was first used — a resource row that
+   wants the title to take up the slack and push its buttons to the right edge.
+   Here the opposite is wanted: the name shrinks to its text so the marker and
+   the badge sit immediately after it. `min-width: 0` lets a long name wrap
+   rather than force the row wider than the panel. */
+.fd-row .res-title-link { flex: 0 1 auto; min-width: 0; font-size: 12px;
+  text-align: left; }
+/* The sharing toggle, boxed so it reads as a decision rather than as another
+   line of hint text. */
+.fd-share { background: #f5f8fc; border: 1px solid #dde3ea; border-radius: 6px;
+  padding: 9px 11px; margin-bottom: 12px; }
+.fd-share .check-inline { margin: 0 0 4px; }
+.fd-shared { font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; background: #eaf2fb; color: #1B3A5C;
+  border-radius: 3px; padding: 1px 5px; margin-left: 6px; }
 .logo-unsaved { text-transform: none; letter-spacing: 0; font-weight: 600;
   background: #fff3cd; color: #856404; border-radius: 3px; padding: 1px 6px;
   margin-left: 8px; }
@@ -542,7 +573,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 // Uses the classic JSX runtime (React.createElement) — React is loaded globally
 // above. Do not switch to the automatic runtime: it emits `import` statements
 // that cannot run in this inline (non-module) script.
-const { useState, useEffect, useCallback, useRef } = React;
+const { useState, useEffect, useCallback, useRef, useContext, useMemo } = React;
 
 // ===== Session-aware API client =====
 // The CSRF token is issued at login and must accompany every state-changing
@@ -733,7 +764,7 @@ function ContributorField({ label, value, contributors }) {
 }
 function ContributorSelect({ label, value, onChange, contributors }) {
   return (
-    <div className="edit-field-row"><span className="field-label">{label}</span>
+    <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
       <select className="edit-select" value={value || ''} onChange={e => onChange(e.target.value || null)}>
         <option value="">— none —</option>
         {(contributors || []).map(c =>
@@ -1752,12 +1783,12 @@ function EditField({ label, value, onChange, type, options, invalid }) {
   const bad = invalid ? ' field-error' : '';
   const note = invalid ? <div className="field-error-msg">This field is required</div> : null;
   if (type === 'textarea') return (
-    <div className="edit-field-row"><span className="field-label">{label}</span>
+    <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
       <div style={{flex:1}}><textarea className={'edit-textarea'+bad} value={value||''}
         aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)} />{note}</div></div>
   );
   if (type === 'select') return (
-    <div className="edit-field-row"><span className="field-label">{label}</span>
+    <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
       <div style={{flex:1}}><select className={'edit-select'+bad} value={value||''}
         aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)}>
         {options.map(o=><option key={o} value={o}>{o}</option>)}</select>{note}</div></div>
@@ -1775,21 +1806,23 @@ function EditField({ label, value, onChange, type, options, invalid }) {
   // aria-label is needed because the wrapping label has no text of its own —
   // without it the checkbox would have no accessible name at all.
   if (type === 'checkbox') return (
-    <div className="edit-field-row"><span className="field-label">{label}</span>
+    <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
       <div style={{flex:1}}>
         <input type="checkbox" checked={!!value} aria-label={label}
                onChange={e=>onChange(e.target.checked?1:0)} />
       </div></div>
   );
   return (
-    <div className="edit-field-row"><span className="field-label">{label}</span>
+    <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
       <div style={{flex:1}}><input className={'edit-input'+bad} value={value||''}
         aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)} />{note}</div></div>
   );
 }
 
 function ReadField({ label, value, multiline }) {
-  return <div className="field-row"><span className="field-label">{label}</span><span className={`field-value${multiline?' multiline':''}`}>{value || '—'}</span></div>;
+  return <div className="field-row">
+    <span className="field-label">{label}<FieldInfo label={label} /></span>
+    <span className={`field-value${multiline?' multiline':''}`}>{value || '—'}</span></div>;
 }
 
 function ClassificationBadge({ value }) {
@@ -1822,13 +1855,18 @@ const PANEL_REQUIRED = {
 };
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, onClose, onSave, onDelete, onRetire, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
+function DetailPanel({ data, type, fieldDefs, onClose, onSave, onDelete, onRetire, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [missing, setMissing] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // null = no dialog; true = about to retire; false = about to bring back.
   const [confirmRetire, setConfirmRetire] = useState(null);
+  // Memoised so the provider does not hand every field a new object on each
+  // keystroke, which would re-render all 30-odd of them while typing.
+  const defsContext = useMemo(
+    () => ({ entity: PANEL_ENTITY[type] || null, defs: fieldDefs || {} }),
+    [type, fieldDefs]);
   const bodyRef = useRef(null);
   const isOpen = !!data;
 
@@ -2049,6 +2087,7 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, onRetire, systems,
           {editing && <button className="btn btn-save" onClick={saveEdit}>Save Changes</button>}
           {editing && <button className="btn" onClick={cancelEdit}>Cancel</button>}
         </div>
+        <FieldDefs.Provider value={defsContext}>
         <div className="panel-body" ref={bodyRef}>
           {editing && missing.length > 0 && <div className="form-error-summary" role="alert">
             Please complete: {(PANEL_REQUIRED[type] || [])
@@ -2072,6 +2111,7 @@ function DetailPanel({ data, type, onClose, onSave, onDelete, onRetire, systems,
           {type === 'contributor' && !editing && <ContributorReadView data={data} />}
           {type === 'contributor' && editing && <ContributorEditView form={form} set={set} missing={missing} />}
         </div>
+        </FieldDefs.Provider>
       </>}
       {confirmDelete && <ConfirmDialog
         title={type === 'system' ? 'Delete this system?' : 'Delete this data flow?'}
@@ -3469,6 +3509,49 @@ function ReleasesScreen({ canEdit, notify, currentVersion }) {
 }
 
 // ===== Confirm dialog =====
+// The details panel's own type names versus the catalogue's. The catalogue is
+// keyed on database tables, so "flow" and "element" need translating; schema
+// tables and columns map to nothing, which is how they end up with no markers.
+const PANEL_ENTITY = { system: 'system', flow: 'data_flow',
+                       element: 'data_element', contributor: 'contributor' };
+
+// ===== Field definitions =====
+// A SuperAdmin can write a definition for any field; it then appears as a
+// marker beside that field's label, for everyone, in both the read and edit
+// views of the details panel.
+//
+// Delivered through context rather than by passing props down, because there
+// are 81 field call sites across four record types and editing every one of
+// them would have been the riskiest part of this feature by a wide margin.
+// `EditField` and `ReadField` already receive the label; the entity comes from
+// the provider, and together those are enough to look a definition up.
+//
+// The lookup is keyed "entity|label" and resolved on the server. The same
+// column is labelled differently in different views — "Encrypt at Rest" in the
+// edit view, "Encryption at Rest" in the read view — so the server emits the
+// definition under every spelling the catalogue knows. A browser-side key
+// would have attached a definition to one view and missed the other.
+const FieldDefs = React.createContext({ entity: null, defs: {} });
+
+function definitionFor(ctx, label) {
+  if (!ctx || !ctx.entity || !label) return null;
+  return ctx.defs[ctx.entity + '|' + label] || null;
+}
+
+// The marker. Quiet by design: it should be findable without competing with
+// the value beside it, and it must not shift the row's layout when absent.
+function FieldInfo({ label }) {
+  const ctx = useContext(FieldDefs);
+  const text = definitionFor(ctx, label);
+  if (!text) return null;
+  return (
+    <Tooltip text={text}>
+      <span className="tip-mark" tabIndex={0} role="img"
+             aria-label={`What "${label}" means`}>i</span>
+    </Tooltip>
+  );
+}
+
 // ===== Tooltip =====
 // Replaces the browser's own `title` attribute, which could not be used for
 // this app's explanatory text for three reasons:
@@ -4199,7 +4282,7 @@ function AddContributorModal({ onClose, onSave }) {
 }
 
 // ===== Preferences (SuperAdmin) =====
-function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
+function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onDefinitionsChanged }) {
   const [prefs, setPrefs] = useState([]);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
@@ -4308,6 +4391,8 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
         </div>
         {/* The logo belongs with the title and subtitle it sits beside. */}
         {cat === 'General' &&
+          <FieldDefinitionsEditor notify={notify} onChanged={onDefinitionsChanged} />}
+        {cat === 'General' &&
           <LogoEditor notify={notify} logo={logo} limits={logoLimits}
                       pending={pendingLogo} setPending={setPendingLogo}
                       pendingRemove={pendingRemove} setPendingRemove={setPendingRemove}
@@ -4323,6 +4408,221 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged }) {
     {!categories.includes('Password policy') &&
       <SystemTypesEditor notify={notify} onChanged={onTypesChanged} />}
   </div></div>);
+}
+
+// ===== Field definitions (SuperAdmin, shown on the Preferences screen) =====
+// Writing a definition for a field, which then appears as a tooltip beside
+// that field for every user.
+//
+// The picker shows the full path — "Data Flow → Transfer Details → Frequency"
+// — because a bare label is not enough to choose from: there are 77 fields,
+// "Classification" appears on both systems and data flows, and "Format" means
+// different things in different sections. The list is grouped by record type
+// and then ordered exactly as the details panel renders it, so finding a field
+// here matches the experience of looking at it there.
+function FieldDefinitionsEditor({ notify, onChanged }) {
+  const [fields, setFields] = useState([]);
+  const [entityLabels, setEntityLabels] = useState({});
+  const [maxLength, setMaxLength] = useState(600);
+  const [chosen, setChosen] = useState('');        // "entity|column"
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  // Shared definitions: the text for a column, used by every record type that
+  // has it. Eleven columns appear on more than one — Data Steward on three —
+  // and keeping those in step by hand means they drift apart.
+  const [shared, setShared] = useState({});
+  const [useShared, setUseShared] = useState(false);
+
+  const load = useCallback(() => {
+    api.get('/api/field-catalog')
+      .then(d => {
+        setFields(d.fields || []);
+        setShared(d.shared || {});
+        setEntityLabels(d.entity_labels || {});
+        setMaxLength(d.max_length || 600);
+      })
+      .catch(e => notify(e.message, true));
+  }, [notify]);
+  useEffect(() => { load(); }, [load]);
+
+  const keyOf = (f) => f.entity + '|' + f.column;
+  const current = fields.find(f => keyOf(f) === chosen) || null;
+
+  // Selecting a field loads whatever it already says, so the box is an edit
+  // rather than a blank slate that silently overwrites.
+  const pick = (key) => {
+    setChosen(key);
+    const f = fields.find(x => keyOf(x) === key);
+    if (!f) { setDraft(''); setUseShared(false); return; }
+    // Sharing is the default for a field that appears on several record types:
+    // that is the common case — Data Steward means the same thing wherever it
+    // is — and defaulting to per-type would quietly produce three copies that
+    // then drift. A field with its own wording already opens in per-type mode,
+    // so an existing override is never silently turned into a shared edit.
+    const sharable = (f.shared_with || []).length > 0;
+    const isShared = sharable && !f.own_definition;
+    setUseShared(isShared);
+    setDraft(isShared ? (shared[f.column] || '') : (f.own_definition || ''));
+  };
+
+  // Switching the toggle swaps which text is being edited, rather than
+  // carrying the draft across — the two are different records and conflating
+  // them would silently overwrite one with the other.
+  const toggleShared = (on) => {
+    setUseShared(on);
+    if (!current) return;
+    setDraft(on ? (shared[current.column] || '') : (current.own_definition || ''));
+  };
+
+  const save = async () => {
+    if (!current) return;
+    setBusy(true);
+    try {
+      await api.put('/api/field-catalog', {
+        entity: useShared ? '*' : current.entity,
+        column: current.column,
+        definition: draft,
+      });
+      notify(draft.trim() ? 'Definition saved.' : 'Definition removed.');
+      load();
+      // The flyout keeps its own copy, so tell it to re-read.
+      onChanged && onChanged();
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
+  const defined = fields.filter(f => f.definition);
+  // Grouped for the dropdown; insertion order is the render order from the
+  // catalogue, which the browser preserves for string keys.
+  const groups = {};
+  fields.forEach(f => {
+    const g = (entityLabels[f.entity] || f.entity) + ' → ' + f.section;
+    (groups[g] = groups[g] || []).push(f);
+  });
+
+  return (
+    <div className="pref-group">
+      <h3>Field definitions</h3>
+      <div className="pref-row" style={{ display: 'block' }}>
+        <div className="pref-label" style={{ width: 'auto', marginBottom: 8 }}>
+          <b>Explain what a field means</b>
+          <span>
+            A definition appears as an information marker beside that field in
+            the details panel, for everyone. Useful where the name alone does
+            not carry the meaning — "Disclosure Avoidance" or "Regulatory
+            Driver" rather than "Name".
+          </span>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="fd-pick">Field</label>
+          <select id="fd-pick" value={chosen} onChange={e => pick(e.target.value)}>
+            <option value="">Choose a field…</option>
+            {Object.keys(groups).map(g => (
+              <optgroup key={g} label={g}>
+                {groups[g].map(f => (
+                  <option key={keyOf(f)} value={keyOf(f)}>
+                    {f.label}{f.definition ? ' ✓' : ''}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <div className="gov-hint">
+            A tick marks a field that already has a definition.
+            {' '}{defined.length} of {fields.length} defined so far.
+          </div>
+        </div>
+
+        {current && (
+          <React.Fragment>
+            {(current.shared_with || []).length > 0 && (
+              <div className="fd-share">
+                <label className="check-inline">
+                  <input type="checkbox" checked={useShared}
+                         onChange={e => toggleShared(e.target.checked)} />
+                  <strong>Use one definition everywhere this field appears</strong>
+                </label>
+                <div className="gov-hint">
+                  “{current.label}” is also a field on{' '}
+                  {current.shared_with.map((e, i) => (
+                    <React.Fragment key={e}>
+                      {i > 0 && (i === current.shared_with.length - 1 ? ' and ' : ', ')}
+                      <strong>{entityLabels[e] || e}</strong>
+                    </React.Fragment>
+                  ))}.
+                  {useShared
+                    ? ' You are editing the shared definition, so saving updates all of them.'
+                    : ' You are editing this record type only, which overrides any shared definition.'}
+                </div>
+              </div>
+            )}
+            <div className="form-group">
+              <label htmlFor="fd-text">
+                {useShared
+                  ? `What does “${current.label}” mean, everywhere it appears?`
+                  : `What does “${current.label}” mean on a ${entityLabels[current.entity] || current.entity}?`}
+              </label>
+              <textarea id="fd-text" value={draft} maxLength={maxLength}
+                        placeholder="A sentence or two, in the words someone filling this in would use."
+                        onChange={e => setDraft(e.target.value)} />
+              <div className={`char-count ${draft.length > maxLength ? 'over' : ''}`}>
+                {draft.length} / {maxLength}
+              </div>
+              {current.inherited && !useShared && (
+                <div className="gov-hint">
+                  This field currently shows the <strong>shared</strong>
+                  {' '}definition. Writing something here replaces it for
+                  {' '}{entityLabels[current.entity] || current.entity} only.
+                </div>
+              )}
+              {current.aliases.length > 0 && (
+                <div className="gov-hint">
+                  Labelled{' '}
+                  {current.aliases.map((a, i) => (
+                    <React.Fragment key={a}>
+                      {i > 0 && ' and '}<strong>{a}</strong>
+                    </React.Fragment>
+                  ))}
+                  {' '}elsewhere in the app. One definition covers every spelling.
+                </div>
+              )}
+            </div>
+            <div className="res-actions">
+              <button className="btn btn-primary" disabled={busy} onClick={save}>
+                {busy ? 'Saving…' : 'Save definition'}</button>
+              {(useShared ? !!shared[current.column] : !!current.own_definition) && (
+                <button className="btn" disabled={busy}
+                        onClick={() => { setDraft(''); save(); }}>
+                  {useShared ? 'Remove shared definition' : 'Remove this one'}</button>
+              )}
+            </div>
+          </React.Fragment>
+        )}
+
+        {defined.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div className="logo-preview-label">Already defined</div>
+            {/* Names only, with the definition on the marker. Showing all of
+                them in full made this list grow without limit as more fields
+                were defined, which buried the picker above it. */}
+            {defined.map(f => (
+              <div key={keyOf(f)} className="fd-row">
+                <button className="res-title-link" onClick={() => pick(keyOf(f))}>
+                  {(entityLabels[f.entity] || f.entity)} → {f.section} → {f.label}
+                </button>
+                <Tooltip text={f.definition}>
+                  <span className="tip-mark" tabIndex={0} role="img"
+                        aria-label={`The definition of "${f.label}"`}>i</span>
+                </Tooltip>
+                {f.inherited && <span className="fd-shared">shared</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ===== Logo (SuperAdmin, shown on the Preferences screen) =====
@@ -5486,6 +5786,9 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const [whatsNew, setWhatsNew] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [systemTypes, setSystemTypes] = useState([]);
+  // Field definitions, fetched once rather than per panel: they change only
+  // when a SuperAdmin edits them, and the details panel opens constantly.
+  const [fieldDefs, setFieldDefs] = useState({});
   const canEdit = roleAtLeast(user.role, 'Editor');
   const isAdmin = roleAtLeast(user.role, 'Administrator');
   const isSuper = roleAtLeast(user.role, 'SuperAdmin');
@@ -5664,6 +5967,13 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     // Alerts, e.g. a change of theirs that someone reverted.
     api.get('/api/notifications').then(d => setAlerts(d.unseen || [])).catch(() => {});
     loadSystemTypes();
+    loadFieldDefs();
+  }, []);
+
+  const loadFieldDefs = useCallback(() => {
+    api.get('/api/field-definitions')
+      .then(d => setFieldDefs(d.definitions || {}))
+      .catch(() => {});   // a missing definition is cosmetic, never fatal
   }, []);
 
   // System types drive both the dropdowns and the diagram colours.
@@ -5991,13 +6301,15 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           {view==='contributors' && <ContributorsTable contributors={contributors} onSelect={selectContributor} />}
           {view==='users' && isAdmin && <UsersScreen currentUser={user} assignableRoles={assignableRoles} notify={notify} />}
           {view==='preferences' && isSuper && <PreferencesScreen notify={notify} roles={ROLE_ORDER}
-              onSaved={onSettingsChanged} onTypesChanged={loadSystemTypes} />}
+              onSaved={onSettingsChanged} onTypesChanged={loadSystemTypes}
+              onDefinitionsChanged={loadFieldDefs} />}
           {view==='audit' && isSuper && <AuditScreen notify={notify} />}
           {view==='releases' && <ReleasesScreen canEdit={isSuper} notify={notify}
                                                 currentVersion={version} />}
           {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
             <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave}
                          onDelete={deleteRecord} onRetire={retireRecord}
+                         fieldDefs={fieldDefs}
                          systems={systems} onDrill={drillIntoSchema} canEdit={canEditHere}
                          inScenario={inScenario} onSetHidden={setRecordsHidden}
                          onResetRoute={resetRoute}
