@@ -29,6 +29,7 @@ import audit  # noqa: E402
 import schema_import  # noqa: E402
 import scenarios  # noqa: E402
 import help_articles  # noqa: E402
+import field_catalog  # noqa: E402  (generated; see tools/gen_field_catalog.py)
 from version import VERSION  # noqa: E402
 
 # Uploaded files are held in PostgreSQL for now, so they are covered by the
@@ -47,6 +48,21 @@ MAX_LOGO_DIMENSION = 2000
 
 # Where the logo may sit in relation to the title in the sidebar.
 LOGO_POSITIONS = ["left", "right", "above", "below"]
+
+# How each record type is named where a person reads it. The database calls
+# them system / data_flow / data_element / contributor; nobody else should have
+# to.
+ENTITY_LABELS = {
+    "system": "System",
+    "data_flow": "Data Flow",
+    "data_element": "Data Element",
+    "contributor": "Contributor",
+}
+
+# A field definition is a tooltip, not an essay. Long enough for a sentence or
+# two of real explanation, short enough that it stays readable in a bubble
+# beside the field.
+MAX_FIELD_DEFINITION = 600
 
 # Colours a SuperAdmin may choose for a system type. Every combination has been
 # checked against WCAG 2.1 AA — text on fill exceeds 4.5:1 and the border
@@ -1169,7 +1185,7 @@ SEED_RELEASES = [
   tested rather than assumed.
 * Updates are now applied without taking the application offline.
 """),
-    (VERSION, "Retiring, editing, and clearer buttons", None, 1, 1000, """\
+    ("0.4.4", "Retiring, editing, and clearer buttons", None, 1, 1000, """\
 ## What's new in this release
 
 **Retiring something in a scenario**
@@ -1211,6 +1227,42 @@ SEED_RELEASES = [
 * **Deprecated** has been removed as a status. Nothing was using it, and
   retiring in a scenario is now the way to express that something is going
   away.
+"""),
+    (VERSION, "Say what a field means", None, 1, 1100, """\
+## What's new in this release
+
+**Definitions for fields**
+
+* A SuperAdmin can write a short definition for any field on a system, data
+  flow, data element or contributor — in **Preferences**, under General.
+* Where a definition exists, an **information marker** appears beside that
+  field in the details panel, for everyone. Point at it, or reach it with the
+  Tab key, to read the definition.
+* Pick a field from a list that shows where it lives — *Data Flow → Transfer
+  Details → Frequency*. A tick marks the ones already done, and the count
+  shows how far along you are, which makes the gaps visible.
+* Some fields are labelled slightly differently in different places — a
+  classification is "Classification" in one view and "Data Classification" in
+  another. **One definition covers every phrasing**, and Preferences tells you
+  when a field has more than one.
+
+**Fields that appear in more than one place**
+
+* Eleven fields exist on several kinds of record — **Data Steward** is on
+  systems, data flows and data elements. For those there is a tick box: **use
+  one definition everywhere this field appears**, ticked to begin with. Change
+  the wording once and all of them update.
+* Leave the box clear where the meaning really differs: a system's
+  *Description* says what the system is for, a data flow's says what the flow
+  carries.
+* A record type can also keep its own wording that overrides the shared one,
+  and removing that override brings the shared wording back.
+
+**Still to come**
+
+* Definitions appear in the details panel in this release. The **Add** windows
+  follow in the next one, along with the ability to **hide fields** that your
+  organisation does not use.
 """),
 ]
 
@@ -3522,6 +3574,200 @@ if HAS_TORNADO:
         return conn.execute(
             "SELECT * FROM app_branding WHERE branding_id=1").fetchone()
 
+    # -----------------------------------------------------------------------
+    # Field definitions
+    # -----------------------------------------------------------------------
+    # A definition stored with this instead of a record type applies to every
+    # record type that has the column. Eleven columns appear on more than one —
+    # data_steward_id on three — and keeping those in step by hand means they
+    # drift. Storing the shared text once is what makes one edit reach them all.
+    SHARED = "*"
+
+    def field_definitions(conn):
+        """{(entity, column): definition}, including the shared rows."""
+        return {(r["entity_type"], r["column_name"]): r["definition"]
+                for r in conn.execute(
+                    "SELECT entity_type, column_name, definition "
+                    "FROM field_definition").fetchall()}
+
+    def effective_definition(defs, entity, column):
+        """What a field actually shows.
+
+        A definition written for one record type wins over the shared one, so
+        turning on sharing never destroys wording someone wrote deliberately —
+        "Description" can mean something different on a system and on a data
+        flow while "Data Steward" is defined once.
+        """
+        own = defs.get((entity, column))
+        if own:
+            return own, False
+        shared = defs.get((SHARED, column))
+        return (shared, True) if shared else (None, False)
+
+    def shared_columns():
+        """{column: [entity, ...]} for columns on more than one record type."""
+        out = {}
+        for f in field_catalog.FIELDS:
+            out.setdefault(f["column"], []).append(f["entity"])
+        return {c: e for c, e in out.items() if len(e) > 1}
+
+    def definition_lookup(conn):
+        """What the frontend needs: ``"entity|label" -> definition``.
+
+        Resolved here rather than in the browser because the label a component
+        is given is not a reliable key on its own — the read view, the edit
+        view and the Add modal spell the same column differently. The catalogue
+        knows every spelling, so one definition is emitted under each of them
+        and a component can look itself up knowing only its own label.
+        """
+        defs = field_definitions(conn)
+        out = {}
+        for f in field_catalog.FIELDS:
+            text, _ = effective_definition(defs, f["entity"], f["column"])
+            if not text:
+                continue
+            for key in ("label", "read_label", "modal_label"):
+                if f.get(key):
+                    out[f"{f['entity']}|{f[key]}"] = text
+        return out
+
+    class FieldDefinitionsHandler(BaseAPIHandler):
+        """Read the definitions for rendering; any signed-in user may.
+
+        Definitions are explanatory text about the department's own data model,
+        shown to everyone who can see the fields they describe, so there is
+        nothing to restrict here. Writing them is SuperAdmin, below.
+        """
+        READ_ROLE = permissions.VIEWER
+        allow_when_password_expired = True
+
+        def get(self):
+            conn = get_db()
+            try:
+                self.write_json({"definitions": definition_lookup(conn)})
+            finally:
+                conn.close()
+
+    class FieldCatalogHandler(BaseAPIHandler):
+        """The whole catalogue with its definitions, for the Preferences editor."""
+        READ_ROLE = permissions.SUPERADMIN
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def get(self):
+            conn = get_db()
+            try:
+                defs = field_definitions(conn)
+            finally:
+                conn.close()
+            multi = shared_columns()
+            fields = []
+            for f in field_catalog.FIELDS:
+                text, inherited = effective_definition(defs, f["entity"], f["column"])
+                fields.append({
+                    "entity": f["entity"],
+                    "column": f["column"],
+                    "label": f["label"],
+                    "section": f["section"],
+                    # Where the wording differs by surface, say so: someone
+                    # writing a definition should know the field is called
+                    # something else elsewhere, rather than wondering whether
+                    # it is a different field.
+                    "aliases": sorted({f[k] for k in ("read_label", "modal_label")
+                                       if f.get(k) and f[k] != f["label"]}),
+                    "definition": text or "",
+                    # True when the text comes from the shared row rather than
+                    # from this record type, so the editor can say so instead
+                    # of looking as though it were written here.
+                    "inherited": inherited,
+                    "own_definition": defs.get((f["entity"], f["column"]), ""),
+                    # The other record types carrying this same column.
+                    "shared_with": [e for e in multi.get(f["column"], [])
+                                    if e != f["entity"]],
+                })
+            self.write_json({"fields": fields,
+                             "shared": {c: defs.get((SHARED, c), "")
+                                        for c in sorted(multi)},
+                             "entity_labels": ENTITY_LABELS,
+                             "max_length": MAX_FIELD_DEFINITION})
+
+        def put(self):
+            data = self.get_json_body() or {}
+            entity = (data.get("entity") or "").strip()
+            column = (data.get("column") or "").strip()
+            text = (data.get("definition") or "").strip()
+
+            # Only fields the catalogue knows about. Without this the table
+            # would accept definitions for anything, including typos that then
+            # silently never appear anywhere.
+            known = {(f["entity"], f["column"]) for f in field_catalog.FIELDS}
+            if entity == SHARED:
+                # A shared definition only means anything for a column that
+                # more than one record type actually has.
+                if column not in shared_columns():
+                    return self.fail(
+                        400, "Only a field that appears on more than one record "
+                             "type can have one shared definition.")
+            elif (entity, column) not in known:
+                return self.fail(400, "That is not a field this application has.")
+            if len(text) > MAX_FIELD_DEFINITION:
+                return self.fail(400, f"A definition must be "
+                                      f"{MAX_FIELD_DEFINITION} characters or fewer.")
+
+            conn = get_db()
+            try:
+                before = conn.execute(
+                    "SELECT definition FROM field_definition "
+                    "WHERE entity_type=? AND column_name=?",
+                    (entity, column)).fetchone()
+                old = before["definition"] if before else ""
+                now = iso(utcnow())
+                if not text:
+                    # Empty means "no definition", which is a deletion rather
+                    # than an empty string: the tooltip should disappear, not
+                    # show a blank bubble.
+                    conn.execute(
+                        "DELETE FROM field_definition "
+                        "WHERE entity_type=? AND column_name=?", (entity, column))
+                elif before:
+                    conn.execute(
+                        "UPDATE field_definition SET definition=?, updated_date=?, "
+                        "updated_by=? WHERE entity_type=? AND column_name=?",
+                        (text, now, self.current_user["user_id"], entity, column))
+                else:
+                    conn.execute(
+                        """INSERT INTO field_definition
+                             (entity_type, column_name, definition, updated_date,
+                              updated_by)
+                           VALUES (?,?,?,?,?)""",
+                        (entity, column, text, now, self.current_user["user_id"]))
+
+                if old != text:
+                    if entity == SHARED:
+                        ents = shared_columns().get(column, [])
+                        where = ("shared across " +
+                                 ", ".join(ENTITY_LABELS.get(e, e) for e in ents))
+                        label = next((f["label"] for f in field_catalog.FIELDS
+                                      if f["column"] == column), column)
+                    else:
+                        where = ENTITY_LABELS.get(entity, entity)
+                        label = next((f["label"] for f in field_catalog.FIELDS
+                                      if f["entity"] == entity
+                                      and f["column"] == column), column)
+                    verb = ("Removed the definition for" if not text
+                            else "Defined" if not old else "Reworded the definition for")
+                    audit.record_event(
+                        conn, self.current_user, audit.UPDATE,
+                        entity_type="field_definition",
+                        entity_id=f"{entity}.{column}",
+                        changes={f"{entity}.{column}": (old, text)},
+                        summary=f"{verb} {label} ({where})",
+                        ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                defs = field_definitions(conn)
+            finally:
+                conn.close()
+            self.write_json({"definition": defs.get((entity, column), "")})
+
     class PublicBrandingHandler(BaseAPIHandler):
         """Branding for the sign-in screen, which by definition has no session.
 
@@ -5453,6 +5699,8 @@ if HAS_TORNADO:
             (r"/api/audit/([0-9]+)/revert", AuditRevertHandler),
             (r"/api/audit", AuditHandler),
             # Release notes
+            (r"/api/field-definitions", FieldDefinitionsHandler),
+            (r"/api/field-catalog", FieldCatalogHandler),
             (r"/api/branding", BrandingHandler),
             (r"/api/branding/logo", BrandingLogoHandler),
             (r"/api/branding/public", PublicBrandingHandler),

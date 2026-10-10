@@ -20,7 +20,17 @@ def blocks(src, fn_name):
             j += 1
         out.append(src[start:j-1]); i = j
 
-def columns(body):
+def columns(body, collect_pk=None):
+    """SQLite column fragments. `collect_pk` gathers primary-key column names.
+
+    SQLite allows only one inline PRIMARY KEY per table, so a composite key has
+    to be emitted as a table-level constraint instead. When `collect_pk` is
+    given, primary-key columns are recorded there and left un-marked, and the
+    caller adds the constraint. Without this, a second primary_key=True column
+    produced "table has more than one primary key" and the whole harness
+    database failed to build — which happened for scenario_member (patched by
+    hand at the time) and again for field_definition.
+    """
     cols = []
     for arg in blocks(body, "sa.Column"):
         m = re.match(r'\s*"(\w+)"\s*,\s*sa\.(\w+)\(', arg)
@@ -28,8 +38,11 @@ def columns(body):
         name, t = m.group(1), TYPES.get(m.group(2), "TEXT")
         frag = f"{name} {t}"
         if "primary_key=True" in arg:
-            frag += " PRIMARY KEY"
-            if "autoincrement=True" in arg and t == "INTEGER": frag += " AUTOINCREMENT"
+            if collect_pk is None:
+                frag += " PRIMARY KEY"
+                if "autoincrement=True" in arg and t == "INTEGER": frag += " AUTOINCREMENT"
+            else:
+                collect_pk.append((name, t, "autoincrement=True" in arg))
         if "nullable=False" in arg: frag += " NOT NULL"
         sd = re.search(r'server_default=sa\.text\(\s*"([^"]+)"\s*\)', arg)
         if sd:
@@ -46,7 +59,16 @@ for fn in sys.argv[1:]:
     for body in blocks(up, "op.create_table"):
         m = re.match(r'\s*"(\w+)"', body)
         if not m: continue
-        print(f'x("""CREATE TABLE {m.group(1)} ({", ".join(columns(body))})""")')
+        pk = []
+        cols = columns(body, collect_pk=pk)
+        if len(pk) == 1:
+            # One key: inline it, so AUTOINCREMENT still works.
+            name, t, auto = pk[0]
+            cols = [c + (" PRIMARY KEY" + (" AUTOINCREMENT" if auto and t == "INTEGER" else ""))
+                    if c.startswith(name + " ") else c for c in cols]
+        elif len(pk) > 1:
+            cols.append("PRIMARY KEY (" + ", ".join(n for n, _, _ in pk) + ")")
+        print(f'x("""CREATE TABLE {m.group(1)} ({", ".join(cols)})""")')
     for arg in blocks(up, "op.add_column"):
         m = re.match(r'\s*"(\w+)"\s*,', arg)
         if not m: continue
