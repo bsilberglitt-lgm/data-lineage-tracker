@@ -1228,7 +1228,7 @@ SEED_RELEASES = [
   retiring in a scenario is now the way to express that something is going
   away.
 """),
-    (VERSION, "Say what a field means", None, 1, 1100, """\
+    ("0.5.0", "Say what a field means", None, 1, 1100, """\
 ## What's new in this release
 
 **Definitions for fields**
@@ -1263,6 +1263,27 @@ SEED_RELEASES = [
 * Definitions appear in the details panel in this release. The **Add** windows
   follow in the next one, along with the ability to **hide fields** that your
   organisation does not use.
+"""),
+    (VERSION, "Only the fields you use", None, 1, 1200, """\
+## What's new in this release
+
+**Switch off the fields you do not use**
+
+* In **Preferences**, under General, a SuperAdmin can now mark a field as not
+  used, which hides the field in both the details panel and the **Add** window.
+* Set for one record type at a time. A department might record *Data Standards*
+  on data flows and never on systems, so turning it off is not shared across
+  record types, even when definitions might be.
+* **Nothing is deleted.** Anything already recorded in a field you switch off
+  is kept, and comes back exactly as it was if you switch the field on again.
+* Fields that are **required** when creating a record cannot be switched off —
+  the form could not be completed without them. Those show the reason rather
+  than simply omitting the control.
+
+**Definitions in the Add windows**
+
+* A definition written in Preferences now appears while you are *creating* a
+  record, not only when editing one afterwards.
 """),
 ]
 
@@ -3631,6 +3652,53 @@ if HAS_TORNADO:
                     out[f"{f['entity']}|{f[key]}"] = text
         return out
 
+    def hidden_fields(conn):
+        """{(entity, column)} for the fields this department has turned off."""
+        return {(r["entity_type"], r["column_name"]) for r in conn.execute(
+            "SELECT entity_type, column_name FROM field_hidden "
+            "WHERE hidden=1").fetchall()}
+
+    def required_columns():
+        """{(entity, column)} that an Add window validates as required.
+
+        Read from the generated catalogue rather than listed here, because the
+        authority is `useRequired` in the UI and a second hand-kept list would
+        drift. The generator fails if the two disagree.
+        """
+        return {(f["entity"], f["column"]) for f in field_catalog.FIELDS
+                if f.get("required")}
+
+    def hidden_lookup(conn):
+        """What the frontend needs: the hidden set, and labels to columns.
+
+        Keyed on the **column**, unlike `definition_lookup`, which is keyed on
+        every label a column is given. The difference is deliberate. A
+        definition has to be findable from the label a component was handed,
+        because there are 81 call sites that pass nothing else. Hiding is asked
+        by the newer field components, which declare their column outright, so
+        resolving on the column means a field relabelled in one view cannot
+        quietly reappear there.
+
+        The label-to-column map is emitted alongside so the older components —
+        `EditField`, `ReadField` and the two person pickers, which still know
+        only their label — can resolve themselves the same way.
+        """
+        hidden = hidden_fields(conn)
+        columns = {}
+        for f in field_catalog.FIELDS:
+            for key in ("label", "read_label", "modal_label"):
+                if f.get(key):
+                    columns[f"{f['entity']}|{f[key]}"] = f["column"]
+        # Required fields are filtered out here as well as refused on write.
+        # A row could predate a field becoming required, and drawing nothing
+        # where the form then demands a value is the one failure mode that
+        # makes a record impossible to create.
+        req = required_columns()
+        return {
+            "hidden": sorted(f"{e}|{c}" for e, c in hidden if (e, c) not in req),
+            "columns": columns,
+        }
+
     class FieldDefinitionsHandler(BaseAPIHandler):
         """Read the definitions for rendering; any signed-in user may.
 
@@ -3644,9 +3712,11 @@ if HAS_TORNADO:
         def get(self):
             conn = get_db()
             try:
-                self.write_json({"definitions": definition_lookup(conn)})
+                payload = {"definitions": definition_lookup(conn)}
+                payload.update(hidden_lookup(conn))
             finally:
                 conn.close()
+            self.write_json(payload)
 
     class FieldCatalogHandler(BaseAPIHandler):
         """The whole catalogue with its definitions, for the Preferences editor."""
@@ -3659,7 +3729,13 @@ if HAS_TORNADO:
                 defs = field_definitions(conn)
             finally:
                 conn.close()
+            conn = get_db()
+            try:
+                hidden = hidden_fields(conn)
+            finally:
+                conn.close()
             multi = shared_columns()
+            req = required_columns()
             fields = []
             for f in field_catalog.FIELDS:
                 text, inherited = effective_definition(defs, f["entity"], f["column"])
@@ -3683,6 +3759,11 @@ if HAS_TORNADO:
                     # The other record types carrying this same column.
                     "shared_with": [e for e in multi.get(f["column"], [])
                                     if e != f["entity"]],
+                    # Hiding is per record type: no shared scope, so this is a
+                    # plain flag rather than the two-level resolution a
+                    # definition needs.
+                    "hidden": (f["entity"], f["column"]) in hidden,
+                    "required": (f["entity"], f["column"]) in req,
                 })
             self.write_json({"fields": fields,
                              "shared": {c: defs.get((SHARED, c), "")
@@ -3767,6 +3848,91 @@ if HAS_TORNADO:
             finally:
                 conn.close()
             self.write_json({"definition": defs.get((entity, column), "")})
+
+    class FieldVisibilityHandler(BaseAPIHandler):
+        """Turn a field off, or back on, for one record type.
+
+        Separate from `FieldCatalogHandler.put` rather than another branch of
+        it. The two write to different tables with different rules — a
+        definition may be shared across record types and is refused above the
+        length cap; hiding is per record type and is refused for a required
+        field — and a single PUT that silently did one or the other depending
+        on which keys happened to be present is the kind of endpoint that gets
+        called wrongly later.
+        """
+        READ_ROLE = permissions.SUPERADMIN
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def put(self):
+            data = self.get_json_body() or {}
+            entity = (data.get("entity") or "").strip()
+            column = (data.get("column") or "").strip()
+            hide = bool(data.get("hidden"))
+
+            # No shared scope here, unlike definitions. See migration 0012:
+            # whether a field is *used* is a per-record-type question, and one
+            # tick emptying three screens is a worse surprise than three ticks.
+            if entity == SHARED:
+                return self.fail(
+                    400, "Hiding is set for one record type at a time. "
+                         "A field that appears on several is hidden on each "
+                         "separately.")
+            known = {(f["entity"], f["column"]) for f in field_catalog.FIELDS}
+            if (entity, column) not in known:
+                return self.fail(400, "That is not a field this application has.")
+            if (entity, column) in required_columns():
+                # The Add window will not submit without it, so a hidden
+                # required field makes that record type impossible to create.
+                label = next((f["label"] for f in field_catalog.FIELDS
+                              if f["entity"] == entity and f["column"] == column),
+                             column)
+                return self.fail(
+                    400, f"\u201c{label}\u201d is required when creating a "
+                         f"{ENTITY_LABELS.get(entity, entity)}, so it cannot "
+                         f"be hidden.")
+
+            conn = get_db()
+            try:
+                before = conn.execute(
+                    "SELECT hidden FROM field_hidden "
+                    "WHERE entity_type=? AND column_name=?",
+                    (entity, column)).fetchone()
+                was = bool(before and before["hidden"])
+                now = iso(utcnow())
+                if before:
+                    conn.execute(
+                        "UPDATE field_hidden SET hidden=?, updated_date=?, "
+                        "updated_by=? WHERE entity_type=? AND column_name=?",
+                        (1 if hide else 0, now, self.current_user["user_id"],
+                         entity, column))
+                else:
+                    conn.execute(
+                        """INSERT INTO field_hidden
+                             (entity_type, column_name, hidden, updated_date,
+                              updated_by)
+                           VALUES (?,?,?,?,?)""",
+                        (entity, column, 1 if hide else 0, now,
+                         self.current_user["user_id"]))
+
+                if was != hide:
+                    label = next((f["label"] for f in field_catalog.FIELDS
+                                  if f["entity"] == entity
+                                  and f["column"] == column), column)
+                    where = ENTITY_LABELS.get(entity, entity)
+                    verb = "Hid" if hide else "Restored"
+                    audit.record_event(
+                        conn, self.current_user, audit.UPDATE,
+                        entity_type="field_hidden",
+                        entity_id=f"{entity}.{column}",
+                        changes={f"{entity}.{column}": ("hidden" if was else "shown",
+                                                        "hidden" if hide else "shown")},
+                        summary=f"{verb} {label} on {where}",
+                        ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                hidden = hidden_fields(conn)
+            finally:
+                conn.close()
+            self.write_json({"hidden": (entity, column) in hidden})
 
     class PublicBrandingHandler(BaseAPIHandler):
         """Branding for the sign-in screen, which by definition has no session.
@@ -5701,6 +5867,7 @@ if HAS_TORNADO:
             # Release notes
             (r"/api/field-definitions", FieldDefinitionsHandler),
             (r"/api/field-catalog", FieldCatalogHandler),
+            (r"/api/field-visibility", FieldVisibilityHandler),
             (r"/api/branding", BrandingHandler),
             (r"/api/branding/logo", BrandingLogoHandler),
             (r"/api/branding/public", PublicBrandingHandler),

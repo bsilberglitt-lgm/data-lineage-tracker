@@ -77,8 +77,32 @@ def scan(code, line_offset=0):
     def expression_position(k):
         """True if a '<' at index k can begin JSX rather than be a comparison."""
         j = k - 1
-        while j >= 0 and code[j] in " \t\r\n":
-            j -= 1
+        while j >= 0:
+            if code[j] in " \t\r\n":
+                j -= 1
+                continue
+            # Walk back over a comment as well as whitespace. A JSX element is
+            # very often introduced by one, and without this the last character
+            # of the prose decides the answer: a comment ending in a full stop
+            # made the root element of App look like a comparison, so its
+            # opening tag was never recorded and its closing tag was then
+            # reported as stray 200 lines later.
+            if code[j] == "/" and j and code[j - 1] == "*":
+                start = code.rfind("/*", 0, j - 1)
+                if start == -1:
+                    return True
+                j = start - 1
+                continue
+            bol = code.rfind("\n", 0, j) + 1
+            slashes = code.find("//", bol)
+            # Quotes before it mean the "//" is inside a string — a URL, most
+            # likely — rather than starting a comment.
+            if (slashes != -1 and slashes < j
+                    and '"' not in code[bol:slashes]
+                    and "'" not in code[bol:slashes]):
+                j = slashes - 1
+                continue
+            break
         if j < 0:
             return True
         if code[j] in EXPRESSION_CONTEXT:

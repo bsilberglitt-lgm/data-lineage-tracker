@@ -203,6 +203,12 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .fd-share { background: #f5f8fc; border: 1px solid #dde3ea; border-radius: 6px;
   padding: 9px 11px; margin-bottom: 12px; }
 .fd-share .check-inline { margin: 0 0 4px; }
+/* A required field's toggle is shown rather than omitted, so the answer to
+   "why can I not turn this one off?" is on the page instead of absent. */
+.fd-disabled { opacity: 0.6; cursor: not-allowed; }
+.fd-off { font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: #8a4b00; background: #fff3e0;
+  border-radius: 3px; padding: 1px 5px; }
 .fd-shared { font-size: 10px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.5px; background: #eaf2fb; color: #1B3A5C;
   border-radius: 3px; padding: 1px 5px; margin-left: 6px; }
@@ -759,10 +765,14 @@ function contributorLabel(id, contributors) {
   const c = (contributors || []).find(x => x.contributor_id === id);
   return c ? `${c.name} (${c.contributor_id})` : id;
 }
+// No hiding check of its own: it renders a ReadField with the same label, and
+// that is where the check happens. Adding one here would resolve the same
+// field twice and, if the two labels ever differed, disagree.
 function ContributorField({ label, value, contributors }) {
   return <ReadField label={label} value={contributorLabel(value, contributors)} />;
 }
 function ContributorSelect({ label, value, onChange, contributors }) {
+  if (useFieldHidden(label)) return null;
   return (
     <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
       <select className="edit-select" value={value || ''} onChange={e => onChange(e.target.value || null)}>
@@ -1779,7 +1789,16 @@ function GovReadField({ label, field, gov }) {
 }
 
 // ===== Inline Edit Helpers =====
+// Returns true when this field has been turned off for the record type the
+// surrounding panel is showing. The four components below know only the label
+// they were handed, so the label-to-column map in context does the resolving.
+function useFieldHidden(label, col) {
+  const ctx = useContext(FieldDefs);
+  return isHidden(ctx, ctx.entity, { col, label });
+}
+
 function EditField({ label, value, onChange, type, options, invalid }) {
+  if (useFieldHidden(label)) return null;
   const bad = invalid ? ' field-error' : '';
   const note = invalid ? <div className="field-error-msg">This field is required</div> : null;
   if (type === 'textarea') return (
@@ -1820,6 +1839,7 @@ function EditField({ label, value, onChange, type, options, invalid }) {
 }
 
 function ReadField({ label, value, multiline }) {
+  if (useFieldHidden(label)) return null;
   return <div className="field-row">
     <span className="field-label">{label}<FieldInfo label={label} /></span>
     <span className={`field-value${multiline?' multiline':''}`}>{value || '—'}</span></div>;
@@ -1855,7 +1875,7 @@ const PANEL_REQUIRED = {
 };
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, fieldDefs, onClose, onSave, onDelete, onRetire, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
+function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetire, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [missing, setMissing] = useState([]);
@@ -1865,8 +1885,8 @@ function DetailPanel({ data, type, fieldDefs, onClose, onSave, onDelete, onRetir
   // Memoised so the provider does not hand every field a new object on each
   // keystroke, which would re-render all 30-odd of them while typing.
   const defsContext = useMemo(
-    () => ({ entity: PANEL_ENTITY[type] || null, defs: fieldDefs || {} }),
-    [type, fieldDefs]);
+    () => ({ ...(fieldMeta || {}), entity: PANEL_ENTITY[type] || null }),
+    [type, fieldMeta]);
   const bodyRef = useRef(null);
   const isOpen = !!data;
 
@@ -2663,55 +2683,67 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes, inScenario }) {
           </label>
         )}
         <div className="modal-section-title">Overview</div>
-        <ReqField id="sys-name" label="Name *" value={form.name} onChange={v=>set('name',v)}
-                  error={req.errorFor(form,'name')} placeholder="e.g., PowerSchool SIS" />
+        <ReqField id="sys-name" entity="system" col="name" label="Name *" value={form.name}
+                  onChange={v=>set('name',v)} error={req.errorFor(form,'name')}
+                  placeholder="e.g., PowerSchool SIS" />
         <div className="form-row">
-          <ReqField id="sys-type" label="Type *" type="select" value={form.system_type}
-                    onChange={v=>set('system_type',v)} error={req.errorFor(form,'system_type')}
+          <ReqField id="sys-type" entity="system" col="system_type" label="Type *" type="select"
+                    value={form.system_type} onChange={v=>set('system_type',v)}
+                    error={req.errorFor(form,'system_type')}
                     options={(systemTypes||[]).map(t=>t.type_name)} />
-          <div className="form-group"><label htmlFor="sys-status">Status</label>
-            <select id="sys-status" value={form.status} onChange={e=>set('status',e.target.value)}>
-              <option>Active</option><option>Planned</option><option>Under Review</option>
-            </select></div>
+          <ModalField id="sys-status" entity="system" col="status" label="Status" type="select"
+                      blank={false} value={form.status} onChange={v=>set('status',v)}
+                      options={['Active','Planned','Under Review']} />
         </div>
-        <div className="form-row"><div className="form-group"><label>Vendor</label><input value={form.vendor} onChange={e=>set('vendor',e.target.value)} /></div><div className="form-group"><label>Technology</label><input value={form.technology} onChange={e=>set('technology',e.target.value)} /></div></div>
-        <ReqField id="sys-managed" label="Managed By *" value={form.managed_by}
-                  onChange={v=>set('managed_by',v)} error={req.errorFor(form,'managed_by')} />
-        <div className="form-group"><label>Organization</label><input value={form.organization} onChange={e=>set('organization',e.target.value)} /></div>
-        <div className="form-group"><label>Description</label><textarea value={form.description} onChange={e=>set('description',e.target.value)} /></div>
+        <div className="form-row">
+          <ModalField id="sys-vendor" entity="system" col="vendor" label="Vendor"
+                      value={form.vendor} onChange={v=>set('vendor',v)} />
+          <ModalField id="sys-tech" entity="system" col="technology" label="Technology"
+                      value={form.technology} onChange={v=>set('technology',v)} />
+        </div>
+        <ReqField id="sys-managed" entity="system" col="managed_by" label="Managed By *"
+                  value={form.managed_by} onChange={v=>set('managed_by',v)}
+                  error={req.errorFor(form,'managed_by')} />
+        <ModalField id="sys-org" entity="system" col="organization" label="Organization"
+                    value={form.organization} onChange={v=>set('organization',v)} />
+        <ModalField id="sys-desc" entity="system" col="description" label="Description"
+                    type="textarea" value={form.description}
+                    onChange={v=>set('description',v)} />
 
         {form.system_type === 'Manual Entry' && <>
           <div className="modal-section-title">Manual Entry</div>
           <div className="form-row">
-            <div className="form-group"><label>Entry type</label>
-              <select value={form.entry_type} onChange={e=>set('entry_type',e.target.value)}>
-                <option>Direct Entry</option><option>File Upload</option></select></div>
-            <div className="form-group"><label>Who enters the data</label>
-              <input value={form.entered_by} onChange={e=>set('entered_by',e.target.value)}
-                     placeholder="e.g. District staff, State Help Desk staff" /></div>
+            <ModalField id="me-type" entity="system" col="entry_type" label="Entry type"
+                        type="select" blank={false} value={form.entry_type}
+                        onChange={v=>set('entry_type',v)}
+                        options={['Direct Entry','File Upload']} />
+            <ModalField id="me-by" entity="system" col="entered_by" label="Who enters the data"
+                        value={form.entered_by} onChange={v=>set('entered_by',v)}
+                        placeholder="e.g. District staff, State Help Desk staff" />
           </div>
-          <div className={`form-group ${req.errorFor(form,'target_system_id') ? '' : ''}`}>
-            <label htmlFor="me-target">Target data store *</label>
-            <select id="me-target" className={req.errorFor(form,'target_system_id') ? 'field-error' : ''}
-                    value={form.target_system_id} onChange={e=>set('target_system_id',e.target.value)}>
-              <option value="">Select…</option>
-              {byName((systems||[]).filter(x=>x.system_type==='Data Store')).map(x=>
-                <option key={x.system_id} value={x.system_id}>{systemOption(x)}</option>)}
-            </select>
-            {req.errorFor(form,'target_system_id') &&
-              <div className="field-error-msg">This field is required</div>}
-            <div style={{fontSize:'11px',color:'#6b6b6b',marginTop:4}}>
-              The data flow into this store is created for you, so you only answer
-              the timing questions once.
-            </div>
+          <ReqField id="me-target" entity="system" col="target_system_id" type="select"
+                    label="Target data store *" value={form.target_system_id}
+                    onChange={v=>set('target_system_id',v)}
+                    error={req.errorFor(form,'target_system_id')}
+                    options={byName((systems||[]).filter(x=>x.system_type==='Data Store'))
+                               .map(x=>({value:x.system_id,label:systemOption(x)}))} />
+          <div className="gov-hint" style={{marginTop:-8,marginBottom:14}}>
+            The data flow into this store is created for you, so you only answer
+            the timing questions once.
           </div>
-          <div className="form-group"><label>What validates the data at entry?</label>
-            <textarea value={form.entry_validation}
-                      onChange={e=>set('entry_validation',e.target.value)} /></div>
-          <div className="form-group"><label>How are errors corrected once entered?</label>
-            <textarea value={form.entry_error_correction}
-                      onChange={e=>set('entry_error_correction',e.target.value)} /></div>
+          <ModalField id="me-valid" entity="system" col="entry_validation" type="textarea"
+                      label="What validates the data at entry?"
+                      value={form.entry_validation}
+                      onChange={v=>set('entry_validation',v)} />
+          <ModalField id="me-fix" entity="system" col="entry_error_correction" type="textarea"
+                      label="How are errors corrected once entered?"
+                      value={form.entry_error_correction}
+                      onChange={v=>set('entry_error_correction',v)} />
 
+          {/* These belong to the data flow created alongside the system, not
+              to the system itself, so they are not record fields and carry no
+              `col`: there is nothing for hiding or a definition to resolve.
+              Left as plain form-groups deliberately. */}
           <div className="modal-section-title">The data flow into that store</div>
           <div className="form-row">
             <div className="form-group"><label>How often</label>
@@ -2738,21 +2770,50 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes, inScenario }) {
 
         <div className="modal-section-title">Security & Privacy</div>
         <div className="form-row">
-          <div className="form-group"><label>Data Classification</label><select value={form.data_classification} onChange={e=>set('data_classification',e.target.value)}><option value="">Select...</option><option>Confidential</option><option>Sensitive</option><option>Internal</option><option>Public</option></select></div>
-          <div className="form-group"><label>Access Method</label><select value={form.access_method} onChange={e=>set('access_method',e.target.value)}><option value="">Select...</option><option>Role-based access</option><option>SSO</option><option>Username/Password</option><option>API Key</option><option>Other</option></select></div>
+          <ModalField id="sys-class" entity="system" col="data_classification" type="select"
+                      label="Data Classification" value={form.data_classification}
+                      onChange={v=>set('data_classification',v)}
+                      options={['Confidential','Sensitive','Internal','Public']} />
+          <ModalField id="sys-access" entity="system" col="access_method" type="select"
+                      label="Access Method" value={form.access_method}
+                      onChange={v=>set('access_method',v)}
+                      options={['Role-based access','SSO','Username/Password',
+                                'API Key','Other']} />
         </div>
         <div className="form-row">
-          <div className="form-group"><label>Encryption at Rest</label><select value={form.encryption_at_rest} onChange={e=>set('encryption_at_rest',e.target.value)}><option value="">Select...</option><option>AES-256</option><option>TDE (Transparent Data Encryption)</option><option>BitLocker</option><option>None</option><option>Unknown</option></select></div>
-          <div className="form-group"><label>Encryption in Transit</label><select value={form.encryption_in_transit} onChange={e=>set('encryption_in_transit',e.target.value)}><option value="">Select...</option><option>TLS 1.2</option><option>TLS 1.3</option><option>HTTPS/TLS</option><option>VPN</option><option>None</option><option>Unknown</option></select></div>
+          <ModalField id="sys-enc-rest" entity="system" col="encryption_at_rest" type="select"
+                      label="Encryption at Rest" value={form.encryption_at_rest}
+                      onChange={v=>set('encryption_at_rest',v)}
+                      options={['AES-256','TDE (Transparent Data Encryption)',
+                                'BitLocker','None','Unknown']} />
+          <ModalField id="sys-enc-tr" entity="system" col="encryption_in_transit" type="select"
+                      label="Encryption in Transit" value={form.encryption_in_transit}
+                      onChange={v=>set('encryption_in_transit',v)}
+                      options={['TLS 1.2','TLS 1.3','HTTPS/TLS','VPN','None','Unknown']} />
         </div>
-        <div className="checkbox-row"><label><input type="checkbox" checked={form.contains_pii} onChange={e=>set('contains_pii',e.target.checked)} /> Contains PII</label><label><input type="checkbox" checked={form.ferpa_protected} onChange={e=>set('ferpa_protected',e.target.checked)} /> FERPA Protected</label></div>
+        <div className="checkbox-row">
+          <ModalCheck entity="system" col="contains_pii" label="Contains PII"
+                      checked={form.contains_pii} onChange={v=>set('contains_pii',v)} />
+          <ModalCheck entity="system" col="ferpa_protected" label="FERPA Protected"
+                      checked={form.ferpa_protected}
+                      onChange={v=>set('ferpa_protected',v)} />
+        </div>
 
         <div className="modal-section-title">Data Management</div>
         <div className="form-row">
-          <div className="form-group"><label>Retention Schedule</label><select value={form.retention_schedule} onChange={e=>set('retention_schedule',e.target.value)}><option value="">Select...</option><option>1 year</option><option>3 years</option><option>5 years</option><option>7 years per state policy</option><option>10 years</option><option>Permanent retention</option><option>Other</option></select></div>
-          <div className="form-group"><label>Data Standards</label><input value={form.data_standards} onChange={e=>set('data_standards',e.target.value)} placeholder="e.g., SIF 3.x, CEDS, Ed-Fi" /></div>
+          <ModalField id="sys-ret" entity="system" col="retention_schedule" type="select"
+                      label="Retention Schedule" value={form.retention_schedule}
+                      onChange={v=>set('retention_schedule',v)}
+                      options={['1 year','3 years','5 years',
+                                '7 years per state policy','10 years',
+                                'Permanent retention','Other']} />
+          <ModalField id="sys-std" entity="system" col="data_standards" label="Data Standards"
+                      value={form.data_standards}
+                      onChange={v=>set('data_standards',v)}
+                      placeholder="e.g., SIF 3.x, CEDS, Ed-Fi" />
         </div>
-        <div className="form-group"><label>Notes</label><textarea value={form.notes} onChange={e=>set('notes',e.target.value)} /></div>
+        <ModalField id="sys-notes" entity="system" col="notes" label="Notes" type="textarea"
+                    value={form.notes} onChange={v=>set('notes',v)} />
       </div>
       <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" onClick={()=>req.attempt(form, () => onSave({...form,
@@ -2800,6 +2861,9 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
         {/* The two systems come first so the name can be offered ready-made
             once both are chosen. Typing over it keeps whatever you typed. */}
         <div className="form-row">
+          {/* The endpoints and the name are required but are not catalogue
+              fields: a flow's identity is not something the details panel
+              draws as an editable row. No `col`, so no definition marker. */}
           <ReqField id="flow-src" label="Source System *" type="select" value={form.source_system_id}
                     onChange={v=>setEndpoint('source_system_id',v)} error={req.errorFor(form,'source_system_id')}
                     options={byName(systems).map(s=>({value:s.system_id,label:systemOption(s)}))} />
@@ -2809,6 +2873,9 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
         </div>
         <ReqField id="flow-name" label="Name *" value={form.name} onChange={v=>set('name',v)}
                   error={req.errorFor(form,'name')} placeholder="Filled in from the two systems — overwrite it if you like" />
+        {/* Not a record field: display_name is how the diagram labels the
+            arrow, and has no entry in the catalogue. No `col`, so nothing for
+            hiding or a definition to resolve. */}
         <div className="form-group">
           <label htmlFor="flow-display">Display Name</label>
           <input id="flow-display" value={form.display_name || ''} maxLength={20}
@@ -2817,56 +2884,77 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
           <div className="gov-hint">{(form.display_name || '').length}/20</div>
         </div>
         <div className="form-row">
-          <div className="form-group"><label htmlFor="flow-freq">Frequency</label>
-            <select id="flow-freq" value={form.frequency} onChange={e=>set('frequency',e.target.value)}>
-              <option>Real-time</option><option>Daily</option><option>Weekly</option>
-              <option>Monthly</option><option>Annually</option><option>Ad Hoc</option>
-              <option>Event-triggered</option><option>Other</option></select></div>
-          <div className="form-group"><label htmlFor="flow-format">Format</label>
-            <input id="flow-format" value={form.format} onChange={e=>set('format',e.target.value)}
-                   placeholder="e.g., CSV, XML, JSON" /></div>
+          <ModalField id="flow-freq" entity="data_flow" col="frequency" type="select"
+                      label="Frequency" blank={false} value={form.frequency}
+                      onChange={v=>set('frequency',v)}
+                      options={['Real-time','Daily','Weekly','Monthly','Annually',
+                                'Ad Hoc','Event-triggered','Other']} />
+          <ModalField id="flow-format" entity="data_flow" col="format" label="Format"
+                      value={form.format} onChange={v=>set('format',v)}
+                      placeholder="e.g., CSV, XML, JSON" />
         </div>
         {form.frequency === 'Other' &&
-          <div className="form-group"><label htmlFor="flow-timing">Timing and conditions</label>
-            <textarea id="flow-timing" value={form.frequency_detail}
-                      onChange={e=>set('frequency_detail',e.target.value)}
-                      placeholder="e.g. Nightly after the SIS closes, and on demand during the October count" /></div>}
-        <div className="form-group"><label>Transfer Method</label><input value={form.transfer_method} onChange={e=>set('transfer_method',e.target.value)} placeholder="e.g., SFTP, API, Manual Upload" /></div>
-        <div className="form-group"><label>Description</label><textarea value={form.description} onChange={e=>set('description',e.target.value)} /></div>
+          <ModalField id="flow-timing" entity="data_flow" col="frequency_detail" type="textarea"
+                      label="Timing and conditions" value={form.frequency_detail}
+                      onChange={v=>set('frequency_detail',v)}
+                      placeholder="e.g. Nightly after the SIS closes, and on demand during the October count" />}
+        <ModalField id="flow-method" entity="data_flow" col="transfer_method"
+                    label="Transfer Method" value={form.transfer_method}
+                    onChange={v=>set('transfer_method',v)}
+                    placeholder="e.g., SFTP, API, Manual Upload" />
+        <ModalField id="flow-desc" entity="data_flow" col="description" label="Description"
+                    type="textarea" value={form.description}
+                    onChange={v=>set('description',v)} />
 
         <div className="modal-section-title">Security & Privacy</div>
         <div className="form-row">
-          <div className="form-group"><label>Data Classification</label><select value={form.data_classification} onChange={e=>set('data_classification',e.target.value)}><option value="">Select...</option><option>Confidential</option><option>Sensitive</option><option>Internal</option><option>Public</option></select></div>
-          <div className="form-group"><label>Encryption</label><select value={form.encryption_method} onChange={e=>set('encryption_method',e.target.value)}><option value="">Select...</option><option>TLS 1.2 (HTTPS)</option><option>TLS 1.3</option><option>HTTPS/TLS</option><option>Internal network (encrypted)</option><option>SFTP</option><option>VPN</option><option>None</option></select></div>
+          <ModalField id="flow-class" entity="data_flow" col="data_classification" type="select"
+                      label="Data Classification" value={form.data_classification}
+                      onChange={v=>set('data_classification',v)}
+                      options={['Confidential','Sensitive','Internal','Public']} />
+          <ModalField id="flow-enc" entity="data_flow" col="encryption_method" type="select"
+                      label="Encryption" value={form.encryption_method}
+                      onChange={v=>set('encryption_method',v)}
+                      options={['TLS 1.2 (HTTPS)','TLS 1.3','HTTPS/TLS',
+                                'Internal network (encrypted)','SFTP','VPN','None']} />
         </div>
-        <div className="checkbox-row"><label><input type="checkbox" checked={form.contains_pii} onChange={e=>set('contains_pii',e.target.checked)} /> Contains PII</label><label><input type="checkbox" checked={form.ferpa_protected} onChange={e=>set('ferpa_protected',e.target.checked)} /> FERPA Protected</label></div>
+        <div className="checkbox-row">
+          <ModalCheck entity="data_flow" col="contains_pii" label="Contains PII"
+                      checked={form.contains_pii} onChange={v=>set('contains_pii',v)} />
+          <ModalCheck entity="data_flow" col="ferpa_protected" label="FERPA Protected"
+                      checked={form.ferpa_protected}
+                      onChange={v=>set('ferpa_protected',v)} />
+        </div>
 
         <div className="modal-section-title">Data Management</div>
         <div className="form-row">
-          <div className="form-group"><label htmlFor="flow-std">Data Standard</label>
-            <input id="flow-std" value={form.data_standard} onChange={e=>set('data_standard',e.target.value)} placeholder="e.g., SIF 3.x, EDFacts" /></div>
-          <div className="form-group"><label htmlFor="flow-legal">Legal Authority</label>
-            <input id="flow-legal" value={form.legal_authority} onChange={e=>set('legal_authority',e.target.value)} placeholder="e.g., FERPA, State statute" /></div>
+          <ModalField id="flow-std" entity="data_flow" col="data_standard" label="Data Standard"
+                      value={form.data_standard} onChange={v=>set('data_standard',v)}
+                      placeholder="e.g., SIF 3.x, EDFacts" />
+          <ModalField id="flow-legal" entity="data_flow" col="legal_authority"
+                      label="Legal Authority" value={form.legal_authority}
+                      onChange={v=>set('legal_authority',v)}
+                      placeholder="e.g., FERPA, State statute" />
         </div>
 
         <div className="modal-section-title">Ownership</div>
         <div className="form-row">
-          <div className="form-group"><label htmlFor="flow-org">Organization</label>
-            <input id="flow-org" value={form.organization} onChange={e=>set('organization',e.target.value)} /></div>
-          <div className="form-group"><label htmlFor="flow-mgr">Managed By</label>
-            <input id="flow-mgr" value={form.managed_by} onChange={e=>set('managed_by',e.target.value)} /></div>
+          <ModalField id="flow-org" entity="data_flow" col="organization" label="Organization"
+                      value={form.organization} onChange={v=>set('organization',v)} />
+          <ModalField id="flow-mgr" entity="data_flow" col="managed_by" label="Managed By"
+                      value={form.managed_by} onChange={v=>set('managed_by',v)} />
         </div>
         <div className="form-row">
-          <div className="form-group"><label htmlFor="flow-owner">Owner</label>
-            <select id="flow-owner" value={form.owner_id} onChange={e=>set('owner_id',e.target.value)}>
-              <option value="">— none —</option>
-              {(contributors||[]).map(c=><option key={c.contributor_id} value={c.contributor_id}>{c.name} ({c.contributor_id})</option>)}
-            </select></div>
-          <div className="form-group"><label htmlFor="flow-steward">Data Steward</label>
-            <select id="flow-steward" value={form.data_steward_id} onChange={e=>set('data_steward_id',e.target.value)}>
-              <option value="">— none —</option>
-              {(contributors||[]).map(c=><option key={c.contributor_id} value={c.contributor_id}>{c.name} ({c.contributor_id})</option>)}
-            </select></div>
+          <ModalField id="flow-owner" entity="data_flow" col="owner_id" type="select"
+                      label="Owner" value={form.owner_id}
+                      onChange={v=>set('owner_id',v)} placeholder="— none —"
+                      options={(contributors||[]).map(c=>({value:c.contributor_id,
+                                 label:`${c.name} (${c.contributor_id})`}))} />
+          <ModalField id="flow-steward" entity="data_flow" col="data_steward_id" type="select"
+                      label="Data Steward" value={form.data_steward_id}
+                      onChange={v=>set('data_steward_id',v)} placeholder="— none —"
+                      options={(contributors||[]).map(c=>({value:c.contributor_id,
+                                 label:`${c.name} (${c.contributor_id})`}))} />
         </div>
       </div>
       <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button>
@@ -3077,11 +3165,30 @@ function useRequired(fields, scrollRef) {
 }
 
 // A labelled input that shows its own required-field error.
-function ReqField({ label, value, onChange, error, type, options, placeholder, id }) {
+// ===== Fields in an Add window =====
+// `col` is the database column, and declaring it is the entire point of these
+// two components. Every optional field in the Add windows used to be a
+// hand-written `form-group` whose column appeared only inside an onChange
+// closure — so a modal field had no identity anything else could use. Three
+// consequences, all of which this removes: the catalogue generator had to
+// recover the column with a regex and managed 40 of 80; field hiding had
+// nothing to ask; and a definition written in Preferences could not be shown
+// here, which the 0.5.0 notes promised for this release.
+//
+// `entity` is passed explicitly rather than read from context. An Add window
+// is not rendered inside the details panel's provider, and it is the only
+// thing that knows which record type it is about to create.
+//
+// `ReqField` is the required variant and keeps its own component because it
+// carries the validation wiring — error text, aria-invalid, the id the error
+// message is tied to. It is never hidden: the form will not submit without a
+// value, so hiding it would make that record type impossible to create.
+function ReqField({ label, value, onChange, error, type, options, placeholder, id,
+                   entity, col }) {
   const cls = error ? 'field-error' : '';
   return (
     <div className="form-group">
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id}>{label}<FieldInfo label={cleanLabel(label)} entity={entity} /></label>
       {type === 'select'
         ? <select id={id} className={cls} value={value || ''} onChange={e => onChange(e.target.value)}
                   aria-invalid={!!error} aria-describedby={error ? id + '-err' : undefined}>
@@ -3100,6 +3207,62 @@ function ReqField({ label, value, onChange, error, type, options, placeholder, i
                  aria-describedby={error ? id + '-err' : undefined} />}
       {error && <div className="field-error-msg" id={id + '-err'}>{error}</div>}
     </div>
+  );
+}
+
+// The optional variant. Returns nothing at all when the field has been hidden
+// for this record type, which is what makes one tick in Preferences empty the
+// field out of the Add window as well as the details panel.
+//
+// `wide` opts out of the two-column `form-row` so a textarea can have the full
+// width, matching what the hand-written blocks did. `hint` is the small grey
+// line some fields carry beneath the input.
+function ModalField({ entity, col, label, value, onChange, type, options,
+                      placeholder, id, maxLength, hint, children, blank }) {
+  const ctx = useContext(FieldDefs);
+  if (isHidden(ctx, entity, { col })) return null;
+  const marker = <FieldInfo label={cleanLabel(label)} entity={entity} />;
+  const common = {
+    id, value: value === null || value === undefined ? '' : value,
+    onChange: e => onChange(e.target.value),
+  };
+  return (
+    <div className="form-group">
+      <label htmlFor={id}>{label}{marker}</label>
+      {children ? children
+        : type === 'select'
+        ? <select {...common}>
+            {/* Three of these selects always hold a value and never offered an
+                empty choice — Status, Entry type and Frequency all default to
+                something. Rendering one unconditionally would have let a blank
+                be chosen where it previously could not be. */}
+            {blank !== false &&
+              <option value="">{placeholder || 'Select...'}</option>}
+            {(options || []).map(o =>
+              <option key={typeof o === 'string' ? o : o.value}
+                      value={typeof o === 'string' ? o : o.value}>
+                {typeof o === 'string' ? o : o.label}</option>)}
+          </select>
+        : type === 'textarea'
+        ? <textarea {...common} placeholder={placeholder} />
+        : <input {...common} placeholder={placeholder} maxLength={maxLength} />}
+      {hint && <div className="gov-hint">{hint}</div>}
+    </div>
+  );
+}
+
+// A checkbox in an Add window. Its own component because the markup differs —
+// the box precedes its caption inside the label rather than sitting under one
+// — and because the value is a boolean the modals convert to 0/1 on save.
+function ModalCheck({ entity, col, label, checked, onChange }) {
+  const ctx = useContext(FieldDefs);
+  if (isHidden(ctx, entity, { col })) return null;
+  return (
+    <label className="check-inline">
+      <input type="checkbox" checked={!!checked}
+             onChange={e => onChange(e.target.checked)} />
+      {label}<FieldInfo label={cleanLabel(label)} entity={entity} />
+    </label>
   );
 }
 
@@ -3531,18 +3694,52 @@ const PANEL_ENTITY = { system: 'system', flow: 'data_flow',
 // edit view, "Encryption at Rest" in the read view — so the server emits the
 // definition under every spelling the catalogue knows. A browser-side key
 // would have attached a definition to one view and missed the other.
-const FieldDefs = React.createContext({ entity: null, defs: {} });
+//
+// The same context carries **field hiding**, because every component that
+// needs to ask "what does this mean?" is also the one that has to ask "should
+// I draw this at all?", and they are answered from the same fetch.
+//
+// Hiding is keyed on the column, not the label. A definition must be findable
+// from a label because 81 call sites pass nothing else; the newer components
+// declare their column outright, and the server sends a label-to-column map so
+// the older ones resolve the same way. Keying hiding on text would mean a
+// field relabelled in one view quietly reappearing there.
+const FieldDefs = React.createContext(
+  { entity: null, defs: {}, hidden: {}, columns: {} });
 
 function definitionFor(ctx, label) {
   if (!ctx || !ctx.entity || !label) return null;
   return ctx.defs[ctx.entity + '|' + label] || null;
 }
 
+// The Add windows mark required fields with a trailing asterisk in the label
+// text itself. The catalogue stores the label without it, so strip it before
+// any lookup — otherwise "Name *" never matches the field called "Name".
+function cleanLabel(label) {
+  return String(label || '').replace(/\s*\*\s*$/, '');
+}
+
+function columnFor(ctx, entity, label) {
+  if (!ctx || !entity || !label) return null;
+  return (ctx.columns || {})[entity + '|' + label] || null;
+}
+
+// `col` when the caller knows its column, `label` when it does not. Required
+// fields are already filtered out of the payload server-side, so a required
+// field cannot be hidden here even if a stale row says otherwise.
+function isHidden(ctx, entity, { col, label }) {
+  if (!ctx || !entity) return false;
+  const c = col || columnFor(ctx, entity, label);
+  return !!c && !!(ctx.hidden || {})[entity + '|' + c];
+}
+
 // The marker. Quiet by design: it should be findable without competing with
 // the value beside it, and it must not shift the row's layout when absent.
-function FieldInfo({ label }) {
+// `entity` overrides the provider's. The details panel sets the entity on the
+// context, but an Add window sits outside that provider and names its own.
+function FieldInfo({ label, entity }) {
   const ctx = useContext(FieldDefs);
-  const text = definitionFor(ctx, label);
+  const text = definitionFor(entity ? { ...ctx, entity } : ctx, label);
   if (!text) return null;
   return (
     <Tooltip text={text}>
@@ -4245,33 +4442,36 @@ function AddContributorModal({ onClose, onSave }) {
     <div className="modal-overlay"><div className="modal" role="dialog" aria-modal="true">
       <div className="modal-header">Add Contributor <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body">
-        <div className="form-group"><label>Name *</label>
-          <input value={form.name} onChange={e=>set('name',e.target.value)} /></div>
+        <ReqField id="con-name" entity="contributor" col="name" label="Name *"
+                  value={form.name} onChange={v=>set('name',v)} />
         <div className="form-row">
-          <div className="form-group"><label>Title</label>
-            <input value={form.title} onChange={e=>set('title',e.target.value)} /></div>
-          <div className="form-group"><label>Organization unit</label>
-            <input value={form.organization_unit} onChange={e=>set('organization_unit',e.target.value)} /></div>
+          <ModalField id="con-title" entity="contributor" col="title" label="Title"
+                      value={form.title} onChange={v=>set('title',v)} />
+          <ModalField id="con-unit" entity="contributor" col="organization_unit"
+                      label="Organization unit" value={form.organization_unit}
+                      onChange={v=>set('organization_unit',v)} />
         </div>
         <div className="form-row">
-          <div className="form-group"><label>Email</label>
-            <input value={form.email} onChange={e=>set('email',e.target.value)} /></div>
-          <div className="form-group"><label>Phone</label>
-            <input value={form.phone} onChange={e=>set('phone',e.target.value)} /></div>
+          <ModalField id="con-email" entity="contributor" col="email" label="Email"
+                      value={form.email} onChange={v=>set('email',v)} />
+          <ModalField id="con-phone" entity="contributor" col="phone" label="Phone"
+                      value={form.phone} onChange={v=>set('phone',v)} />
         </div>
         <div className="form-row">
-          <div className="form-group"><label>Role type</label>
-            <input value={form.role_type} onChange={e=>set('role_type',e.target.value)}
-                   placeholder="e.g. Data Owner" /></div>
-          <div className="form-group"><label>Governance role</label>
-            <input value={form.governance_role} onChange={e=>set('governance_role',e.target.value)}
-                   placeholder="e.g. Data Steward" /></div>
+          <ModalField id="con-role" entity="contributor" col="role_type" label="Role type"
+                      value={form.role_type} onChange={v=>set('role_type',v)}
+                      placeholder="e.g. Data Owner" />
+          <ModalField id="con-gov" entity="contributor" col="governance_role"
+                      label="Governance role" value={form.governance_role}
+                      onChange={v=>set('governance_role',v)}
+                      placeholder="e.g. Data Steward" />
         </div>
-        <div className="form-group"><label>Governance responsibilities</label>
-          <textarea value={form.governance_responsibilities}
-                    onChange={e=>set('governance_responsibilities',e.target.value)} /></div>
-        <div className="form-group"><label>Notes</label>
-          <textarea value={form.notes} onChange={e=>set('notes',e.target.value)} /></div>
+        <ModalField id="con-resp" entity="contributor" type="textarea"
+                    col="governance_responsibilities" label="Governance responsibilities"
+                    value={form.governance_responsibilities}
+                    onChange={v=>set('governance_responsibilities',v)} />
+        <ModalField id="con-notes" entity="contributor" type="textarea" col="notes"
+                    label="Notes" value={form.notes} onChange={v=>set('notes',v)} />
       </div>
       <div className="modal-footer">
         <button className="btn" onClick={onClose}>Cancel</button>
@@ -4474,6 +4674,26 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
     setDraft(on ? (shared[current.column] || '') : (current.own_definition || ''));
   };
 
+  // Hiding is its own endpoint and its own table, and is saved on the click
+  // rather than with the definition: the two are independent answers about a
+  // field — what it means, and whether this department uses it — and making
+  // one wait on the other would mean ticking a box did nothing visible.
+  const setHidden = async (hide) => {
+    if (!current) return;
+    setBusy(true);
+    try {
+      await api.put('/api/field-visibility', {
+        entity: current.entity, column: current.column, hidden: hide,
+      });
+      notify(hide
+        ? `\u201c${current.label}\u201d is hidden on ${entityLabels[current.entity] || current.entity}.`
+        : `\u201c${current.label}\u201d is shown again.`);
+      load();
+      onChanged && onChanged();
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
   const save = async () => {
     if (!current) return;
     setBusy(true);
@@ -4523,6 +4743,7 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
                 {groups[g].map(f => (
                   <option key={keyOf(f)} value={keyOf(f)}>
                     {f.label}{f.definition ? ' ✓' : ''}
+                    {f.hidden ? ' — not used' : ''}
                   </option>
                 ))}
               </optgroup>
@@ -4557,6 +4778,31 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
                 </div>
               </div>
             )}
+            {/* Hiding sits above the definition box because it is the more
+                consequential of the two and answers a prior question: there is
+                no point wording a field the department does not use. */}
+            <div className="fd-share">
+              {current.required ? (
+                <Tooltip text={`\u201c${current.label}\u201d must be filled in when creating a ${entityLabels[current.entity] || current.entity}, so the form could not be completed without it.`}>
+                  <label className="check-inline fd-disabled" tabIndex={0}>
+                    <input type="checkbox" checked={false} disabled
+                           aria-describedby="fd-req-why" />
+                    <strong>Do not use this field</strong>
+                  </label>
+                </Tooltip>
+              ) : (
+                <label className="check-inline">
+                  <input type="checkbox" checked={!!current.hidden} disabled={busy}
+                         onChange={e => setHidden(e.target.checked)} />
+                  <strong>Do not use this field</strong>
+                </label>
+              )}
+              <div className="gov-hint" id="fd-req-why">
+                {current.required
+                  ? `Required when creating a ${entityLabels[current.entity] || current.entity}, so it cannot be switched off.`
+                  : `Hide this field in ${entityLabels[current.entity] || current.entity} records and the Add window. Applies only to this record type.`}
+              </div>
+            </div>
             <div className="form-group">
               <label htmlFor="fd-text">
                 {useShared
@@ -4616,6 +4862,7 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
                         aria-label={`The definition of "${f.label}"`}>i</span>
                 </Tooltip>
                 {f.inherited && <span className="fd-shared">shared</span>}
+                {!!f.hidden && <span className="fd-off">not used</span>}
               </div>
             ))}
           </div>
@@ -5788,7 +6035,10 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const [systemTypes, setSystemTypes] = useState([]);
   // Field definitions, fetched once rather than per panel: they change only
   // when a SuperAdmin edits them, and the details panel opens constantly.
-  const [fieldDefs, setFieldDefs] = useState({});
+  // Definitions, hiding, and the label-to-column map that lets the older
+  // field components resolve themselves. One object because they arrive in one
+  // response and are consumed together by one context.
+  const [fieldMeta, setFieldMeta] = useState({ defs: {}, hidden: {}, columns: {} });
   const canEdit = roleAtLeast(user.role, 'Editor');
   const isAdmin = roleAtLeast(user.role, 'Administrator');
   const isSuper = roleAtLeast(user.role, 'SuperAdmin');
@@ -5972,7 +6222,13 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
 
   const loadFieldDefs = useCallback(() => {
     api.get('/api/field-definitions')
-      .then(d => setFieldDefs(d.definitions || {}))
+      .then(d => setFieldMeta({
+        defs: d.definitions || {},
+        // Sent as a list and turned into a map here, so a hiding check is a
+        // property lookup rather than a scan of the array per field drawn.
+        hidden: (d.hidden || []).reduce((m, k) => { m[k] = true; return m; }, {}),
+        columns: d.columns || {},
+      }))
       .catch(() => {});   // a missing definition is cosmetic, never fatal
   }, []);
 
@@ -6133,6 +6389,11 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const panelOpen = !!detailData;
 
   return (
+    // Entity is null here: a component inside an Add window names its own,
+    // and the provider inside the details panel nests here and sets it.
+    // Without this outer provider the Add windows would have no context at
+    // all, and would show neither definitions nor hiding.
+    <FieldDefs.Provider value={fieldMeta}>
     <div className="app">
       <div className="sidebar">
         <div className="sidebar-header">
@@ -6309,7 +6570,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
             <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave}
                          onDelete={deleteRecord} onRetire={retireRecord}
-                         fieldDefs={fieldDefs}
+                         fieldMeta={fieldMeta}
                          systems={systems} onDrill={drillIntoSchema} canEdit={canEditHere}
                          inScenario={inScenario} onSetHidden={setRecordsHidden}
                          onResetRoute={resetRoute}
@@ -6348,6 +6609,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
       )}
       <VersionBadge version={version} onClick={() => setView('releases')} />
     </div>
+    </FieldDefs.Provider>
   );
 }
 

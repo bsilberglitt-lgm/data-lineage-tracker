@@ -10,6 +10,9 @@ Add modal label the same column differently; see the generator for the
 list. `label` is the canonical name, taken from the edit view, and is
 what Preferences shows. `read_label` and `modal_label` are the other
 spellings, so a definition is found wherever its field is drawn.
+
+`required` means the Add window validates it, which is why such a
+field can never be hidden: the record could not then be created.
 """
 
 FIELDS = [
@@ -20,6 +23,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': None,
         'modal_label': 'Name',
+        'required': True,
     },
     {
         'entity': 'system',
@@ -28,6 +32,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': None,
         'modal_label': 'Type',
+        'required': True,
     },
     {
         'entity': 'system',
@@ -36,6 +41,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': None,
         'modal_label': 'Status',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -44,6 +50,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': 'Organization',
         'modal_label': 'Organization',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -52,6 +59,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': 'Managed By',
         'modal_label': 'Managed By',
+        'required': True,
     },
     {
         'entity': 'system',
@@ -60,6 +68,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': 'Vendor',
         'modal_label': 'Vendor',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -68,6 +77,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': 'Technology',
         'modal_label': 'Technology',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -76,6 +86,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': 'Environment',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'system',
@@ -84,6 +95,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': 'Description',
         'modal_label': 'Description',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -92,6 +104,7 @@ FIELDS = [
         'section': 'Overview',
         'read_label': 'Notes',
         'modal_label': 'Notes',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -100,6 +113,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': None,
         'modal_label': 'Data Classification',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -107,7 +121,8 @@ FIELDS = [
         'label': 'Contains PII',
         'section': 'Security & Privacy',
         'read_label': None,
-        'modal_label': None,
+        'modal_label': 'Contains PII',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -115,7 +130,8 @@ FIELDS = [
         'label': 'FERPA Protected',
         'section': 'Security & Privacy',
         'read_label': None,
-        'modal_label': None,
+        'modal_label': 'FERPA Protected',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -124,6 +140,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': 'Access Method',
         'modal_label': 'Access Method',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -132,6 +149,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': 'Encryption at Rest',
         'modal_label': 'Encryption at Rest',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -140,6 +158,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': 'Encryption in Transit',
         'modal_label': 'Encryption in Transit',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -148,6 +167,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': 'Last Security Review',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'system',
@@ -156,6 +176,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'system',
@@ -164,6 +185,7 @@ FIELDS = [
         'section': 'Manual Entry',
         'read_label': 'Entry Type',
         'modal_label': 'Entry type',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -172,6 +194,7 @@ FIELDS = [
         'section': 'Manual Entry',
         'read_label': 'Who Enters Data',
         'modal_label': 'Who enters the data',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -179,7 +202,8 @@ FIELDS = [
         'label': 'Target Data Store',
         'section': 'Manual Entry',
         'read_label': 'Target Data Store',
-        'modal_label': None,
+        'modal_label': 'Target data store',
+        'required': True,
     },
     {
         'entity': 'system',
@@ -188,6 +212,7 @@ FIELDS = [
         'section': 'Manual Entry',
         'read_label': 'Validation at Entry',
         'modal_label': 'What validates the data at entry?',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -196,6 +221,7 @@ FIELDS = [
         'section': 'Manual Entry',
         'read_label': 'Error Correction',
         'modal_label': 'How are errors corrected once entered?',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -204,6 +230,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Data Steward',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'system',
@@ -212,6 +239,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Retention Schedule',
         'modal_label': 'Retention Schedule',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -220,6 +248,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Destruction Method',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'system',
@@ -228,6 +257,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Backup Frequency',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'system',
@@ -236,6 +266,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Disaster Recovery',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'system',
@@ -244,6 +275,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Data Standards',
         'modal_label': 'Data Standards',
+        'required': False,
     },
     {
         'entity': 'system',
@@ -252,6 +284,7 @@ FIELDS = [
         'section': 'Data Use & Sharing',
         'read_label': 'Authorized Users',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'system',
@@ -260,6 +293,7 @@ FIELDS = [
         'section': 'Data Use & Sharing',
         'read_label': 'Sharing Restrictions',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -268,6 +302,7 @@ FIELDS = [
         'section': 'Flow Overview',
         'read_label': 'Direction',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -276,6 +311,7 @@ FIELDS = [
         'section': 'Flow Overview',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -284,6 +320,7 @@ FIELDS = [
         'section': 'Flow Overview',
         'read_label': 'Description',
         'modal_label': 'Description',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -292,6 +329,7 @@ FIELDS = [
         'section': 'Transfer Details',
         'read_label': 'Frequency',
         'modal_label': 'Frequency',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -300,6 +338,7 @@ FIELDS = [
         'section': 'Transfer Details',
         'read_label': 'Timing',
         'modal_label': 'Timing and conditions',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -308,6 +347,7 @@ FIELDS = [
         'section': 'Transfer Details',
         'read_label': 'Method',
         'modal_label': 'Transfer Method',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -316,6 +356,7 @@ FIELDS = [
         'section': 'Transfer Details',
         'read_label': 'Format',
         'modal_label': 'Format',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -324,6 +365,7 @@ FIELDS = [
         'section': 'Ownership',
         'read_label': 'Organization',
         'modal_label': 'Organization',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -332,6 +374,7 @@ FIELDS = [
         'section': 'Ownership',
         'read_label': 'Managed By',
         'modal_label': 'Managed By',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -340,6 +383,7 @@ FIELDS = [
         'section': 'Ownership',
         'read_label': 'Owner',
         'modal_label': 'Owner',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -348,6 +392,7 @@ FIELDS = [
         'section': 'Ownership',
         'read_label': 'Data Steward',
         'modal_label': 'Data Steward',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -356,6 +401,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': None,
         'modal_label': 'Data Classification',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -363,7 +409,8 @@ FIELDS = [
         'label': 'Contains PII',
         'section': 'Security & Privacy',
         'read_label': None,
-        'modal_label': None,
+        'modal_label': 'Contains PII',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -371,7 +418,8 @@ FIELDS = [
         'label': 'FERPA Protected',
         'section': 'Security & Privacy',
         'read_label': None,
-        'modal_label': None,
+        'modal_label': 'FERPA Protected',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -380,6 +428,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': 'Encryption',
         'modal_label': 'Encryption',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -388,6 +437,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': 'Disclosure Avoidance',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -396,6 +446,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': 'Regulatory Driver',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -404,6 +455,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': 'Legal Authority',
         'modal_label': 'Legal Authority',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -412,6 +464,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Data Standard',
         'modal_label': 'Data Standard',
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -420,6 +473,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Quality Measures',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -428,6 +482,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Retention (Dest.)',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -436,6 +491,7 @@ FIELDS = [
         'section': 'Processing Details',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -444,6 +500,7 @@ FIELDS = [
         'section': 'Processing Details',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -452,6 +509,7 @@ FIELDS = [
         'section': 'Processing Details',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_flow',
@@ -460,6 +518,7 @@ FIELDS = [
         'section': 'Processing Details',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -468,6 +527,7 @@ FIELDS = [
         'section': 'Element Overview',
         'read_label': 'Name',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -476,6 +536,7 @@ FIELDS = [
         'section': 'Element Overview',
         'read_label': 'Aliases',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -484,6 +545,7 @@ FIELDS = [
         'section': 'Element Overview',
         'read_label': 'Data Type',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -492,6 +554,7 @@ FIELDS = [
         'section': 'Element Overview',
         'read_label': 'Valid Values',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -500,6 +563,7 @@ FIELDS = [
         'section': 'Element Overview',
         'read_label': 'Definition',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -508,6 +572,7 @@ FIELDS = [
         'section': 'Element Overview',
         'read_label': 'Business Meaning',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -516,6 +581,7 @@ FIELDS = [
         'section': 'Element Overview',
         'read_label': 'Notes',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -524,6 +590,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -532,6 +599,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -540,6 +608,7 @@ FIELDS = [
         'section': 'Security & Privacy',
         'read_label': None,
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -548,6 +617,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Data Standard',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -556,6 +626,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Source of Truth',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -564,6 +635,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Data Owner',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'data_element',
@@ -572,6 +644,7 @@ FIELDS = [
         'section': 'Data Management',
         'read_label': 'Data Steward',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -580,6 +653,7 @@ FIELDS = [
         'section': 'Contributor',
         'read_label': 'Name',
         'modal_label': 'Name',
+        'required': True,
     },
     {
         'entity': 'contributor',
@@ -588,6 +662,7 @@ FIELDS = [
         'section': 'Contributor',
         'read_label': 'Title',
         'modal_label': 'Title',
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -596,6 +671,7 @@ FIELDS = [
         'section': 'Contributor',
         'read_label': 'Organization Unit',
         'modal_label': 'Organization unit',
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -604,6 +680,7 @@ FIELDS = [
         'section': 'Contributor',
         'read_label': 'Role Type',
         'modal_label': 'Role type',
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -612,6 +689,7 @@ FIELDS = [
         'section': 'Contributor',
         'read_label': 'Email',
         'modal_label': 'Email',
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -620,6 +698,7 @@ FIELDS = [
         'section': 'Contributor',
         'read_label': 'Phone',
         'modal_label': 'Phone',
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -628,6 +707,7 @@ FIELDS = [
         'section': 'Governance',
         'read_label': 'Governance Role',
         'modal_label': 'Governance role',
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -636,6 +716,7 @@ FIELDS = [
         'section': 'Governance',
         'read_label': 'Responsibilities',
         'modal_label': 'Governance responsibilities',
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -644,6 +725,7 @@ FIELDS = [
         'section': 'Governance',
         'read_label': 'Training Status',
         'modal_label': None,
+        'required': False,
     },
     {
         'entity': 'contributor',
@@ -652,6 +734,7 @@ FIELDS = [
         'section': 'Governance',
         'read_label': 'Last Training',
         'modal_label': None,
+        'required': False,
     },
 ]
 
