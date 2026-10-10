@@ -656,6 +656,19 @@ JSX failed to compile. Run `python3 tools/check_jsx.py`, then
 If it mentions `import`, the Babel version pin in `static/index.html` has been
 disturbed — it must stay pinned.
 
+**`check_jsx.py` reports a stray closing tag for an element that is plainly opened**
+Look at the few characters immediately *before* the opening tag, not at the tag.
+The scan decides whether a `<` starts JSX from the character preceding it, so a
+comment ending in a full stop, or anything else that reads as the left-hand side
+of a comparison, meant the opening tag was never recorded — and the error is
+then reported at the *closing* tag, which can be hundreds of lines away. It now
+walks back over comments; if you see this again, that is the shape of it.
+
+**`no such table` in a test suite, right after adding a migration**
+The harness builds its schema from `alembic/versions/`, so a new migration is
+picked up automatically — but only after `python3 tools/harness_setup.py` is
+run again. Rebuild the harness, then `cd /tmp/h2 && python3 reset_db.py`.
+
 **405 Method Not Allowed, or `Unexpected token '<'`**
 The backend is running old code. `docker compose restart app`, then confirm at
 `/api/version`.

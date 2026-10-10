@@ -114,7 +114,23 @@ SECTION_TOKEN = "@@SECTION@@"
 # now reported rather than skipped; see `unknown_field_components`.
 EDIT_COMPONENTS = ("EditField", "ContributorSelect")
 READ_COMPONENTS = ("ReadField", "ContributorField")
-KNOWN_COMPONENTS = set(EDIT_COMPONENTS) | set(READ_COMPONENTS)
+
+# The Add windows. `ReqField` is the required variant, and that is where
+# required-ness is read from — a field drawn with it cannot be hidden, because
+# the window will not submit without a value. `ModalField` and `ModalCheck`
+# are the optional ones.
+#
+# These replaced 42 hand-written `form-group` blocks whose column appeared only
+# inside an onChange closure. The regex that used to recover those columns
+# found 40 of the 80 fields: anything spread over several lines, anything
+# inside a `form-row`, and every checkbox was invisible to it, silently. Both
+# components now declare `col=` outright, so this is a read rather than a guess.
+MODAL_REQUIRED_COMPONENTS = ("ReqField",)
+MODAL_OPTIONAL_COMPONENTS = ("ModalField", "ModalCheck")
+MODAL_COMPONENTS = MODAL_REQUIRED_COMPONENTS + MODAL_OPTIONAL_COMPONENTS
+
+KNOWN_COMPONENTS = (set(EDIT_COMPONENTS) | set(READ_COMPONENTS)
+                    | set(MODAL_COMPONENTS))
 
 
 def unknown_field_components(body):
@@ -177,21 +193,46 @@ def read_labels(body):
 
 
 def modal_labels(body):
-    """{column: label} from an Add modal: form-groups and ReqFields alike."""
-    out = {}
+    """({column: label}, {required columns}) from an Add window.
+
+    Read from `col=` on the modal field components. Nothing is inferred from
+    the surrounding markup, which is what the previous version did and why it
+    saw half the fields.
+    """
+    out, required = {}, set()
     flat = re.sub(r"\s+", " ", body)
-    for block in re.findall(r'<div className="form-group">(.*?)</div>', flat):
-        label = re.search(r"<label[^>]*>([^<]+)</label>", block)
-        col = re.search(r"set\('([a-z_0-9]+)'", block)
-        if label and col:
-            out.setdefault(col.group(1), label.group(1).strip().rstrip("*").strip())
-    for call in re.finditer(r"<ReqField\b(.*?)/>", flat):
-        attrs = call.group(1)
-        label = re.search(r'label="([^"]+)"', attrs)
-        col = re.search(r"set\('([a-z_0-9]+)'", attrs)
-        if label and col:
-            out.setdefault(col.group(1), label.group(1).strip().rstrip("*").strip())
-    return out
+    for comp in MODAL_COMPONENTS:
+        for call in re.finditer(r"<" + comp + r"\b(.*?)/>", flat):
+            attrs = call.group(1)
+            label = re.search(r'label="([^"]+)"', attrs)
+            col = re.search(r'col="([a-z_0-9]+)"', attrs)
+            if not (label and col):
+                continue
+            name = label.group(1).strip().rstrip("*").strip()
+            out.setdefault(col.group(1), name)
+            if comp in MODAL_REQUIRED_COMPONENTS:
+                required.add(col.group(1))
+    return out, required
+
+
+def required_keys(body):
+    """The columns a modal's `useRequired` call validates.
+
+    Cross-checked against the required components above. The two are different
+    statements of the same fact — `useRequired` drives the validation, the
+    component choice drives what the catalogue records — and a field that
+    validates as required while the catalogue thinks it optional would be
+    hideable, which would make that record type impossible to create.
+    """
+    flat = re.sub(r"\s+", " ", body)
+    m = re.search(r"useRequired\(\s*\[(.*?)\]", flat)
+    if not m:
+        return set()
+    keys = set(re.findall(r"key:\s*'([a-z_0-9]+)'", m.group(1)))
+    # Conditionally appended requirements, e.g. the Manual Entry target store.
+    tail = flat[m.end():m.end() + 400]
+    keys |= set(re.findall(r"\{\s*key:\s*'([a-z_0-9]+)'", tail))
+    return keys
 
 
 def build():
@@ -217,7 +258,24 @@ def build():
                 f"{entity}: {rv} renders fields with <{comp_name}> \u2014 add it "
                 f"to READ_COMPONENTS")
         reads = read_labels(rbody)
-        modals = modal_labels(component(src, am) or "") if am else {}
+        mbody = component(src, am) or "" if am else ""
+        modals, required = modal_labels(mbody)
+        for comp_name in sorted(unknown_field_components(mbody)):
+            problems.append(
+                f"{entity}: {am} renders fields with <{comp_name}>, which this "
+                f"generator does not know about \u2014 add it to "
+                f"MODAL_OPTIONAL_COMPONENTS or those fields cannot be hidden")
+        # The validation and the catalogue must agree about what is required —
+        # but only about fields the catalogue actually has. An Add window also
+        # validates things that are not record fields at all: a data flow's
+        # name and its two endpoints are required there and appear nowhere in
+        # the edit view, so they are not hideable to begin with.
+        own = {c for c, _, _ in fields}
+        for col in sorted((required_keys(mbody) & own) - required):
+            problems.append(
+                f"{entity}.{col}: {am} validates it as required but draws it "
+                f"with an optional component, so the catalogue would let it be "
+                f"hidden \u2014 draw it with <ReqField>")
 
         seen = set()
         for col, label, section in fields:
@@ -233,6 +291,9 @@ def build():
                 "section": section or "Other",
                 "read_label": reads.get(col),
                 "modal_label": modals.get(col),
+                # Required in the Add window, so it can never be hidden. The
+                # server reads this to refuse the preference outright.
+                "required": col in required,
             })
 
     return entries, problems
@@ -252,13 +313,17 @@ def render(entries):
         "list. `label` is the canonical name, taken from the edit view, and is",
         "what Preferences shows. `read_label` and `modal_label` are the other",
         "spellings, so a definition is found wherever its field is drawn.",
+        "",
+        "`required` means the Add window validates it, which is why such a",
+        "field can never be hidden: the record could not then be created.",
         '"""',
         "",
         "FIELDS = [",
     ]
     for e in entries:
         lines.append("    {")
-        for k in ("entity", "column", "label", "section", "read_label", "modal_label"):
+        for k in ("entity", "column", "label", "section", "read_label",
+                  "modal_label", "required"):
             lines.append(f"        {k!r}: {e[k]!r},")
         lines.append("    },")
     lines += [

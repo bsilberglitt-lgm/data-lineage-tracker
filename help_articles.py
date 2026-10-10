@@ -613,6 +613,55 @@ is being planned without opening each one.
 """,
     },
     {
+        "id": "unused-fields",
+        "title": "Switching off fields you do not use",
+        "summary": "Removing fields your department does not record, from both "
+                   "the details panel and the Add window.",
+        "screens": ["preferences"],
+        "min_role": permissions.SUPERADMIN,
+        "keywords": ["hide", "hidden", "unused", "not used", "remove field",
+                     "field", "switch off", "turn off", "simplify", "tidy"],
+        "body": """\
+A SuperAdmin can mark a field as not used, which hides the field in both the
+details panel and the Add window.
+
+## Switching one off
+
+**Preferences → General → Field definitions.** Choose the field, then tick
+**Do not use this field**. It takes effect immediately.
+
+## What happens to anything already recorded
+
+**Nothing is deleted.** Anything already recorded in a field you switch off is
+kept, and comes back exactly as it was if you switch the field on again. If
+fourteen systems already name a vendor and you switch *Vendor* off, those
+fourteen values stay in the database untouched.
+
+One thing worth knowing: a switched-off field can still be carrying information
+nobody can see. If you are switching something off because the values in it are
+wrong rather than because the field is irrelevant, clear the values first.
+
+## One record type at a time
+
+Eleven fields appear on more than one kind of record — *Data Steward* is on systems, data flows and data elements. A
+department might record *Data Standards* on data flows and never on systems, so
+turning it off is **not shared across record types, even when definitions might
+be**.
+
+## Fields you cannot switch off
+
+Fields that are **required** when creating a record cannot be switched off —
+the form could not be completed without them. A system's name and type are two.
+Those show the reason rather than simply omitting the control.
+
+## Finding what you have switched off
+
+In the field list, anything switched off is marked **not used** — both in the
+dropdown and in the list of fields that already have a definition. Every change
+is also recorded in the audit trail, with who made it and when.
+""",
+    },
+    {
         "id": "field-definitions",
         "title": "Explaining what a field means",
         "summary": "Writing definitions that appear as tooltips beside fields, "

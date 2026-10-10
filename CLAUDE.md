@@ -183,6 +183,15 @@ Run the Python one after every frontend edit (it works in the assistant's
 sandbox, where npm and PyPI are blocked). Run the shell one before committing.
 Neither proves the page *renders* — only that it compiles.
 
+`check_jsx.py` decides whether a `<` begins JSX by looking at the character
+before it. During 0.5.1 a comment placed between `return (` and the root
+element of `App` broke that: the last character of the prose was a full stop,
+which reads as a comparison, so the opening tag was never recorded and its
+closing tag was reported as stray 200 lines away. `expression_position` now
+walks back over comments as well as whitespace. If it ever reports a stray
+closing tag for an element that is plainly opened, suspect the few characters
+before the opening tag rather than the tag itself.
+
 `check_jsx.py` is a scan, not a parser, and during 0.4.1 it **passed a region
 that had orphaned closing tags** left behind by a block that was moved. If you
 have reordered or spliced JSX rather than edited it in place, do not trust the
@@ -200,7 +209,7 @@ python3 tools/gen_field_catalog.py            # write it
 python3 tools/gen_field_catalog.py --check    # fail if stale (run before commit)
 ```
 
-Generated rather than hand-written because a hand-kept list of 77 fields drifts
+Generated rather than hand-written because a hand-kept list of 80 fields drifts
 the first time someone adds a field and forgets it — and the failure is silent:
 the new field simply cannot be given a definition, with no error anywhere.
 Every field already states its own database column at its call site, so the
@@ -212,7 +221,7 @@ differently depending on where it is drawn:
     system.encryption_at_rest    edit "Encrypt at Rest" / read "Encryption at Rest"
     data_flow.transfer_method    edit "Method" / modal "Transfer Method"
 
-Seventeen of the 77 have more than one spelling. A definition keyed on text
+Seventeen of the 80 have more than one spelling. A definition keyed on text
 would attach to one view and be missing from the others, which looks like the
 feature half-working. The server resolves every spelling to one column and
 emits the definition under each, so a component can look itself up knowing only
@@ -227,12 +236,57 @@ definition. The generator now **fails** on any labelled component it does not
 recognise rather than quietly producing a short list. Add new field components
 to `EDIT_COMPONENTS` / `READ_COMPONENTS`.
 
+**Modal fields declare their column; required-ness is read, not listed.**
+Every optional field in the three Add windows used to be a hand-written
+`form-group` whose column appeared only inside an onChange closure, so a modal
+field had no identity anything else could use. The generator recovered the
+column with a regex and found **40 of 80**: anything spread over several lines,
+anything inside a `form-row`, and every checkbox was invisible to it, with no
+error. `ModalField`, `ModalCheck` and `ReqField` now carry `col=`, so this is a
+read rather than a guess, and `ReqField` is also where the catalogue learns a
+field is **required** — which is what makes it unhideable.
+
+Four hand-written blocks remain, deliberately: a data flow's display name and
+the three inputs for the flow created alongside a Manual Entry system are not
+record fields, so there is nothing for hiding or a definition to resolve. They
+carry no `col` and a comment saying why.
+
+The generator **fails** if a modal's `useRequired` list names a catalogue field
+that is drawn with an optional component. Those are two statements of the same
+fact, and a field that validates as required while the catalogue thinks it
+optional would be hideable — which would make that record type impossible to
+create.
+
+**Field hiding is per record type, and never deletes.** `field_hidden`
+(migration 0012) is keyed on `(entity_type, column_name)` with **no shared
+`"*"` scope**, unlike definitions: what a field *means* is usually the same
+everywhere, whether you *use* it is not, and one tick emptying three screens is
+a worse surprise than three ticks. Hiding never touches the stored value, so
+the preference is safe to get wrong — the alternative is a mis-click that needs
+a restore. Required fields are refused on write *and* filtered on read, because
+a row could predate a field becoming required.
+
+Note the asymmetry in how the two are looked up: **definitions are keyed on
+every label**, because 81 call sites pass nothing else; **hiding is keyed on
+the column**, with a label-to-column map sent alongside for the older
+components. Keying hiding on text would mean a field relabelled in one view
+quietly reappearing there.
+
 **Shared definitions use `entity_type = "*"`.** A row stored that way applies
 to every record type carrying the column, and a row for a specific record type
 overrides it (`effective_definition`). Eleven columns appear on more than one
 record type; that is what lets Data Steward be defined once for all three while
 Description stays different per type. No schema change was needed — the primary
 key already allowed it.
+
+### The harness applies every migration in `alembic/versions/`
+
+`tools/harness_setup.py` used to carry a hand-written list of migration
+filenames. When 0012 arrived the harness simply did not have the new table, and
+every suite touching it failed with *no such table* — which reads like a bug in
+the feature rather than a stale list. The list is now derived from the
+directory, so a new migration is picked up by existing it. Keep the `NNNN_`
+naming: the order is the filename order.
 
 ### `{0 && <div/>}` renders a zero
 
