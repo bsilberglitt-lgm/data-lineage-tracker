@@ -54,7 +54,10 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
   border-radius: 4px; margin: 0 0 8px; font-size: 12px; }
 .hide-bar .btn { padding: 3px 9px; font-size: 12px; }
 .pick-col { width: 28px; text-align: center; }
-.zoom-controls { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+/* Inside .stats-actions now, so the auto margin belongs to that cluster
+   rather than to this one. Two siblings both claiming `margin-left: auto`
+   share the free space between them and end up pushed apart. */
+.zoom-controls { display: flex; align-items: center; gap: 4px; }
 /* Arrow routing. Handles only appear on the selected flow, so the diagram is
    not covered in dots while reading it. */
 .route-handle { fill: #fff; stroke: #D4772C; stroke-width: 2.5; cursor: grab; }
@@ -349,7 +352,10 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .edit-field-row > .edit-select { flex: 1; }
 .edit-field-row .field-label { padding-top: 6px; }
 .panel-actions { display: flex; gap: 8px; padding: 12px 20px; border-bottom: 1px solid #eee; background: #fafbfc; }
-.stats-bar { display: flex; gap: 24px; padding: 10px 20px; background: #fff; border-bottom: 1px solid #eee; }
+.stats-bar { display: flex; align-items: center; gap: 24px; padding: 10px 20px;
+  background: #fff; border-bottom: 1px solid #eee; }
+/* The Add buttons and the zoom controls, right-aligned together. */
+.stats-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .stat { text-align: center; }
 .stat-value { font-size: 22px; font-weight: 700; color: #1B3A5C; }
 .stat-label { font-size: 10px; color: #6b6b6b; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -440,13 +446,42 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .login-note { background: #fff8e1; border: 1px solid #ffe0a3; color: #7a5b00; border-radius: 6px; padding: 10px 12px; font-size: 12px; margin-bottom: 14px; text-align: left; line-height: 1.5; }
 .policy-list { text-align: left; font-size: 12px; color: #c0392b; margin: -4px 0 12px; padding-left: 18px; }
 .policy-list li { margin-bottom: 2px; }
-.user-chip { display: flex; align-items: center; gap: 8px; padding: 10px 20px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 12px; }
-.user-chip .avatar { width: 28px; height: 28px; border-radius: 50%; background: #5BA4E6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; flex-shrink: 0; }
-.user-chip .who { flex: 1; min-width: 0; }
-.user-chip .who b { display: block; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.user-chip .who span { opacity: 0.6; font-size: 10px; }
-.user-chip button { background: rgba(255,255,255,0.15); border: none; color: #fff; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
-.user-chip button:hover { background: rgba(255,255,255,0.28); }
+/* The account chip. It used to sit at the foot of the navy sidebar, where the
+   white-on-translucent colours came free; in the toolbar it is on white, so
+   every colour here is set rather than inherited. Measured: #4a5764 on #fff is
+   7.40:1 and the avatar's #fff on #2E75B6 is 4.84:1 — both past AA for small
+   text. See ACCESSIBILITY.md. */
+.user-menu { position: relative; flex-shrink: 0; }
+.user-menu-btn { display: flex; align-items: center; gap: 8px; background: none;
+  border: 1px solid transparent; border-radius: 6px; padding: 4px 8px;
+  cursor: pointer; font: inherit; color: #1B3A5C; max-width: 230px; }
+.user-menu-btn:hover { background: #f1f5f9; border-color: #dde3ea; }
+.user-menu-btn:focus-visible { outline: 2px solid #2E75B6; outline-offset: 1px; }
+.user-menu .avatar { width: 28px; height: 28px; border-radius: 50%;
+  background: #2E75B6; color: #fff; display: flex; align-items: center;
+  justify-content: center; font-weight: 700; font-size: 11px; flex-shrink: 0; }
+.user-menu-who { min-width: 0; text-align: left; line-height: 1.25; }
+.user-menu-who b { display: block; font-size: 12.5px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.user-menu-who span { display: block; font-size: 10.5px; color: #4a5764;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-menu-caret { font-size: 10px; color: #4a5764; }
+/* Above the modal overlay at 100 and below the tooltip portal at 200, so a
+   menu opened over a panel is not hidden by it. */
+.user-menu-pop { position: absolute; right: 0; top: calc(100% + 6px);
+  min-width: 220px; background: #fff; border: 1px solid #dde3ea;
+  border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.14); z-index: 150;
+  padding: 6px; }
+.user-menu-head { padding: 8px 10px 10px; border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 6px; }
+.user-menu-head b { display: block; font-size: 13px; }
+.user-menu-head span { display: block; font-size: 11px; color: #4a5764;
+  word-break: break-all; }
+.user-menu-item { display: block; width: 100%; text-align: left;
+  background: none; border: none; border-radius: 5px; padding: 8px 10px;
+  font: inherit; font-size: 13px; color: #1B3A5C; cursor: pointer; }
+.user-menu-item:hover { background: #f1f5f9; }
+.user-menu-item:focus-visible { outline: 2px solid #2E75B6; outline-offset: -2px; }
 .role-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; letter-spacing: 0.3px; }
 .role-Viewer { background: #e8eef4; color: #4a5764; }
 .role-Editor { background: #d6eaf8; color: #1a5276; }
@@ -2164,7 +2199,7 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
     <CollapsibleSection title="Contributor">
       <ReadField label="ID" value={data.contributor_id} />
       <ReadField label="Name" value={data.name} />
-      <ReadField label="Title" value={data.title} />
+      <ReadField label="Title" value={data.effective_title || data.title} />
       <ReadField label="Organization Unit" value={data.organization_unit} />
       <ReadField label="Role Type" value={data.role_type} />
       <ReadField label="Email" value={data.email} />
@@ -2197,7 +2232,16 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
     <CollapsibleSection title="Contributor">
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)}
                  invalid={(missing||[]).includes('name')} />
-      <EditField label="Title" value={form.title} onChange={v=>set('title',v)} />
+      {/* A contributor with a linked account takes their title from it, so
+          editing the contributor's own copy would write to a value nothing
+          reads. Shown, with where it comes from, rather than hidden. */}
+      {form.account_title
+        ? <div className="field-row"><span className="field-label">Title</span>
+            <span className="field-value">{form.account_title}
+              <span className="gov-hint" style={{display:'block'}}>
+                From their user account. They change it in their own profile.
+              </span></span></div>
+        : <EditField label="Title" value={form.title} onChange={v=>set('title',v)} />}
       <EditField label="Organization Unit" value={form.organization_unit}
                  onChange={v=>set('organization_unit',v)}
                  invalid={(missing||[]).includes('organization_unit')} />
@@ -4612,6 +4656,7 @@ function UserFormModal({ user, contributors, assignableRoles, onClose, onSave })
   const [form, setForm] = useState(() => ({
     email: user ? user.email : '', first_name: user ? user.first_name : '',
     last_name: user ? user.last_name : '', role: user ? user.role : 'Viewer',
+    title: (user && user.title) || '',
     is_active: user ? user.is_active : 1, contributor_id: (user && user.contributor_id) || '',
     password: '',
   }));
@@ -4646,6 +4691,13 @@ function UserFormModal({ user, contributors, assignableRoles, onClose, onSave })
           <div className="form-group"><label>Last name *</label>
             <input value={form.last_name} onChange={e => set('last_name', e.target.value)} /></div>
         </div>
+        <div className="form-group"><label>Title</label>
+          <input value={form.title} onChange={e => set('title', e.target.value)}
+                 placeholder="e.g. Data Governance Lead" />
+          <div className="gov-hint">
+            Shown wherever this person is named as a contributor. They can
+            change it themselves in their own profile.
+          </div></div>
         <div className="form-row">
           <div className="form-group"><label>Role</label>
             <select value={form.role} onChange={e => set('role', e.target.value)}>
@@ -4745,26 +4797,89 @@ function UsersScreen({ currentUser, assignableRoles, notify }) {
 // The Contributors list itself uses the same table + detail-panel pattern as the
 // other catalogs, so a Viewer can open a record and read it. Only creation needs
 // a modal, matching "+ Add System" and "+ Add Flow".
-function AddContributorModal({ onClose, onSave }) {
+function AddContributorModal({ onClose, onSave, pickableUsers }) {
   const [form, setForm] = useState({ name:'', title:'', organization_unit:'', email:'',
     phone:'', role_type:'', governance_role:'', governance_responsibilities:'', notes:'' });
+  const [linkUserId, setLinkUserId] = useState('');
   const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const chosen = (pickableUsers || []).find(u => String(u.user_id) === String(linkUserId));
+
+  // Choosing an account fills in the name and remembers the link. It
+  // deliberately does **not** copy the email or title across: both are
+  // resolved from the account wherever a contributor is shown, so storing a
+  // second copy here would be a snapshot that goes stale the moment either
+  // changes — the disagreement this release removed. They are displayed
+  // instead, with where they come from.
+  const pick = (id) => {
+    setLinkUserId(id);
+    const u = (pickableUsers || []).find(x => String(x.user_id) === String(id));
+    if (u) setForm(f => ({ ...f, name: u.name, email: '', title: '' }));
+  };
+
+  const unlink = () => {
+    setLinkUserId('');
+    setForm(f => ({ ...f, name: '' }));
+  };
+
   return (
     <div className="modal-overlay"><div className="modal" role="dialog" aria-modal="true">
       <div className="modal-header">Add Contributor <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body">
+        {(pickableUsers || []).length > 0 && (
+          <div className="fd-share">
+            <label htmlFor="con-user"><strong>Is this someone with an account?</strong></label>
+            <select id="con-user" value={linkUserId}
+                    onChange={e => e.target.value ? pick(e.target.value) : unlink()}>
+              <option value="">Select from drop down list</option>
+              {(pickableUsers || []).map(u => (
+                // Already-linked accounts stay in the list, disabled, which is
+                // how browsers grey an option. Removing them would leave
+                // someone hunting for a colleague who is simply absent.
+                <option key={u.user_id} value={u.user_id}
+                        disabled={!!u.linked_contributor_id}>
+                  {u.name} ({u.email})
+                  {u.linked_contributor_id
+                    ? ` \u2014 already linked to ${u.linked_contributor_name || u.linked_contributor_id}`
+                    : ''}
+                </option>
+              ))}
+            </select>
+            <div className="gov-hint">
+              Picking someone fills in their name and attaches this contributor
+              to their account, so you are not retyping details that already
+              exist. Greyed-out names already have a contributor record.
+            </div>
+            {chosen && (
+              <div style={{marginTop:8}}>
+                <div className="field-row"><span className="field-label">Email</span>
+                  <span className="field-value">{chosen.email}</span></div>
+                <div className="field-row"><span className="field-label">Title</span>
+                  <span className="field-value">{chosen.title || '\u2014'}</span></div>
+                <div className="gov-hint">
+                  Both come from their account and are kept up to date there,
+                  so they are not copied onto this record.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <ReqField id="con-name" entity="contributor" col="name" label="Name *"
                   value={form.name} onChange={v=>set('name',v)} />
         <div className="form-row">
-          <ModalField id="con-title" entity="contributor" col="title" label="Title"
-                      value={form.title} onChange={v=>set('title',v)} />
+          {!chosen && (
+            <ModalField id="con-title" entity="contributor" col="title" label="Title"
+                        value={form.title} onChange={v=>set('title',v)} />
+          )}
           <ModalField id="con-unit" entity="contributor" col="organization_unit"
                       label="Organization unit" value={form.organization_unit}
                       onChange={v=>set('organization_unit',v)} />
         </div>
         <div className="form-row">
-          <ModalField id="con-email" entity="contributor" col="email" label="Email"
-                      value={form.email} onChange={v=>set('email',v)} />
+          {!chosen && (
+            <ModalField id="con-email" entity="contributor" col="email" label="Email"
+                        value={form.email} onChange={v=>set('email',v)} />
+          )}
           <ModalField id="con-phone" entity="contributor" col="phone" label="Phone"
                       value={form.phone} onChange={v=>set('phone',v)} />
         </div>
@@ -4786,7 +4901,10 @@ function AddContributorModal({ onClose, onSave }) {
       </div>
       <div className="modal-footer">
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={()=>{ if(form.name) onSave(form); }}>Add Contributor</button>
+        <button className="btn btn-primary"
+                onClick={()=>{ if(form.name) onSave({
+                  ...form, ...(linkUserId ? { link_user_id: Number(linkUserId) } : {}),
+                }); }}>Add Contributor</button>
       </div>
     </div></div>
   );
@@ -5759,6 +5877,196 @@ function ChangePasswordScreen({ user, settings, onDone, onSignOut, forced }) {
   );
 }
 
+// ===== Your own account =====
+// Name, title and password, for anyone signed in. Email and role are shown but
+// not editable: email is the sign-in identity and the name against every audit
+// entry, and role is an administrator's decision. The server refuses either
+// outright rather than ignoring it, so there is nothing here to tempt.
+function ProfileModal({ user, settings, onClose, onSaved, notify }) {
+  const [form, setForm] = useState({
+    first_name: user.first_name || '', last_name: user.last_name || '',
+    title: user.title || '',
+  });
+  const [busy, setBusy] = useState(false);
+  // The password section is collapsed until asked for: most visits here are to
+  // fix a name, and three password boxes make the window look like a chore.
+  const [changing, setChanging] = useState(false);
+  const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
+  const [pwError, setPwError] = useState('');
+  const [problems, setProblems] = useState(null);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setP = (k, v) => setPw(f => ({ ...f, [k]: v }));
+
+  const saveDetails = async () => {
+    setBusy(true);
+    try {
+      await api.put('/api/auth/profile', form);
+      notify('Your details have been saved.');
+      onSaved();
+      onClose();
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
+  const savePassword = async () => {
+    setPwError(''); setProblems(null);
+    if (pw.next !== pw.confirm) { setPwError('The new passwords do not match.'); return; }
+    setBusy(true);
+    try {
+      await api.post('/api/auth/change-password',
+                     { current_password: pw.current, new_password: pw.next });
+      // Other sessions are revoked server-side, so say so: someone signed in
+      // on another machine will be asked for the new password there.
+      notify('Password changed. Any other sessions have been signed out.');
+      setChanging(false);
+      setPw({ current: '', next: '', confirm: '' });
+    } catch (err) {
+      setPwError(err.message);
+      setProblems(err.problems);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="modal-overlay"><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="profile-title">
+      <div className="modal-header" id="profile-title">Your profile
+        <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
+      <div className="modal-body">
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="pf-first">First name</label>
+            <input id="pf-first" value={form.first_name}
+                   onChange={e => set('first_name', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label htmlFor="pf-last">Last name</label>
+            <input id="pf-last" value={form.last_name}
+                   onChange={e => set('last_name', e.target.value)} />
+          </div>
+        </div>
+        <div className="form-group">
+          <label htmlFor="pf-title">Title</label>
+          <input id="pf-title" value={form.title} placeholder="e.g. Data Governance Lead"
+                 onChange={e => set('title', e.target.value)} />
+          <div className="gov-hint">
+            Shown wherever you are named as a contributor.
+          </div>
+        </div>
+
+        <div className="fd-share">
+          <div className="field-row"><span className="field-label">Email</span>
+            <span className="field-value">{user.email}</span></div>
+          <div className="field-row"><span className="field-label">Role</span>
+            <span className="field-value">{user.role}</span></div>
+          <div className="gov-hint">
+            Both are set by an administrator. Your email is how you sign in and
+            how your changes are recorded, so it is not changed from here.
+          </div>
+        </div>
+
+        {!changing && (
+          <button className="btn" onClick={() => setChanging(true)}>
+            Change password
+          </button>
+        )}
+        {changing && (
+          <div className="fd-share">
+            <strong style={{fontSize:'13px'}}>Change password</strong>
+            {pwError && <div className="field-error-msg">{pwError}</div>}
+            {problems && <ul className="policy-list">
+              {problems.map((pr, i) => <li key={i}>{pr}</li>)}</ul>}
+            <div className="form-group">
+              <label htmlFor="pf-cur">Current password</label>
+              <input id="pf-cur" type="password" autoComplete="current-password"
+                     value={pw.current} onChange={e => setP('current', e.target.value)} />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="pf-new">New password</label>
+                <input id="pf-new" type="password" autoComplete="new-password"
+                       value={pw.next} onChange={e => setP('next', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="pf-conf">Confirm</label>
+                <input id="pf-conf" type="password" autoComplete="new-password"
+                       value={pw.confirm} onChange={e => setP('confirm', e.target.value)} />
+              </div>
+            </div>
+            <div className="gov-hint">
+              {(settings && settings.password_policy) || ''}
+            </div>
+            <div className="res-actions">
+              <button className="btn btn-primary" disabled={busy} onClick={savePassword}>
+                {busy ? 'Saving…' : 'Update password'}</button>
+              <button className="btn" disabled={busy}
+                      onClick={() => { setChanging(false); setPwError(''); setProblems(null); }}>
+                Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={onClose}>Close</button>
+        <button className="btn btn-primary" disabled={busy} onClick={saveDetails}>
+          {busy ? 'Saving…' : 'Save details'}</button>
+      </div>
+    </div></div>
+  );
+}
+
+// The chip in the top-right corner, and the menu behind it. Closes on an
+// outside click, unlike the app's windows: a menu is not a form, nothing is
+// lost by dismissing one, and a menu that needs a deliberate close is worse
+// than one that gets out of the way.
+function UserMenu({ user, onProfile, onSignOut }) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
+    };
+    const esc = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+
+  const initials = `${(user.first_name||'?').charAt(0)}${(user.last_name||'').charAt(0)}`;
+  return (
+    <div className="user-menu" ref={boxRef}>
+      <button className="user-menu-btn" onClick={() => setOpen(o => !o)}
+              aria-haspopup="menu" aria-expanded={open}
+              aria-label={`Account menu for ${user.first_name} ${user.last_name}`}>
+        <span className="avatar">{initials}</span>
+        <span className="user-menu-who">
+          <b>{user.first_name} {user.last_name}</b>
+          <span>{user.title || user.role}</span>
+        </span>
+        <span className="user-menu-caret" aria-hidden="true">&#9662;</span>
+      </button>
+      {open && (
+        <div className="user-menu-pop" role="menu">
+          <div className="user-menu-head">
+            <b>{user.first_name} {user.last_name}</b>
+            <span>{user.email}</span>
+            <span>{user.role}{user.title ? ` \u00b7 ${user.title}` : ''}</span>
+          </div>
+          <button className="user-menu-item" role="menuitem"
+                  onClick={() => { setOpen(false); onProfile(); }}>Your profile</button>
+          <button className="user-menu-item" role="menuitem"
+                  onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===== Main App Wrapper =====
 function AppWrapper() {
   const [state, setState] = useState({ status: 'loading', user: null, settings: {} });
@@ -6692,10 +7000,26 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     }
   }, [refresh, notify]);
 
+  const openAddContributor = () => {
+    setShowAddContributor(true);
+    api.get('/api/users/pickable')
+      .then(setPickableUsers)
+      // A Viewer promoted mid-session, or any other refusal: the window still
+      // works, it just has no list to offer.
+      .catch(() => setPickableUsers([]));
+  };
+
   const addContributor = async (data) => {
     try { await api.post('/api/contributors', data); refresh(); setShowAddContributor(false); notify('Contributor added.'); }
     catch (err) { notify(err.message, true); }
   };
+
+  const [showProfile, setShowProfile] = useState(false);
+  // Accounts offered in the Add Contributor window. Fetched when that window
+  // is opened rather than on load: most sessions never add a contributor, and
+  // the list is stale the moment someone else links an account anyway — the
+  // server checks again on save.
+  const [pickableUsers, setPickableUsers] = useState([]);
 
   const panelOpen = !!detailData;
 
@@ -6740,14 +7064,6 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           {isSuper && <div className={`nav-item ${view==='preferences'?'active':''}`} onClick={()=>setView('preferences')}><span className="nav-icon">&#9881;</span> Preferences</div>}
           {isSuper && <div className={`nav-item ${view==='audit'?'active':''}`} onClick={()=>setView('audit')}><span className="nav-icon">&#9998;</span> Audit Log</div>}
         </nav>
-        <div className="user-chip">
-          <div className="avatar">{(user.first_name||'?').charAt(0)}{(user.last_name||'').charAt(0)}</div>
-          <div className="who">
-            <b title={user.email}>{user.first_name} {user.last_name}</b>
-            <span>{user.role}</span>
-          </div>
-          <button onClick={onSignOut} title="Sign out">Sign out</button>
-        </div>
       </div>
 
       <div className={`main-area${inScenario ? ' scenario-view' : ''}`}>
@@ -6769,9 +7085,8 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           )}
           <div className="toolbar-spacer"></div>
           {view==='schema' && <button className="btn" onClick={exitSchema}>&larr; Back to Lineage</button>}
-          {canEditHere && (view==='diagram'||view==='systems')&&<button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
-          {canEditHere && (view==='diagram'||view==='flows')&&<button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
-          {canEditHere && view==='contributors'&&<button className="btn btn-primary" onClick={()=>setShowAddContributor(true)}>+ Add Contributor</button>}
+          <UserMenu user={user} onSignOut={onSignOut}
+                    onProfile={() => setShowProfile(true)} />
         </div>
         {inScenario && SCOPED_VIEWS.includes(view) && (
           <div className="scenario-bar" role="status">
@@ -6818,9 +7133,21 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             <div className="stat"><div className="stat-value">{flows.length}</div><div className="stat-label">Data Flows</div></div>
             <div className="stat"><div className="stat-value">{elements.length}</div><div className="stat-label">Data Elements</div></div>
           </>}
-          {/* Zoom controls. Trackpad pinch-zoom is hard to land precisely, so
-              these give a predictable step. Only shown where there is something
-              to zoom. */}
+          {/* Everything on the right of the counts: the Add buttons, which
+              moved down from the toolbar to make room for the user menu, and
+              the zoom controls. One cluster rather than two, because two
+              `margin-left: auto` siblings would push each other apart.
+
+              Every view with an Add button also has a stats bar — the Add
+              buttons are a strict subset of the six views this bar appears
+              on — so nothing is left without a home. */}
+          <div className="stats-actions">
+          {canEditHere && (view==='diagram'||view==='systems') &&
+            <button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
+          {canEditHere && (view==='diagram'||view==='flows') &&
+            <button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
+          {canEditHere && view==='contributors' &&
+            <button className="btn btn-primary" onClick={openAddContributor}>+ Add Contributor</button>}
           {['diagram', 'schema'].includes(view) && (
             <div className="zoom-controls">
               <button className="zoom-btn" onClick={() => stepZoom(1 / 1.2)}
@@ -6856,6 +7183,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
               </button>
             </div>
           )}
+          </div>
         </div>}
         <div className="content-area">
           {view==='diagram' && <DiagramCanvas systems={systems} flows={flows} selected={selected}
@@ -6908,7 +7236,9 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
         onClose={()=>setShowAddSystem(false)} onSave={addSystem} />}
       {showAddFlow && <AddFlowModal systems={systems} inScenario={inScenario} contributors={contributors}
         onClose={()=>setShowAddFlow(false)} onSave={addFlow} />}
-      {showAddContributor && <AddContributorModal onClose={()=>setShowAddContributor(false)} onSave={addContributor} />}
+      {showAddContributor && <AddContributorModal onClose={()=>setShowAddContributor(false)}
+                                                 onSave={addContributor}
+                                                 pickableUsers={pickableUsers} />}
       {whatsNew.length > 0 && <WhatsNewModal releases={whatsNew}
         onLater={() => setWhatsNew([])} onAcknowledge={acknowledgeReleases} />}
       {whatsNew.length === 0 && alerts.length > 0 && <NotificationsModal items={alerts}
@@ -6917,6 +7247,11 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
       {helpOpen && (
         <HelpPanel screen={inScenario ? 'scenario' : view}
                    onClose={() => setHelpOpen(false)} notify={notify} />
+      )}
+      {showProfile && (
+        <ProfileModal user={user} settings={settings} notify={notify}
+                      onClose={() => setShowProfile(false)}
+                      onSaved={onSettingsChanged} />
       )}
       <VersionBadge version={version} onClick={() => setView('releases')} />
     </div>

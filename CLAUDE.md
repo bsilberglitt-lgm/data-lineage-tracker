@@ -337,6 +337,79 @@ under the resource edit form's label field. The INTEGER convention makes it a
 standing hazard rather than a one-off, and it is invisible to
 `tools/check_jsx.py` — the JSX is perfectly valid.
 
+### Self-service is a separate endpoint, not a relaxed admin one
+
+`/api/auth/profile` (0.6.0) lets any signed-in user change their own
+`first_name`, `last_name` and `title`. It is deliberately **not** a widened
+`/api/users/<id>`: that handler can change a role, issue a temporary password,
+deactivate an account, and refuses when the actor cannot manage the target. If
+self-service went through it with a narrower field list, the protection would
+live in a list of allowed keys rather than in the role check — and the next
+field added to that handler would be editable by everyone by default.
+
+Anything outside the three fields is **refused with a 403 naming the field**,
+not ignored. Silently dropping `role` would make a privilege-escalation attempt
+look like a success, and this project has found enough silently-dropped fields
+already. A mixed request is refused whole: no partial application.
+
+**Email is not self-service.** It is the sign-in identity *and* the name
+against every audit entry, so changing it changes both how someone signs in and
+how their history reads.
+
+Passwords still go through `/api/auth/change-password`, which already verified
+the current password, enforced the policy, revoked the other sessions and
+audited the change — the profile window only needed a UI.
+
+**A title lives on the account** (migration 0015). A contributor with a linked,
+*active* account shows that account's title; a contributor with no account
+keeps their own `contributor.title`, which is the only place that column is
+still read. A deactivated account stops supplying one, because its title is no
+longer current. No data migration was needed: Ben cleared every contributor
+title in production first, so there was nothing to copy up — had there been,
+the migration would have had to copy each linked contributor's title onto its
+account or the titles would simply have stopped being displayed.
+
+**A contributor created from an account copies the name only.** Add Contributor
+can pick an existing `app_user`, which fills the name and links the two in one
+transaction. The email and title are deliberately *not* copied: both resolve
+from the account wherever a contributor is displayed, so a copy here would be a
+snapshot that goes stale the moment either changes — the same disagreement this
+release removed for titles. The window shows them, says where they come from,
+and hides the corresponding form fields.
+
+`/api/users/pickable` exists because creating a contributor is an **Editor's**
+job while `/api/users` is Administrator-only. It returns the minimum that job
+needs — name, email, title, and whether they are already linked — and nothing
+about anyone's access. Already-linked accounts are returned rather than
+filtered out, so the window can grey them and name the contributor that has
+them; omitting them would leave someone hunting for a colleague who is simply
+absent. The server refuses a double link with a 409 as well, because the list
+is a snapshot and two people can be adding contributors at once.
+
+### Deactivating an account revokes its sessions immediately
+
+Not at next sign-in: `UPDATE user_session SET revoked_at` runs as part of the
+deactivation, and `load_session` also refuses an inactive user on every
+request. Worth knowing when writing tests — a suite that deactivates an
+account to prove something, reactivates it, and then reuses the old session
+gets a 401 where it expected a 403. Sign in again instead.
+
+### A read field may mention more than one `data.` value
+
+`read_labels` in the catalogue generator took the *first* `data.X` in a read
+field's attributes. That broke on a resolved value with a fallback:
+
+```jsx
+<ReadField label="Title" value={data.effective_title || data.title} />
+```
+
+It attributed the row to `effective_title`, which is not a column, so
+`contributor.title` silently lost its read label and a definition written for
+Title stopped appearing in the read view. The generator now prefers the first
+name the **edit view** already established as a real column, falling back to
+the first match. Keep the edit view parsed first; that ordering is what makes
+the distinction possible.
+
 ### A blank page after sign-in is usually an undeclared identifier
 
 `check_jsx.py` proves the JSX is *structurally* sound and `check_payloads.py`
@@ -353,14 +426,25 @@ fault was entirely in the browser.
 python3 tools/check_identifiers.py --check    # run before commit
 ```
 
-Two narrow rules: every `setX(...)` call has a declaration, and every
-`onClick={handler}` names something declared. A first attempt tried to find all
-undeclared identifiers and produced 183 false positives, because JSX *text
-content* reads as identifiers and separating prose from code needs a real JSX
-parser. These two rules need unambiguous syntax, so prose cannot trigger them,
-and they sit exactly where a lost declaration shows up. npm is blocked in the
-assistant's sandbox, so ESLint is not available to the thing making most of
-these edits; this is the substitute.
+Three narrow rules: every `setX(...)` call has a declaration, every
+`onClick={handler}` names something declared, and no `\uXXXX` escape sits in
+JSX **text**.
+
+That third one reached Ben in 0.6.0: `<option>No \u2014 enter details</option>`
+rendered the backslash and the digits. Inside a quoted string or a template
+literal the escape is interpreted; between tags it is four literal characters.
+Use the character itself or an HTML entity (`&mdash;`). The rule is checked
+against a copy with template literals blanked as well, since a backtick string
+is exactly where such an escape belongs — seven of the eight escapes in
+`index.html` are legitimate for that reason.
+
+A first attempt at the first two rules tried to find *every* undeclared
+identifier and produced 183 false positives, because JSX text content reads as
+identifiers and separating prose from code needs a real JSX parser. All three
+rules as written need unambiguous syntax, so prose cannot trigger them, and
+each sits exactly where its failure shows up. npm is blocked in the assistant's
+sandbox, so ESLint is not available to the thing making most of these edits;
+this is the substitute.
 
 ### Hand-written payloads must name every field the server accepts
 

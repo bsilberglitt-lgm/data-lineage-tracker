@@ -186,17 +186,32 @@ def edit_fields(body):
     return out
 
 
-def read_labels(body):
-    """{column: label} from a read view."""
+def read_labels(body, known=()):
+    """{column: label} from a read view.
+
+    One read field may mention several `data.` values — a resolved value and
+    the stored one it falls back to, say:
+
+        <ReadField label="Title" value={data.effective_title || data.title} />
+
+    Taking the first match attributed that row to `effective_title`, which is
+    not a column, so `contributor.title` silently lost its read label and a
+    definition written for Title stopped appearing in the read view. So prefer
+    the first name that the edit view already established as a real column, and
+    only fall back to the first match when none of them is.
+    """
     out = {}
     flat = re.sub(r"\s+", " ", body)
+    known = set(known)
     for call in re.finditer(
             r"<(?:" + "|".join(READ_COMPONENTS) + r")\b(.*?)/>", flat):
         attrs = call.group(1)
         label = re.search(r'label="([^"]+)"', attrs)
-        col = re.search(r"data\.([a-z_0-9]+)", attrs)
-        if label and col:
-            out.setdefault(col.group(1), label.group(1))
+        names = re.findall(r"data\.([a-z_0-9]+)", attrs)
+        if not (label and names):
+            continue
+        col = next((n for n in names if n in known), names[0])
+        out.setdefault(col, label.group(1))
     return out
 
 
@@ -265,7 +280,9 @@ def build():
             problems.append(
                 f"{entity}: {rv} renders fields with <{comp_name}> \u2014 add it "
                 f"to READ_COMPONENTS")
-        reads = read_labels(rbody)
+        # The edit view is parsed first, so its columns are what tells a
+        # resolved display value apart from a real one.
+        reads = read_labels(rbody, known={c for c, _, _ in fields})
         mbody = component(src, am) or "" if am else ""
         modals, required = modal_labels(mbody)
         for comp_name in sorted(unknown_field_components(mbody)):
