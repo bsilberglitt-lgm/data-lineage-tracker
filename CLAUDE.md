@@ -337,6 +337,107 @@ under the resource edit form's label field. The INTEGER convention makes it a
 standing hazard rather than a one-off, and it is invisible to
 `tools/check_jsx.py` — the JSX is perfectly valid.
 
+### Diagram geometry is pure functions, tested in Node
+
+`alignSnap`, `snapAngle`, `diagramExtent` and `exportFilename` take numbers and
+return numbers. No DOM, no React, no reading state. That is the only reason
+`tools/tests/t_align.js` can exercise them at all — there is no browser in the
+assistant's sandbox, so geometry that reaches into the DOM is geometry nobody
+can check until Ben clicks on it.
+
+```bash
+node tools/tests/t_align.js
+```
+
+Two properties the suite exists to protect:
+
+- **Snapping is inert outside its tolerance.** A snap that moves things you did
+  not ask it to move is worse than no snap, because you stop trusting the
+  position of anything. Every multiple of 45 degrees is checked from both
+  sides, and every angle 17 degrees off one is checked to be untouched.
+- **A guide spans both boxes.** A dotted line that stops short of the box it
+  refers to does not explain itself, which is the only reason to draw one.
+
+**Angles are measured from horizontal, not between segments.** Measuring the
+angle at a bend was the alternative and is harder to predict while dragging,
+because moving one end changes the answer for two segments at once. The
+difference from the nearest multiple has to be taken the short way round: -179
+and 179 degrees are two degrees apart, not 358, and a naive subtraction refuses
+to snap near 180.
+
+**The alignment tolerance is divided by the zoom at the call site.** The
+arithmetic is in diagram units, so a fixed six of them is a sixth of a
+centimetre at 3x and half a centimetre at 0.3x — dividing keeps the stickiness
+feeling the same.
+
+**Shift defeats both**, deliberately one key for "leave my positioning alone"
+rather than one per gesture.
+
+**`alignSnap` reads `x_pos`/`y_pos`, because that is what a system row carries.**
+The first version read `o.x`/`o.y` — properties a system does not have — so
+every comparison was against `undefined` and no guide could ever appear. The
+Node suite passed throughout, because its fixtures were written from the same
+wrong assumption as the code. **A test built on the author's misunderstanding
+confirms the misunderstanding**, which is the most expensive lesson in this
+file: the suite now checks the production call site with a regex and asserts
+that an `x`/`y`-shaped fixture snaps *nothing*.
+
+**A right angle needs both segments, which is why `snapBend` exists.**
+`snapAngle` alone rotates the incoming segment onto the nearest 45 degrees,
+which makes a diagonal look deliberate — Ben said that felt right immediately
+— but it cannot square a corner, because the outgoing segment keeps whatever
+angle the destination imposes. That is the "45 works, 90 does nothing" he
+reported. `snapBend` lines the dragged point up with either neighbour's x or y
+when close, which is exact and makes both segments axis-aligned, and falls back
+to the rotation for anything not near an axis. It also refuses to collapse a
+bend onto the neighbour it is locking to, which would not be a bend at all.
+
+### `const` does not escape an `eval`
+
+`t_labelpos.js`, `t_autoname.js` and `t_align.js` all read geometry out of
+`index.html` and `eval` it. **Function declarations leak into the enclosing
+scope; `const` and `let` do not.** So the functions are callable but the
+constants beside them are invisible, and a test that references one dies with
+`ReferenceError`. `t_align.js` reads the values it needs out of the source with
+a regex instead of hardcoding them, so the test cannot keep passing after
+someone changes the value it assumes.
+
+### Exporting the diagram: three fix-ups, all load-bearing
+
+A copied `<svg>` does not carry the page's stylesheet, so `diagramStyles()`
+inlines the rules it needs — read from `document.styleSheets` rather than
+hand-maintained, or the export drifts out of agreement with the screen and
+nobody notices until they open a file.
+
+**Which rules is decided by the file's own classes, not by a prefix list.** The
+first version matched selectors starting with a few guessed prefixes and missed
+`.system-node rect { rx: 10; ry: 10 }` — the rule that rounds every box — so
+exports came out with sharp corners. Nobody would think to put "check the
+corners are round" on a checklist. `diagramStyles(root)` now collects the
+classes present in the clone and keeps any rule mentioning one, plus the bare
+element rules, so the list maintains itself.
+
+**Three formats and a Print button** (`EXPORT_FORMATS`). SVG is written
+directly; PNG and JPG are drawn through a canvas at `EXPORT_RASTER_SCALE`,
+which is 2 so a projector and a high-resolution screen both look right. JPG
+gets an explicit white fill because it has no transparency and an unpainted
+canvas comes out black.
+
+**PDF is deliberately not a download.** It has no browser API, so it would mean
+jsPDF plus its SVG plugin — roughly 400KB on every page load and two more
+pinned versions — for a button used rarely. `printDiagram` opens the browser's
+print dialog instead, where "Save as PDF" is a destination: lossless vector
+output, no dependency, and it covers actual paper too. GIF was asked for and
+dropped: 256 colours, no browser encoder, and visibly worse than PNG for text
+and thin lines. The viewBox is set from
+`diagramExtent()` so the file holds the **whole** diagram rather than the
+scrolled viewport. And the pan-and-zoom transform is removed, along with the
+selection highlight and the editing handles, because those are states of the
+app rather than facts about the architecture.
+
+Everything operates on a **clone**. The live SVG is never touched, so an export
+cannot disturb what is on screen.
+
 ### Self-service is a separate endpoint, not a relaxed admin one
 
 `/api/auth/profile` (0.6.0) lets any signed-in user change their own
@@ -426,9 +527,19 @@ fault was entirely in the browser.
 python3 tools/check_identifiers.py --check    # run before commit
 ```
 
-Three narrow rules: every `setX(...)` call has a declaration, every
-`onClick={handler}` names something declared, and no `\uXXXX` escape sits in
-JSX **text**.
+Four narrow rules: every `setX(...)` call has a declaration, every bare
+`something(` call names something declared, every `onClick={handler}` names
+something declared, and no `\uXXXX` escape sits in JSX **text**.
+
+The call rule was added in 0.6.1 after `endpointsOf` was invented out of thin
+air and called from a drag handler: it compiled, and would have thrown the
+first time anyone dragged a bend. Rules 1 and 2 could not see it, because it is
+neither a setter nor an event-handler attribute. Requiring no space before the
+parenthesis is what keeps prose out — JSX text says "something (see below)"
+with a space, never "something(" — and `blank_template_text` blanks the literal
+text of template literals while keeping `${...}` contents, because otherwise
+SVG and CSS function syntax (`translate(`, `scale(`) and plain English
+(`person(s)`) read as calls.
 
 That third one reached Ben in 0.6.0: `<option>No \u2014 enter details</option>`
 rendered the backslash and the digits. Inside a quoted string or a template

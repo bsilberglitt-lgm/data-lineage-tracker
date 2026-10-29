@@ -165,6 +165,15 @@ Run all of these. They are ordered cheapest-first.
   python3 tools/check_identifiers.py --check
   ```
 
+- [ ] **1b-iii. Diagram geometry** — alignment snapping, angle snapping and
+  the export extent are pure functions, so they can be checked without a
+  browser. Nothing here proves the dragging *feels* right; that is the
+  click-through:
+
+  ```bash
+  node tools/tests/t_align.js
+  ```
+
 - [ ] **1c. Every field the server accepts is actually sent** — the details
   panel builds its save payloads by hand, and the update handlers write only
   the keys they are sent, so a field missing from a payload is silently

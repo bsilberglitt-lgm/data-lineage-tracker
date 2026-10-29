@@ -36,9 +36,17 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
    flex on specificity, and `.form-group input` sets width:100% with padding and
    a border — which stretches the checkbox across the whole line and pushes its
    caption onto the next one, so the box looks stranded at the right. Both
-   selectors below are deliberately more specific than those. */
+   selectors below are deliberately more specific than those.
+
+   **Radios need naming separately.** The 0.5.0 fix covered only
+   `input[type="checkbox"]`, so when the export dialog arrived in 0.6.1 its
+   radio buttons were stretched to the full width and their labels pushed far
+   to the right — the identical bug, found again, because the fix had been
+   written for the one control that had it rather than for the rule that
+   causes it. */
 .form-group label.check-inline { display: flex; }
-.check-inline input[type="checkbox"] { width: auto; flex: 0 0 auto;
+.check-inline input[type="checkbox"],
+.check-inline input[type="radio"] { width: auto; flex: 0 0 auto;
   padding: 0; border: none; border-radius: 0; margin: 0; }
 .pick-list { max-height: 190px; overflow-y: auto; border: 1px solid #dde3ea;
   border-radius: 4px; padding: 8px 10px; margin: 6px 0 12px; background: #fff; }
@@ -54,6 +62,13 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
   border-radius: 4px; margin: 0 0 8px; font-size: 12px; }
 .hide-bar .btn { padding: 3px 9px; font-size: 12px; }
 .pick-col { width: 28px; text-align: center; }
+/* An alignment guide. Dashed and thin so it reads as scaffolding rather than
+   as part of the diagram, and in the accent orange already used for selection
+   so it cannot be mistaken for a data flow. `vector-effect` keeps it one pixel
+   wide at every zoom, which is what makes it look like a guide rather than a
+   line that grows. */
+.align-guide { stroke: #D4772C; stroke-width: 1; stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke; pointer-events: none; }
 /* Inside .stats-actions now, so the auto margin belongs to that cluster
    rather than to this one. Two siblings both claiming `margin-left: auto`
    share the free space between them and end up pushed apart. */
@@ -206,6 +221,23 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .fd-share { background: #f5f8fc; border: 1px solid #dde3ea; border-radius: 6px;
   padding: 9px 11px; margin-bottom: 12px; }
 .fd-share .check-inline { margin: 0 0 4px; }
+/* The export dialog's radio list, scoped to itself. An earlier version styled
+   `.form-group label.check-inline` globally, which at 0,2,1 out-specifies
+   `.fd-share .check-inline` at 0,2,0 — so it would have quietly retightened
+   the sharing toggle in Preferences as well. A dialog's spacing is the
+   dialog's business. */
+.export-formats { margin-top: 6px; }
+.export-formats .check-inline { margin: 0 0 8px; font-size: 13px; }
+.export-formats .check-inline:last-child { margin-bottom: 0; }
+/* A disabled input has to look unusable, not merely unresponsive. Measured:
+   #5a6472 on #e4e9ef is 4.91:1, past AA for small text, so the value stays
+   readable while the box plainly is not editable. The first attempt used
+   #6b6b6b, which measured 4.37:1 and failed — grey-on-grey is exactly where
+   "looks about right" and "passes" part company, so this was measured rather
+   than eyeballed. */
+.form-group input:disabled, .form-group textarea:disabled,
+.form-group select:disabled { background: #e4e9ef; color: #5a6472;
+  border-color: #c2cad3; cursor: not-allowed; }
 /* A required field's toggle is shown rather than omitted, so the answer to
    "why can I not turn this one off?" is on the page instead of absent. */
 .fd-disabled { opacity: 0.6; cursor: not-allowed; }
@@ -1212,6 +1244,309 @@ function midpointOf(points) {
 //
 // Only upward, predominantly-vertical flows move. Everything else keeps the
 // midpoint it already had, because everything else already reads correctly.
+// ===== Exporting the diagram =====
+// SVG rather than an image: the diagram already *is* SVG, so the export is
+// nearly lossless, stays sharp at any size, and opens in Visio, Illustrator
+// and PowerPoint. A PNG would have meant rasterising at some arbitrary
+// resolution and choosing wrong.
+//
+// Three things have to be fixed up, and all three are the difference between a
+// file that opens correctly and one that looks broken:
+//
+//   1. **The styles are in a stylesheet, not on the elements.** Everything the
+//      diagram draws is styled by class from the page's <style> block, which
+//      does not travel with a copied <svg>. The rules are inlined into the
+//      clone as a <style> element.
+//   2. **The viewBox has to cover the whole diagram**, not the scrolled
+//      viewport. Ben asked for the whole thing, and a viewport-sized export
+//      would silently crop whatever was off-screen.
+//   3. **The pan and zoom have to go.** They live on a transform that makes
+//      sense only while someone is looking at the screen.
+const EXPORT_PADDING = 40;
+const EXPORT_TITLE_SPACE = 54;
+
+// The stylesheet rules the diagram actually uses. Taken from the page's own
+// <style> block rather than hand-maintained, so a colour changed in one place
+// does not need changing in two — the export would otherwise drift out of
+// agreement with the screen and nobody would notice until they opened a file.
+//
+// **Which rules, decided by what is in the file rather than by a prefix list.**
+// The first version matched selectors starting with a handful of guessed
+// prefixes, and missed `.system-node rect { rx: 10; ry: 10 }` — the rule that
+// rounds every box. Exports came out with sharp corners, which is not a
+// difference anyone would think to look for in a checklist. So: collect the
+// classes actually present in the clone and keep any rule that mentions one,
+// plus the bare element rules, and the list maintains itself.
+function diagramStyles(root) {
+  const used = new Set();
+  Array.prototype.slice.call(root.querySelectorAll('*')).forEach(el => {
+    const cls = el.getAttribute && el.getAttribute('class');
+    if (cls) String(cls).split(/\s+/).forEach(c => c && used.add(c));
+  });
+
+  const keep = (selector) => {
+    const classes = selector.match(/\.[-\w]+/g);
+    // No class at all: an element or universal rule such as `text { ... }`.
+    // Those are cheap and cannot do harm inside a standalone SVG.
+    if (!classes) return true;
+    return classes.some(c => used.has(c.slice(1)));
+  };
+
+  const out = [];
+  Array.prototype.slice.call(document.styleSheets).forEach(sheet => {
+    let rules;
+    // A stylesheet from another origin throws on access. There are none here,
+    // but a browser extension can inject one.
+    try { rules = sheet.cssRules; } catch (err) { return; }
+    Array.prototype.slice.call(rules || []).forEach(rule => {
+      if (rule.selectorText && keep(rule.selectorText)) out.push(rule.cssText);
+    });
+  });
+  // Text does not inherit a font from nowhere once the file leaves the page.
+  out.push('text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", '
+           + 'Roboto, Helvetica, Arial, sans-serif; }');
+  return out.join('\n');
+}
+
+// The box every system occupies, so the export can be cropped to the content
+// rather than to the window.
+function diagramExtent(systems, w, h, padding) {
+  if (!systems.length) return { x: 0, y: 0, width: 400, height: 200 };
+  const xs = systems.map(s => s.x_pos), ys = systems.map(s => s.y_pos);
+  const minX = Math.min.apply(null, xs), minY = Math.min.apply(null, ys);
+  const maxX = Math.max.apply(null, xs) + w, maxY = Math.max.apply(null, ys) + h;
+  return {
+    x: minX - padding,
+    // Room above for the title, which is drawn into the export rather than
+    // existing on screen.
+    y: minY - padding - EXPORT_TITLE_SPACE,
+    width: (maxX - minX) + padding * 2,
+    height: (maxY - minY) + padding * 2 + EXPORT_TITLE_SPACE,
+  };
+}
+
+// What the diagram is called, on the exported file and in the dialog's own
+// title. One helper rather than two strings, so the heading someone reads in
+// the dialog is the heading they get in the file.
+function exportHeading(viewName) {
+  return 'Lineage Diagram \u2014 ' + (viewName || 'Current Architecture');
+}
+
+// "Maine DOE Data Lineage — Current Architecture — 2026-10-29"
+//
+// Without an extension: the dialog shows this as the editable stem and appends
+// the one belonging to whichever format is chosen, so switching from SVG to
+// PNG does not leave a name ending in the wrong thing.
+function exportFilename(title, scenario) {
+  const today = new Date().toISOString().slice(0, 10);
+  const parts = [title || 'Data Lineage', scenario || 'Current Architecture', today];
+  // Keep the spaces and the dashes — this is a file a person will recognise in
+  // a Downloads folder, not something a script reads. Only the characters a
+  // filesystem objects to are removed.
+  return parts.join(' \u2014 ').replace(/[\\/:*?"<>|]/g, '');
+}
+
+// What the browser is handed. Separated from the name so the dialog can show
+// one and build the other.
+//
+// PDF sits in the list because that is where someone looks for it, but it is
+// not a download: `print: true` sends it through the browser's print dialog,
+// where "Save as PDF" is a destination. A real PDF download would mean jsPDF
+// and its SVG plugin — roughly 400KB on every page load — for a button used
+// rarely, and print-to-PDF is lossless vector anyway.
+const EXPORT_FORMATS = [
+  { id: 'svg', label: 'SVG', ext: '.svg' },
+  { id: 'png', label: 'PNG', ext: '.png' },
+  { id: 'jpg', label: 'JPG', ext: '.jpg' },
+  { id: 'pdf', label: 'PDF', ext: '.pdf', print: true },
+];
+
+// Rasters are drawn at twice the diagram's own size: crisp on a projector and
+// on a high-resolution screen, and still a sensible file size.
+const EXPORT_RASTER_SCALE = 2;
+
+// A filename is only safe once: the stem comes from a text box the user can
+// type anything into, so it is cleaned again here rather than trusting what
+// `exportFilename` produced earlier.
+function exportDownloadName(stem, formatId) {
+  const fmt = EXPORT_FORMATS.filter(f => f.id === formatId)[0] || EXPORT_FORMATS[0];
+  const safe = String(stem || '').replace(/[\\/:*?"<>|]/g, '').trim();
+  return (safe || 'Data Lineage') + fmt.ext;
+}
+
+// ===== Alignment guides =====
+// Dragging a box compares its edges against every other box and snaps to the
+// nearest match, drawing the dotted line that shows why — the behaviour
+// PowerPoint and every diagram tool has, and the reason you can line boxes up
+// without eyeballing it.
+//
+// Against other boxes only. Guides to the canvas centre were considered and
+// dropped: on a sparse diagram the centre is near everything, so the guide
+// fires constantly and means nothing.
+//
+// Six pixels, which the caller divides by the zoom so the stickiness feels the
+// same whether you are zoomed in or out — the arithmetic here is in diagram
+// units, and a fixed six of those is a sixth of a centimetre at 3x and half a
+// centimetre at 0.3x.
+const ALIGN_TOLERANCE = 6;
+
+// The three interesting coordinates on each axis. Centre is included because
+// two boxes of different widths look aligned when their centres match, not
+// their left edges.
+function edgesOf(pos, size) {
+  return [pos, pos + size / 2, pos + size];
+}
+
+// Pure: no DOM, no React, so tools/tests/t_align.js can exercise it directly.
+//
+// `others` are **system rows as the API returns them**, carrying `x_pos` and
+// `y_pos`. The first version read `o.x` and `o.y`, which are not properties a
+// system has, so every comparison was against `undefined` and no guide ever
+// appeared. The Node suite passed throughout, because its fixtures were
+// written from the same wrong assumption as the code — a test built on the
+// author's misunderstanding confirms the misunderstanding. Reading the real
+// field names here means the fixtures have to use them too.
+//
+// Returns { x, y, guides }. `guides` is what to draw: for each axis that
+// snapped, the coordinate and the span the dotted line should cover, which is
+// the union of the dragged box and every other box sharing that coordinate —
+// so the line reaches from one to the other rather than floating.
+function alignSnap(x, y, w, h, others, tolerance) {
+  const tol = tolerance === undefined ? ALIGN_TOLERANCE : tolerance;
+  const out = { x: x, y: y, guides: [] };
+
+  const axis = (pos, size, otherPos, otherSize) => {
+    let best = null;
+    const mine = edgesOf(pos, size);
+    for (let i = 0; i < others.length; i++) {
+      const theirs = edgesOf(otherPos(others[i]), otherSize);
+      for (let a = 0; a < mine.length; a++) {
+        for (let b = 0; b < theirs.length; b++) {
+          const delta = theirs[b] - mine[a];
+          // `<` not `<=` on the comparison keeps the FIRST of two equally
+          // good candidates, which makes the result stable as the pointer
+          // moves rather than flickering between two boxes at the same
+          // distance.
+          if (Math.abs(delta) <= tol
+              && (!best || Math.abs(delta) < Math.abs(best.delta))) {
+            best = { delta: delta, at: theirs[b] };
+          }
+        }
+      }
+    }
+    return best;
+  };
+
+  const vx = axis(x, w, (o) => o.x_pos, w);
+  if (vx) out.x = x + vx.delta;
+  const vy = axis(y, h, (o) => o.y_pos, h);
+  if (vy) out.y = y + vy.delta;
+
+  // The spans are computed from the *snapped* position, so the line starts at
+  // the box's final edge rather than where the pointer happened to be.
+  if (vx) {
+    const sharing = others.filter(o => edgesOf(o.x_pos, w).some(
+      e => Math.abs(e - vx.at) < 0.5));
+    const tops = sharing.map(o => o.y_pos).concat([out.y]);
+    const bottoms = sharing.map(o => o.y_pos + h).concat([out.y + h]);
+    out.guides.push({ orient: 'v', at: vx.at,
+                      from: Math.min.apply(null, tops),
+                      to: Math.max.apply(null, bottoms) });
+  }
+  if (vy) {
+    const sharing = others.filter(o => edgesOf(o.y_pos, h).some(
+      e => Math.abs(e - vy.at) < 0.5));
+    const lefts = sharing.map(o => o.x_pos).concat([out.x]);
+    const rights = sharing.map(o => o.x_pos + w).concat([out.x + w]);
+    out.guides.push({ orient: 'h', at: vy.at,
+                      from: Math.min.apply(null, lefts),
+                      to: Math.max.apply(null, rights) });
+  }
+  return out;
+}
+
+// ===== Snapping an arrow segment to 45 degrees =====
+// Measured from horizontal, not between adjacent segments. A segment within
+// five degrees of horizontal, vertical or either diagonal becomes exactly
+// that; anything else is left alone. Measuring between segments was the other
+// option and is harder to predict while dragging, because moving one end
+// changes the answer for two segments at once.
+const ANGLE_SNAP_DEGREES = 45;
+const ANGLE_SNAP_TOLERANCE = 5;
+
+// Moves `point` so the segment from `anchor` to it lies on the nearest
+// multiple of 45 degrees, keeping the segment's length. Returns the point
+// unchanged when nothing is close enough, so a deliberate 47-degree line
+// survives — and the caller skips this entirely while Shift is held.
+//
+// On its own this is not enough to draw a right angle, which is what
+// `snapBend` below exists to fix.
+function snapAngle(anchor, point, tolerance) {
+  const tol = tolerance === undefined ? ANGLE_SNAP_TOLERANCE : tolerance;
+  const dx = point.x - anchor.x, dy = point.y - anchor.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  // Nothing to rotate, and dividing by zero below.
+  if (length < 0.001) return point;
+
+  const degrees = Math.atan2(dy, dx) * 180 / Math.PI;
+  const nearest = Math.round(degrees / ANGLE_SNAP_DEGREES) * ANGLE_SNAP_DEGREES;
+  // The difference has to be measured the short way round: -179 and 179 are
+  // two degrees apart, not 358.
+  let off = degrees - nearest;
+  while (off > 180) off -= 360;
+  while (off < -180) off += 360;
+  if (Math.abs(off) > tol) return point;
+
+  const radians = nearest * Math.PI / 180;
+  return { x: anchor.x + Math.cos(radians) * length,
+           y: anchor.y + Math.sin(radians) * length };
+}
+
+// How close a bend has to be to a neighbour's axis before it lines up exactly.
+// In diagram units, divided by the zoom at the call site like the box guides.
+const BEND_AXIS_TOLERANCE = 8;
+
+// Where a dragged bend should actually go.
+//
+// Rotating the incoming segment onto the nearest 45 degrees — `snapAngle`
+// alone — makes a diagonal look deliberate, which is why that part felt right
+// immediately. It cannot produce a **right angle**, because a square corner is
+// a property of *two* segments and only the incoming one was being adjusted:
+// the outgoing segment kept whatever angle the destination happened to impose,
+// so the corner never squared up however carefully you dragged. That is the
+// "45 works, 90 does nothing" Ben reported.
+//
+// So: line the point up with either neighbour's x or y when it is close. That
+// is exact, it makes both segments axis-aligned, and it is how every diagram
+// tool behaves. Angle snapping stays as the fallback for everything that is
+// not near an axis, which is what keeps diagonals feeling the way they do.
+function snapBend(point, prev, next, axisTolerance, degreeTolerance) {
+  const tol = axisTolerance === undefined ? BEND_AXIS_TOLERANCE : axisTolerance;
+  const out = { x: point.x, y: point.y };
+  let lockedX = false, lockedY = false;
+
+  // Nearer neighbour first, so when both are in range the closer one decides.
+  const neighbours = [prev, next].filter(Boolean).slice().sort((a, b) =>
+    (Math.abs(a.x - point.x) + Math.abs(a.y - point.y))
+    - (Math.abs(b.x - point.x) + Math.abs(b.y - point.y)));
+
+  neighbours.forEach(n => {
+    if (!lockedX && Math.abs(n.x - point.x) <= tol) { out.x = n.x; lockedX = true; }
+    if (!lockedY && Math.abs(n.y - point.y) <= tol) { out.y = n.y; lockedY = true; }
+  });
+
+  // Both axes locked to the same neighbour would collapse the segment to
+  // nothing, which is not a bend at all. Keep the nearer axis and let the
+  // other float.
+  if (lockedX && lockedY && prev && out.x === prev.x && out.y === prev.y) {
+    if (Math.abs(prev.x - point.x) <= Math.abs(prev.y - point.y)) out.y = point.y;
+    else out.x = point.x;
+  }
+
+  if (lockedX || lockedY) return out;
+  return prev ? snapAngle(prev, point, degreeTolerance) : point;
+}
+
 const LABEL_CLEARANCE = 36;
 
 function pathLengthOf(points) {
@@ -1273,10 +1608,13 @@ function closestOnPath(points, px, py) {
 }
 
 // ===== SVG Diagram =====
-function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onUpdateRoute, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes, inScenario, zoom, setZoom }) {
+function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onUpdateRoute, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes, inScenario, zoom, setZoom, exportTitle, exportScenario, exportRef }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  // Guides for the box currently being dragged. Cleared on mouse up, so they
+  // never linger over a diagram nobody is rearranging.
+  const [guides, setGuides] = useState([]);
 
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
@@ -1307,15 +1645,28 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
       const pt = svg.createSVGPoint();
       pt.x = e.clientX; pt.y = e.clientY;
       const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
-      const newX = svgP.x / zoom - panOffset.x / zoom - dragRef.current.offsetX;
-      const newY = svgP.y / zoom - panOffset.y / zoom - dragRef.current.offsetY;
-      onUpdatePosition(dragRef.current.id, newX, newY);
+      const rawX = svgP.x / zoom - panOffset.x / zoom - dragRef.current.offsetX;
+      const rawY = svgP.y / zoom - panOffset.y / zoom - dragRef.current.offsetY;
+      // Shift drags freely. Tolerance is divided by the zoom so the snap feels
+      // equally sticky at any magnification: the arithmetic is in diagram
+      // units, and six of those cover very different distances on screen.
+      if (e.shiftKey) {
+        setGuides([]);
+        onUpdatePosition(dragRef.current.id, rawX, rawY);
+      } else {
+        const others = systems.filter(s => s.system_id !== dragRef.current.id);
+        const snapped = alignSnap(rawX, rawY, NODE_W, NODE_H, others,
+                                  ALIGN_TOLERANCE / zoom);
+        setGuides(snapped.guides);
+        onUpdatePosition(dragRef.current.id, snapped.x, snapped.y);
+      }
     } else if (isPanning.current) {
       setPanOffset({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
     }
-  }, [onUpdatePosition, panOffset, zoom]);
+  }, [onUpdatePosition, panOffset, zoom, systems]);
 
   const handleMouseUp = useCallback(() => {
+    setGuides([]);
     if (dragRef.current) {
       const sys = systems.find(s => s.system_id === dragRef.current.id);
       if (sys) api.quiet('PUT', `/api/systems/${sys.system_id}/position`, { x_pos: sys.x_pos, y_pos: sys.y_pos });
@@ -1408,8 +1759,182 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
                    insertAt: near.segment, at: { x: p.x, y: p.y } });
   };
 
+  // Build a standalone copy of the diagram and hand it to the browser as a
+  // download. Everything here operates on a *clone* — the live SVG is never
+  // touched, so an export cannot disturb what is on screen.
+  // Returns the standalone SVG as a string, which is what every format starts
+  // from: SVG is written out directly, PNG and JPG are drawn through a canvas.
+  const buildSvg = useCallback(() => {
+    const live = svgRef.current;
+    if (!live) return;
+    const clone = live.cloneNode(true);
+
+    // The pan-and-zoom transform is a property of looking at a screen.
+    const moved = clone.querySelector('g[transform]');
+    if (moved) moved.removeAttribute('transform');
+
+    // Selection is a state of the app, not of the diagram.
+    Array.prototype.slice.call(clone.querySelectorAll('.node-selected'))
+      .forEach(el => el.classList.remove('node-selected'));
+    Array.prototype.slice.call(
+      clone.querySelectorAll('.align-guide, .anchor-dot, .grab-handle'))
+      .forEach(el => el.parentNode && el.parentNode.removeChild(el));
+
+    const box = diagramExtent(systems, NODE_W, NODE_H, EXPORT_PADDING);
+    clone.setAttribute('viewBox',
+      `${box.x} ${box.y} ${box.width} ${box.height}`);
+    clone.setAttribute('width', box.width);
+    clone.setAttribute('height', box.height);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    // A white background: an SVG is transparent by default, which looks fine
+    // on a page and turns into whatever is behind it in a slide.
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('x', box.x); bg.setAttribute('y', box.y);
+    bg.setAttribute('width', box.width); bg.setAttribute('height', box.height);
+    bg.setAttribute('fill', '#ffffff');
+    clone.insertBefore(bg, clone.firstChild);
+
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    // Passed the clone, so the rules kept are the ones its own classes need.
+    style.textContent = diagramStyles(clone);
+    clone.insertBefore(style, clone.firstChild);
+
+    // What the diagram is, drawn into the file. On screen this lives in the
+    // toolbar, which is not part of the diagram and does not get exported.
+    // One line: the application's own title and subtitle were here first and
+    // said nothing about *which* diagram this is, which is the only thing a
+    // reader of the file needs from a heading.
+    const heading = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    heading.setAttribute('x', box.x + EXPORT_PADDING);
+    heading.setAttribute('y', box.y + 34);
+    heading.setAttribute('font-size', '20');
+    heading.setAttribute('font-weight', '700');
+    heading.setAttribute('fill', '#1B3A5C');
+    heading.textContent = exportHeading(exportScenario);
+    clone.appendChild(heading);
+
+    return {
+      markup: '<?xml version="1.0" encoding="UTF-8"?>\n'
+              + new XMLSerializer().serializeToString(clone),
+      width: box.width,
+      height: box.height,
+    };
+  }, [systems, exportScenario]);
+
+  // One place that hands a blob to the browser, so the download mechanics —
+  // including the revoke timing below — exist once rather than per format.
+  const download = (blob, name) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Released on the next tick: revoking immediately cancels the download in
+    // some browsers before it has started.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  // PNG and JPG: draw the SVG into a canvas and read it back. The diagram
+  // references no external images, so nothing taints the canvas and
+  // `toBlob` is allowed to produce data.
+  const exportRaster = (built, name, mime, done) => {
+    const scale = EXPORT_RASTER_SCALE;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(built.width * scale));
+    canvas.height = Math.max(1, Math.round(built.height * scale));
+    const ctx = canvas.getContext('2d');
+    // JPG has no transparency, so an unpainted canvas would come out black
+    // rather than white. The SVG carries its own white rectangle, but this
+    // covers the margins the scaling introduces.
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const svgUrl = URL.createObjectURL(
+      new Blob([built.markup], { type: 'image/svg+xml;charset=utf-8' }));
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(svgUrl);
+      canvas.toBlob((blob) => {
+        if (blob) download(blob, name);
+        done(blob ? null : 'The image could not be created.');
+      }, mime, mime === 'image/jpeg' ? 0.92 : undefined);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(svgUrl);
+      done('The diagram could not be converted to an image.');
+    };
+    img.src = svgUrl;
+  };
+
+  const runExport = useCallback((formatId, stem, onDone) => {
+    const built = buildSvg();
+    if (!built) { onDone('There is nothing to export.'); return; }
+    const name = exportDownloadName(stem, formatId);
+    if (formatId === 'svg') {
+      download(new Blob([built.markup],
+                        { type: 'image/svg+xml;charset=utf-8' }), name);
+      onDone(null);
+      return;
+    }
+    exportRaster(built, name,
+                 formatId === 'jpg' ? 'image/jpeg' : 'image/png', onDone);
+  }, [buildSvg]);
+
+  // Printing goes through the browser, where "Save as PDF" is a destination.
+  // That avoids a PDF library — about 400KB on every page load and two more
+  // pinned versions — for a button most people will use rarely, and it covers
+  // actual paper as well.
+  const printDiagram = useCallback(() => {
+    const built = buildSvg();
+    if (!built) return;
+    const w = window.open('', '_blank');
+    if (!w) return;   // pop-up blocked; nothing useful to do but stop
+    w.document.write('<!doctype html><html><head><title>'
+      + String(exportTitle || 'Data Lineage').replace(/[<>&]/g, '')
+      + '</title><style>@page { size: landscape; margin: 10mm }'
+      + 'body { margin: 0 } svg { width: 100%; height: auto }</style>'
+      + '</head><body>' + built.markup + '</body></html>');
+    w.document.close();
+    // The image has to be laid out before the print dialog measures it.
+    w.onload = () => { w.focus(); w.print(); };
+  }, [buildSvg, exportTitle]);
+
+  // The Export button sits in the view bar, which belongs to App, while the
+  // SVG it has to serialise is here. Publishing the function through a ref
+  // keeps the DOM work next to the element it operates on, rather than
+  // lifting the whole diagram's internals up a level to reach a button.
+  useEffect(() => {
+    if (exportRef) exportRef.current = { run: runExport, print: printDiagram };
+    return () => { if (exportRef) exportRef.current = null; };
+  }, [exportRef, runExport, printDiagram]);
+
   // Snap radius for a connection point, in diagram units.
   const SNAP = 26;
+
+  // The two points a dragged bend sits between. Both are needed: a right angle
+  // is a property of the pair, so adjusting only the incoming side can never
+  // produce one.
+  const bendNeighbours = useCallback((rd) => {
+    const flow = flowById[rd.flowId];
+    if (!flow) return { prev: null, next: null };
+    // `endpoints` is already resolved once per render for every flow; using it
+    // keeps the anchors identical to the ones the arrow is drawn from.
+    const ends = endpoints[rd.flowId];
+    if (!ends) return { prev: null, next: null };
+    const bends = parseWaypoints(flow.waypoints);
+    // An existing bend sits at `index`; a new one is being inserted into the
+    // segment numbered `insertAt`, so it lands between insertAt-1 and insertAt.
+    const at = rd.index === null ? rd.insertAt : rd.index;
+    const prev = at > 0 ? (bends[at - 1] || ends.from) : ends.from;
+    // For an existing bend the following point is the next bend; for a new one
+    // it is whatever currently occupies that position.
+    const afterIndex = rd.index === null ? at : at + 1;
+    const next = bends[afterIndex] || ends.to;
+    return { prev, next };
+  }, [flowById, endpoints]);
 
   const routeMove = useCallback((e) => {
     if (!routeDrag) return;
@@ -1428,9 +1953,18 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
       setRouteDrag(rd => ({ ...rd, at: best ? { x: best.x, y: best.y } : p,
                             over: best }));
     } else {
-      setRouteDrag(rd => ({ ...rd, at: { x: p.x, y: p.y } }));
+      // Lines up with either neighbour's axis when close — which is what
+      // makes a square corner possible — and otherwise rotates onto the
+      // nearest 45 degrees. Shift holds both off, because a deliberate odd
+      // angle has to stay possible.
+      const n = bendNeighbours(routeDrag);
+      const at = e.shiftKey
+        ? { x: p.x, y: p.y }
+        : snapBend({ x: p.x, y: p.y }, n.prev, n.next,
+                   BEND_AXIS_TOLERANCE / zoom);
+      setRouteDrag(rd => ({ ...rd, at }));
     }
-  }, [routeDrag, systems, panOffset, zoom]);
+  }, [routeDrag, systems, panOffset, zoom, bendNeighbours]);
 
   const routeUp = useCallback(() => {
     if (!routeDrag) return;
@@ -1510,6 +2044,16 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
           <marker id="arrowhead-sel" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto" fill="#D4772C"><polygon points="0 0, 10 3.5, 0 7" /></marker>
         </defs>
         <g transform={`translate(${panOffset.x},${panOffset.y}) scale(${zoom})`}>
+          {/* Alignment guides, drawn first so a box never sits under one. The
+              line is extended 12 units past both boxes so it reads as a guide
+              rather than as a connector between them. */}
+          {guides.map((g, k) => (
+            <line key={k} className="align-guide"
+                  x1={g.orient === 'v' ? g.at : g.from - 12}
+                  x2={g.orient === 'v' ? g.at : g.to + 12}
+                  y1={g.orient === 'v' ? g.from - 12 : g.at}
+                  y2={g.orient === 'v' ? g.to + 12 : g.at} />
+          ))}
           {flowOrder.map(fid => {
             const flow = flowById[fid];
             const ends = endpoints[fid];
@@ -6067,6 +6611,79 @@ function UserMenu({ user, onProfile, onSignOut }) {
   );
 }
 
+// ===== Export dialog =====
+// The format choice has to be explained, not just listed: "SVG or PNG" is a
+// question most people cannot answer, and picking wrong means a blurry
+// diagram in a slide deck. Each option says what it is for.
+//
+// PDF is deliberately absent as a download. The browser's own print dialog
+// offers "Save as PDF", which is lossless vector output and costs no
+// dependency — see `printDiagram`.
+function ExportModal({ defaultName, viewName, onExport, onPrint, onClose, notify }) {
+  const [format, setFormat] = useState('svg');
+  const [name, setName] = useState(defaultName);
+  const [busy, setBusy] = useState(false);
+
+  const chosen = EXPORT_FORMATS.filter(f => f.id === format)[0];
+  const printing = chosen && chosen.print;
+
+  const go = () => {
+    setBusy(true);
+    onExport(format, name, (error) => {
+      setBusy(false);
+      if (error) { notify(error, true); return; }
+      notify(`Exported as ${exportDownloadName(name, format)}.`);
+      onClose();
+    });
+  };
+
+  return (
+    <div className="modal-overlay"><div className="modal" role="dialog"
+         aria-modal="true" aria-labelledby="export-title">
+      <div className="modal-header" id="export-title">
+        {'Export ' + exportHeading(viewName)}
+        <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
+      <div className="modal-body">
+        {/* Both headings are plain `.form-group label`s so they match each
+            other and every other form in the app; the option labels inherit
+            the body size. Using `.field-label` for one of them made it a
+            different size, weight and colour from the other, and that class
+            is 140px wide, which pushed things about as well. */}
+        <div className="form-group" style={{marginBottom:18}}>
+          <label>Format</label>
+          <div className="export-formats">
+            {EXPORT_FORMATS.map(f => (
+              <label className="check-inline" key={f.id}>
+                <input type="radio" name="export-format" value={f.id}
+                       checked={format === f.id}
+                       onChange={() => setFormat(f.id)} />
+                {f.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="form-group" style={{marginBottom:4}}>
+          <label htmlFor="export-name">File name</label>
+          <input id="export-name" value={name} disabled={!!printing}
+                 onChange={e => setName(e.target.value)} />
+          {/* Only where it would otherwise be a silent lie: a disabled box
+              with no reason given is worse than one short line. */}
+          {printing && <div className="gov-hint" style={{marginTop:6}}>
+            For PDF exports, file name must be changed in the print dialog.
+          </div>}
+        </div>
+      </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy}
+                onClick={printing ? () => { onPrint(); onClose(); } : go}>
+          {printing ? 'Print' : (busy ? 'Preparing…' : `Download ${chosen ? chosen.label : ''}`)}
+        </button>
+      </div>
+    </div></div>
+  );
+}
+
 // ===== Main App Wrapper =====
 function AppWrapper() {
   const [state, setState] = useState({ status: 'loading', user: null, settings: {} });
@@ -7020,6 +7637,10 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   // the list is stale the moment someone else links an account anyway — the
   // server checks again on save.
   const [pickableUsers, setPickableUsers] = useState([]);
+  // Set by DiagramCanvas while it is mounted; null otherwise, which is what
+  // disables the Export button on every other view.
+  const diagramExport = useRef(null);
+  const [showExport, setShowExport] = useState(false);
 
   const panelOpen = !!detailData;
 
@@ -7148,6 +7769,13 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             <button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
           {canEditHere && view==='contributors' &&
             <button className="btn btn-primary" onClick={openAddContributor}>+ Add Contributor</button>}
+          {view === 'diagram' && (
+            <Tooltip text="Download or print this diagram. The whole diagram is included, not just the part on screen.">
+              <button className="btn" onClick={() => setShowExport(true)}>
+                Export
+              </button>
+            </Tooltip>
+          )}
           {['diagram', 'schema'].includes(view) && (
             <div className="zoom-controls">
               <button className="zoom-btn" onClick={() => stepZoom(1 / 1.2)}
@@ -7191,6 +7819,8 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             onDrill={drillIntoSchema} canEdit={canEditHere} systemTypes={systemTypes}
             onUpdateRoute={updateRoute}
             inScenario={inScenario} zoom={diagramZoom} setZoom={setDiagramZoom}
+            exportTitle={appTitle}
+            exportScenario={scenarioLabel(scenario)} exportRef={diagramExport}
             panelOpen={!!detailData} onDismissPanel={closeDetail} />}
           {view==='schema' && <SchemaCanvas tables={schemaTables} selected={selected} onSelectTable={selectSchemaTable} onSelectColumn={selectSchemaColumn} onUpdatePosition={updateSchemaPosition} canEdit={canEditHere}
             zoom={schemaZoom} setZoom={setSchemaZoom} />}
@@ -7247,6 +7877,18 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
       {helpOpen && (
         <HelpPanel screen={inScenario ? 'scenario' : view}
                    onClose={() => setHelpOpen(false)} notify={notify} />
+      )}
+      {showExport && (
+        <ExportModal
+          defaultName={exportFilename(appTitle, scenarioLabel(scenario))}
+          viewName={scenarioLabel(scenario)}
+          onExport={(fmt, name, done) => {
+            const api2 = diagramExport.current;
+            if (!api2) { done('The diagram is not open.'); return; }
+            api2.run(fmt, name, done);
+          }}
+          onPrint={() => diagramExport.current && diagramExport.current.print()}
+          onClose={() => setShowExport(false)} notify={notify} />
       )}
       {showProfile && (
         <ProfileModal user={user} settings={settings} notify={notify}

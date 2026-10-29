@@ -155,6 +155,7 @@ Reported honestly rather than left for someone to discover:
   | Account chip, avatar initials | `#fff` on `#2E75B6` | 4.84:1 | passes |
   | Account chip, name | `#1B3A5C` on `#fff` | 11.63:1 | passes |
   | Account menu item, hovered | `#1B3A5C` on `#f1f5f9` | 10.61:1 | passes |
+  | Disabled input value | `#5a6472` on `#e4e9ef` | 4.91:1 | passes |
 
   The account chip moved out of the navy sidebar into the white toolbar in
   0.6.0, so none of its colours are inherited any more and all four were
