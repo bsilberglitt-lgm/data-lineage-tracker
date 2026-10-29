@@ -156,9 +156,10 @@ Run all of these. They are ordered cheapest-first.
   If it reports being out of date, run it without `--check` and commit the
   result.
 
-- [ ] **1b-ii. State setters and handlers are declared** — a lost `useState`
-  pair or handler compiles cleanly and throws at render, which shows up as a
-  **blank page after sign-in** with the reason only in the browser console:
+- [ ] **1b-ii. Things that compile and are still wrong** — a lost `useState`
+  pair or handler throws at render, showing up as a **blank page after
+  sign-in** with the reason only in the browser console; and a `\uXXXX`
+  escape in JSX text renders as literal characters on the page:
 
   ```bash
   python3 tools/check_identifiers.py --check

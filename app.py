@@ -482,6 +482,18 @@ def contributor_references(conn, cid):
     return out
 
 
+def linked_accounts(conn):
+    """{contributor_id: {email, title}} for contributors with an account.
+
+    Only active accounts. A deactivated account's address is no longer one
+    anybody should be emailing, and its title is no longer current.
+    """
+    return {r["contributor_id"]: {"email": r["email"], "title": r["title"]}
+            for r in conn.execute(
+                "SELECT contributor_id, email, title FROM app_user "
+                "WHERE contributor_id IS NOT NULL AND is_active=1").fetchall()}
+
+
 def contact_emails(conn):
     """{contributor_id: email} preferring the linked user account.
 
@@ -502,19 +514,31 @@ def contact_emails(conn):
             "SELECT contributor_id, email FROM contributor "
             "WHERE email IS NOT NULL AND email != ''").fetchall():
         out[r["contributor_id"]] = r["email"]
-    for r in conn.execute(
-            "SELECT contributor_id, email FROM app_user "
-            "WHERE contributor_id IS NOT NULL AND is_active=1").fetchall():
-        out[r["contributor_id"]] = r["email"]
+    for cid, acct in linked_accounts(conn).items():
+        out[cid] = acct["email"]
     return out
 
 
 def with_contact(rows, conn):
-    """Add `contact_email` to contributor rows."""
+    """Add the resolved contact details to contributor rows.
+
+    `account_title` is set only when a linked account exists, and the frontend
+    uses its presence to decide whether the contributor's own Title field is
+    editable: a person with an account maintains their title themselves, in
+    their profile, so editing the contributor copy would be writing to a value
+    nothing reads.
+    """
     emails = contact_emails(conn)
+    accounts = linked_accounts(conn)
     out = rows_to_list(rows) if not isinstance(rows, list) else rows
     for r in out:
-        r["contact_email"] = emails.get(r.get("contributor_id"))
+        cid = r.get("contributor_id")
+        acct = accounts.get(cid) or {}
+        r["contact_email"] = emails.get(cid)
+        r["account_title"] = acct.get("title")
+        # The account's title wins where there is one; a contributor who will
+        # never sign in keeps their own.
+        r["effective_title"] = acct.get("title") or r.get("title")
     return out
 
 # ---------------------------------------------------------------------------
@@ -1450,7 +1474,7 @@ SEED_RELEASES = [
 * A definition written in Preferences now appears while you are *creating* a
   record, not only when editing one afterwards.
 """),
-    (VERSION, "Names, not identifiers", None, 1, 1300, """\
+    ("0.5.2", "Names, not identifiers", None, 1, 1300, """\
 ## What's new in this release
 
 **Fixes**
@@ -1488,6 +1512,41 @@ SEED_RELEASES = [
 * The knowledge base now explains **which changes can be reverted** from the
   audit log, and which cannot.
 * Confirmation windows no longer close when you click outside them.
+"""),
+    (VERSION, "Your own account", None, 1, 1400, """\
+## What's new in this release
+
+**Your own account**
+
+* Your name now sits in the **top right**, with a menu holding **Your profile**
+  and **Sign out**. It used to be at the foot of the sidebar.
+* You can change your own **name, title and password** from there, without
+  asking an administrator. Changing your password signs out your other
+  sessions.
+* Your **email and role** are shown but still set by an administrator, since
+  your email is how you sign in and how your changes are recorded.
+
+**Titles**
+
+* A user account can now carry a **title**, shown wherever that person is
+  named as a contributor, so a name on a record says what the person does.
+* An administrator can set it too, on the Users screen.
+
+**Adding a contributor who already has an account**
+
+* **Add Contributor** now lets you pick someone from a list of accounts, which
+  fills in their name and attaches the two records together — no retyping, and
+  nothing to get wrong.
+* Their email and title stay with their account rather than being copied, so
+  the two can never drift apart.
+* Anyone who already has a contributor record is greyed out in the list, with
+  the record they belong to named.
+
+**Layout**
+
+* **Add System**, **Add Flow** and **Add Contributor** have moved down beside
+  the record counts, which is where the space freed up by the account menu
+  went.
 """),
 ]
 
@@ -1899,8 +1958,9 @@ if HAS_TORNADO:
                 row = conn.execute(
                     """SELECT s.session_id, s.user_id, s.csrf_token, s.created_at,
                               s.expires_at, s.revoked_at, s.last_seen_at,
-                              u.email, u.first_name, u.last_name, u.role,
-                              u.is_active, u.must_change_password, u.contributor_id
+                              u.email, u.first_name, u.last_name, u.title,
+                              u.role, u.is_active, u.must_change_password,
+                              u.contributor_id
                          FROM user_session s
                          JOIN app_user u ON u.user_id = s.user_id
                         WHERE s.token_hash = ?""",
@@ -1937,9 +1997,14 @@ if HAS_TORNADO:
                         (iso(now), iso(new_expiry), data["session_id"]))
                     conn.commit()
 
+                # Built explicitly rather than from the row, so a column
+                # added to the join does not silently become part of what the
+                # browser is handed. `title` is here because the account chip
+                # and the profile window both show it.
                 user = {
                     "user_id": data["user_id"], "email": data["email"],
                     "first_name": data["first_name"], "last_name": data["last_name"],
+                    "title": data["title"],
                     "role": data["role"], "is_active": data["is_active"],
                     "must_change_password": data["must_change_password"],
                     "contributor_id": data["contributor_id"],
@@ -2769,8 +2834,34 @@ if HAS_TORNADO:
             data = self.get_json_body()
             if not (data.get('name') or '').strip():
                 return self.fail(400, "Name is required")
+            # Creating a contributor from an existing account. Linking happens
+            # in the same transaction as the insert, because a contributor
+            # created "from" an account and then not attached to it is the
+            # worst of both: a duplicate record that looks linked.
+            link_user_id = data.get("link_user_id")
             conn = get_db()
             try:
+                linked_row = None
+                if link_user_id:
+                    linked_row = conn.execute(
+                        "SELECT user_id, email, contributor_id, is_active "
+                        "FROM app_user WHERE user_id=?", (link_user_id,)).fetchone()
+                    if not linked_row:
+                        return self.fail(400, "That user account does not exist.")
+                    if not linked_row["is_active"]:
+                        return self.fail(
+                            400, "That user account is deactivated.")
+                    if linked_row["contributor_id"]:
+                        # Checked here as well as greyed out in the list: the
+                        # list is a snapshot, and two people could be creating
+                        # contributors at once.
+                        existing = conn.execute(
+                            "SELECT name FROM contributor WHERE contributor_id=?",
+                            (linked_row["contributor_id"],)).fetchone()
+                        who = existing["name"] if existing else linked_row["contributor_id"]
+                        return self.fail(
+                            409, f"{linked_row['email']} is already linked to "
+                                 f"{who}.")
                 last = conn.execute(
                     "SELECT contributor_id FROM contributor "
                     "ORDER BY contributor_id DESC LIMIT 1").fetchone()
@@ -2793,13 +2884,33 @@ if HAS_TORNADO:
                      values['last_training_date'], now, now,
                      self.current_user['user_id'], self.current_user['user_id']))
                 self.audit_create(conn, "contributor", cid, values)
+
+                if linked_row:
+                    conn.execute(
+                        "UPDATE app_user SET contributor_id=?, updated_date=?, "
+                        "updated_by=? WHERE user_id=?",
+                        (cid, now, self.current_user["user_id"],
+                         linked_row["user_id"]))
+                    # Audited against the *user*, not the contributor: the
+                    # contributor's own creation event already exists, and
+                    # someone asking "when did this account get attached to a
+                    # governance record" will look at the account.
+                    audit.record_event(
+                        conn, self.current_user, audit.UPDATE,
+                        entity_type="user", entity_id=linked_row["user_id"],
+                        changes={"contributor_id": (None, cid)},
+                        summary=f"Linked {linked_row['email']} to new "
+                                f"contributor {values['name']} ({cid})",
+                        ip_address=self.client_ip(), user_agent=self.user_agent())
+
                 conn.commit()
                 row = conn.execute("SELECT * FROM contributor WHERE contributor_id=?",
                                    (cid,)).fetchone()
+                payload = with_contact([row_to_dict(row)], conn)[0]
             finally:
                 conn.close()
             self.set_status(201)
-            self.write_json(row_to_dict(row))
+            self.write_json(payload)
 
     class DeleteImpactHandler(BaseAPIHandler):
         """What deleting this record would destroy, before deciding to.
@@ -3455,8 +3566,8 @@ if HAS_TORNADO:
     # User administration
     # -----------------------------------------------------------------------
     USER_PUBLIC_FIELDS = (
-        "user_id", "email", "first_name", "last_name", "role", "is_active",
-        "must_change_password", "contributor_id", "last_login_at",
+        "user_id", "email", "first_name", "last_name", "title", "role",
+        "is_active", "must_change_password", "contributor_id", "last_login_at",
         "password_changed_at", "created_date", "updated_date",
     )
 
@@ -3527,12 +3638,13 @@ if HAS_TORNADO:
                 now = iso(utcnow())
                 row = conn.execute(
                     """INSERT INTO app_user
-                         (email, first_name, last_name, password_hash, role, is_active,
-                          must_change_password, contributor_id, created_date,
-                          updated_date, created_by, updated_by)
-                       VALUES (?,?,?,?,?,?,1,?,?,?,?,?)
+                         (email, first_name, last_name, title, password_hash,
+                          role, is_active, must_change_password, contributor_id,
+                          created_date, updated_date, created_by, updated_by)
+                       VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?)
                        RETURNING user_id""",
-                    (email, first, last, auth.hash_password(password), role,
+                    (email, first, last, (data.get("title") or "").strip() or None,
+                     auth.hash_password(password), role,
                      1 if data.get("is_active", 1) else 0,
                      data.get("contributor_id") or None, now, now,
                      self.current_user["user_id"], self.current_user["user_id"])
@@ -3605,7 +3717,7 @@ if HAS_TORNADO:
                              "account first.")
 
                 fields, vals = [], []
-                for key in ("first_name", "last_name", "contributor_id"):
+                for key in ("first_name", "last_name", "title", "contributor_id"):
                     if key in data:
                         fields.append(f"{key}=?")
                         vals.append(data[key] or None)
@@ -3643,9 +3755,121 @@ if HAS_TORNADO:
                 after = dict(conn.execute("SELECT * FROM app_user WHERE user_id=?",
                                           (uid,)).fetchone())
                 self.audit_update(conn, "user", uid, before, after,
-                                  fields=("email", "first_name", "last_name", "role",
-                                          "is_active", "contributor_id",
+                                  fields=("email", "first_name", "last_name",
+                                          "title", "role", "is_active",
+                                          "contributor_id",
                                           "must_change_password"))
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json(user_row_public(after))
+
+    class PickableUsersHandler(BaseAPIHandler):
+        """Accounts you can turn into a contributor, for the Add Contributor list.
+
+        Not `/api/users`, which is Administrator-only and returns roles, status
+        and password metadata. Creating a contributor is an Editor's job, so
+        this exposes the minimum that job needs — who they are, and whether
+        they are already attached to a contributor — and nothing about their
+        access.
+
+        Already-linked accounts are **returned, not filtered out**, with the
+        contributor they belong to. Omitting them would leave someone hunting
+        for a colleague who is simply not in the list; saying "already linked
+        to Dana Rowe" answers the question on the spot.
+        """
+        READ_ROLE = permissions.EDITOR
+
+        def get(self):
+            conn = get_db()
+            try:
+                rows = conn.execute(
+                    """SELECT u.user_id, u.first_name, u.last_name, u.email,
+                              u.title, u.contributor_id,
+                              c.name AS contributor_name
+                         FROM app_user u
+                         LEFT JOIN contributor c
+                                ON c.contributor_id = u.contributor_id
+                        WHERE u.is_active = 1
+                        ORDER BY u.first_name, u.last_name""").fetchall()
+            finally:
+                conn.close()
+            self.write_json([{
+                "user_id": r["user_id"],
+                "name": f"{r['first_name'] or ''} {r['last_name'] or ''}".strip(),
+                "email": r["email"],
+                "title": r["title"],
+                "linked_contributor_id": r["contributor_id"],
+                "linked_contributor_name": r["contributor_name"],
+            } for r in rows])
+
+    class ProfileHandler(BaseAPIHandler):
+        """Your own name and title. Not your email, and not your role.
+
+        A separate endpoint from `/api/users/<id>` rather than a relaxation of
+        it. That one is an administrator's tool: it can change a role, issue a
+        temporary password, deactivate an account, and it refuses when the
+        actor cannot manage the target. Letting a Viewer through it with a
+        narrower field list would mean the protections lived in a list of
+        allowed keys rather than in the role check, and the next field added to
+        that handler would be editable by everyone by default.
+
+        **Email is deliberately not here.** It is the sign-in identity and the
+        name against every audit entry, so changing it changes both how someone
+        signs in and how their history reads. That stays an administrator
+        action.
+
+        Password changes go through `/api/auth/change-password`, which already
+        verifies the current password, enforces the policy, revokes the other
+        sessions and audits the change.
+        """
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.VIEWER
+
+        PROFILE_FIELDS = ("first_name", "last_name", "title")
+
+        def put(self):
+            data = self.get_json_body() or {}
+            uid = self.current_user["user_id"]
+
+            # Refuse rather than ignore. Silently dropping `role` would let a
+            # request that looks successful do nothing, which is the shape of
+            # bug this project keeps finding; and saying so makes the boundary
+            # discoverable rather than mysterious.
+            forbidden = sorted(set(data) - set(self.PROFILE_FIELDS))
+            if forbidden:
+                return self.fail(
+                    403, "Your profile covers your name and title. "
+                         f"{', '.join(forbidden)} cannot be changed here.",
+                    fields=forbidden)
+
+            if "first_name" in data and not (data.get("first_name") or "").strip():
+                return self.fail(400, "First name is required.")
+            if "last_name" in data and not (data.get("last_name") or "").strip():
+                return self.fail(400, "Last name is required.")
+
+            conn = get_db()
+            try:
+                before = dict(conn.execute(
+                    "SELECT * FROM app_user WHERE user_id=?", (uid,)).fetchone())
+                fields, vals = [], []
+                for key in self.PROFILE_FIELDS:
+                    if key in data:
+                        value = (data[key] or "").strip()
+                        fields.append(f"{key}=?")
+                        vals.append(value or None)
+                if fields:
+                    fields += ["updated_date=?", "updated_by=?"]
+                    vals += [iso(utcnow()), uid, uid]
+                    conn.execute(
+                        f"UPDATE app_user SET {','.join(fields)} WHERE user_id=?",
+                        vals)
+                after = dict(conn.execute(
+                    "SELECT * FROM app_user WHERE user_id=?", (uid,)).fetchone())
+                # Audited against themselves, so "who changed this" has an
+                # answer even when the answer is the person it describes.
+                self.audit_update(conn, "user", uid, before, after,
+                                  fields=self.PROFILE_FIELDS)
                 conn.commit()
             finally:
                 conn.close()
@@ -6205,6 +6429,8 @@ if HAS_TORNADO:
             (r"/api/auth/login", AuthLoginHandler),
             (r"/api/auth/logout", AuthLogoutHandler),
             (r"/api/auth/me", AuthMeHandler),
+            (r"/api/auth/profile", ProfileHandler),
+            (r"/api/users/pickable", PickableUsersHandler),
             (r"/api/auth/change-password", ChangePasswordHandler),
             # Administration
             (r"/api/users", UsersHandler),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Are the frontend's state setters and event handlers actually declared?
+"""Things in the frontend that compile cleanly and are still wrong.
 
     python3 tools/check_identifiers.py            # report
     python3 tools/check_identifiers.py --check    # exit 1 on a problem
@@ -25,9 +25,13 @@ syntax and so cannot be confused by prose:
 1. Every `setSomething(...)` call has a matching declaration — normally the
    second half of a `const [something, setSomething] = useState(...)`.
 2. Every `onClick={handler}` and friends names something declared.
+3. No `\\uXXXX` escape sits in JSX *text*. Inside a quoted string or a
+   template literal it is an escape; between tags it is four literal
+   characters, so `<option>No \\u2014 enter details</option>` renders the
+   backslash and the digits. That reached Ben in 0.6.0.
 
-Both are precisely where the 0.5.2 bug lived, and between them they cover the
-realistic ways an edit loses a declaration while keeping its uses.
+All three are places where the code compiles and the browser still does the
+wrong thing, which is the category nothing else here covers.
 """
 import re
 import sys
@@ -58,14 +62,21 @@ def script_body(src):
     return m.group(1), src[:m.start(1)].count("\n") + 1
 
 
-def strip_noise(code):
-    """Blank comments and string literals, preserving line numbers."""
+def strip_noise(code, template_literals=False):
+    """Blank comments and string literals, preserving line numbers.
+
+    `template_literals` also blanks backtick strings. Off for the identifier
+    rules, which need to see the names inside `${...}`; on for the escape rule,
+    where a backtick string is exactly where an escape is legitimate.
+    """
     def blank(m):
         return re.sub(r"[^\n]", " ", m.group(0))
     out = re.sub(r"//[^\n]*", blank, code)
     out = re.sub(r"/\*.*?\*/", blank, out, flags=re.S)
     out = re.sub(r'"(?:[^"\\\n]|\\.)*"', blank, out)
     out = re.sub(r"'(?:[^'\\\n]|\\.)*'", blank, out)
+    if template_literals:
+        out = re.sub(r"`(?:[^`\\]|\\.)*`", blank, out, flags=re.S)
     return out
 
 
@@ -140,6 +151,17 @@ def main():
         line = clean[:m.start()].count("\n") + offset
         problems.append((line, name, "used as an event handler but never declared"))
 
+    # Rule 3 — a unicode escape outside any string is JSX text, where it is
+    # not an escape at all. Checked against a copy with template literals
+    # blanked as well, since those are where such an escape belongs.
+    textish = strip_noise(code, template_literals=True)
+    for m in re.finditer(r"\\u[0-9a-fA-F]{4}", textish):
+        line = textish[:m.start()].count("\n") + offset
+        problems.append((line, m.group(0),
+                         "a unicode escape in JSX text renders literally — "
+                         "use the character itself, or an HTML entity like "
+                         "&mdash;"))
+
     if problems:
         print(f"FAILED — {len(problems)} problem(s)\n")
         for line, name, why in problems:
@@ -149,8 +171,8 @@ def main():
         return 1 if strict else 0
 
     setters = len([n for n in declared if re.fullmatch(r"set[A-Z][\w$]*", n)])
-    print(f"OK — every state setter and event handler in index.html is "
-          f"declared ({setters} setters, {len(declared)} names bound).")
+    print(f"OK — setters and handlers declared, no unicode escapes in JSX text "
+          f"({setters} setters, {len(declared)} names bound).")
     return 0
 
 
