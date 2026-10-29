@@ -25,6 +25,9 @@ syntax and so cannot be confused by prose:
 1. Every `setSomething(...)` call has a matching declaration — normally the
    second half of a `const [something, setSomething] = useState(...)`.
 2. Every `onClick={handler}` and friends names something declared.
+2b. Every bare `something(` call names something declared. `endpointsOf` was
+   invented in 0.6.1 and called from a drag handler; it compiled, and would
+   have thrown the first time anyone dragged a bend.
 3. No `\\uXXXX` escape sits in JSX *text*. Inside a quoted string or a
    template literal it is an escape; between tags it is four literal
    characters, so `<option>No \\u2014 enter details</option>` renders the
@@ -53,6 +56,34 @@ HANDLER_ATTRS = ("onClick", "onChange", "onSubmit", "onKeyDown", "onKeyUp",
 
 GLOBAL_FUNCS = {"alert", "confirm", "prompt", "fetch"}
 
+# Functions called in index.html that live somewhere else. React and the
+# browser globals are covered by GLOBALS below; these are the project's own
+# cross-file names plus the few constructors called bare.
+# Keywords that can be followed directly by a parenthesis and so look like
+# calls to the rule below.
+KEYWORDS = {
+    "if", "for", "while", "switch", "catch", "return", "typeof", "void",
+    "delete", "instanceof", "in", "of", "new", "await", "yield", "throw",
+    "do", "else", "function", "super", "this", "import", "export",
+    # A class member name, syntactically indistinguishable from a call.
+    "constructor",
+}
+
+KNOWN_CALLS = {
+    "require", "Number", "String", "Boolean", "Array", "Object", "Date",
+    "Error", "Promise", "Map", "Set", "RegExp", "Symbol", "BigInt",
+    "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent",
+    "decodeURIComponent", "setTimeout", "clearTimeout", "setInterval",
+    "clearInterval", "requestAnimationFrame", "cancelAnimationFrame",
+    "structuredClone", "queueMicrotask", "btoa", "atob", "eval",
+    "useState", "useEffect", "useRef", "useMemo", "useCallback",
+    "useContext", "useReducer", "useLayoutEffect", "createPortal",
+    # Browser constructors called with `new`.
+    "FormData", "Uint8Array", "Uint16Array", "Blob", "File", "FileReader",
+    "Image", "URL", "URLSearchParams", "AbortController", "TextDecoder",
+    "Event", "CustomEvent", "Intl", "XMLSerializer", "DOMParser",
+}
+
 
 def script_body(src):
     """The inline Babel block, which is the whole application."""
@@ -79,6 +110,53 @@ def strip_noise(code, template_literals=False):
         out = re.sub(r"`(?:[^`\\]|\\.)*`", blank, out, flags=re.S)
     return out
 
+
+
+def blank_template_text(code):
+    """Blank the literal text of template literals, keeping `${...}` contents.
+
+    Needed by the call rule. Blanking whole templates would hide real calls
+    written inside an interpolation; leaving them alone made SVG and CSS
+    function syntax look like JavaScript:
+
+        transform={`translate(${panOffset.x},${panOffset.y}) scale(${zoom})`}
+        `${created.invited} person(s) invited`
+
+    `translate(`, `scale(` and `person(` are text there. So walk the string and
+    blank only what is outside an interpolation.
+    """
+    out = list(code)
+    i, n = 0, len(code)
+    while i < n:
+        if code[i] == "`":
+            i += 1
+            depth = 0
+            while i < n:
+                c = code[i]
+                if c == "\\":
+                    if depth == 0:
+                        out[i] = " "
+                        if i + 1 < n:
+                            out[i + 1] = " "
+                    i += 2
+                    continue
+                if c == "`" and depth == 0:
+                    break
+                if c == "$" and i + 1 < n and code[i + 1] == "{":
+                    depth += 1
+                    i += 2
+                    continue
+                if c == "}" and depth:
+                    depth -= 1
+                    i += 1
+                    continue
+                if depth == 0 and c != "\n":
+                    out[i] = " "
+                i += 1
+            i += 1
+            continue
+        i += 1
+    return "".join(out)
 
 def declared_names(code):
     """Every name the file binds, over-collecting on purpose.
@@ -151,6 +229,27 @@ def main():
         line = clean[:m.start()].count("\n") + offset
         problems.append((line, name, "used as an event handler but never declared"))
 
+    # Rule 4 — every bare function call names something declared. `endpointsOf`
+    # was invented out of thin air in 0.6.1 and called from a drag handler: it
+    # compiled, and would have thrown the first time someone dragged a bend.
+    # Rules 1 and 2 did not see it, because it is neither a setter nor an
+    # event-handler attribute.
+    #
+    # `(?<![.\w$])` skips method calls — `foo.bar(` reads a property. Requiring
+    # no space before the parenthesis is what keeps prose out: JSX text says
+    # "something (see below)" with a space, never "something(".
+    callable_src = blank_template_text(clean)
+    called = {}
+    for m in re.finditer(r"(?<![.\w$])([A-Za-z_$][\w$]*)\(", callable_src):
+        called.setdefault(m.group(1), callable_src[:m.start()].count("\n"))
+    for name, line in sorted(called.items(), key=lambda kv: kv[1]):
+        if name in declared or name in KNOWN_CALLS or name in KEYWORDS:
+            continue
+        if name in GLOBAL_FUNCS or name in KNOWN_SETTERS:
+            continue
+        problems.append((line + offset, name,
+                         "called as a function but never declared"))
+
     # Rule 3 — a unicode escape outside any string is JSX text, where it is
     # not an escape at all. Checked against a copy with template literals
     # blanked as well, since those are where such an escape belongs.
@@ -166,8 +265,8 @@ def main():
         print(f"FAILED — {len(problems)} problem(s)\n")
         for line, name, why in problems:
             print(f"  line {line}: {name} — {why}")
-        print("\nIf one is genuinely external, add it to KNOWN_SETTERS or "
-              "GLOBAL_FUNCS in this file.")
+        print("\nIf one is genuinely external, add it to KNOWN_SETTERS, "
+              "GLOBAL_FUNCS or KNOWN_CALLS in this file.")
         return 1 if strict else 0
 
     setters = len([n for n in declared if re.fullmatch(r"set[A-Z][\w$]*", n)])

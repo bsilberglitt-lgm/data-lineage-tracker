@@ -1513,7 +1513,7 @@ SEED_RELEASES = [
   audit log, and which cannot.
 * Confirmation windows no longer close when you click outside them.
 """),
-    (VERSION, "Your own account", None, 1, 1400, """\
+    ("0.6.0", "Your own account", None, 1, 1400, """\
 ## What's new in this release
 
 **Your own account**
@@ -1547,6 +1547,26 @@ SEED_RELEASES = [
 * **Add System**, **Add Flow** and **Add Contributor** have moved down beside
   the record counts, which is where the space freed up by the account menu
   went.
+"""),
+    (VERSION, "Tidier diagrams", None, 1, 1500, """\
+## What's new in this release
+
+**Lining things up**
+
+* Dragging a system now shows a **dotted guide** when it lines up with another
+  one, and settles onto it, so boxes can be aligned without eyeballing them.
+* Dragging a bend in an arrow **snaps to the nearest straight or diagonal**
+  when it is close, so lines look deliberate rather than nearly right.
+* Hold **Shift** while dragging to turn both off, for the times you want
+  something slightly off square.
+
+**Sharing a diagram**
+
+* **Export** on the lineage view offers the diagram as **SVG, PNG, JPG or
+  PDF**, with the file name ready to edit, so it can go into a slide, a
+  document or a printed page without being screenshotted.
+* The file holds the **whole diagram**, not just the part you can see, and is
+  headed with the view it came from.
 """),
 ]
 
