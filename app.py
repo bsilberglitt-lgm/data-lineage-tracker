@@ -352,6 +352,171 @@ def rows_to_list(rows):
 
 # ---------------------------------------------------------------------------
 # Governance inheritance
+
+# What a delete takes with it. The confirmation used to describe the cascade in
+# general terms — "any schema, attached documents and links go with it" — which
+# is true and tells you nothing about the particular record in front of you.
+# Deleting a system with 1,240 schema columns and three attached documents is a
+# different act from deleting one someone created by mistake five minutes ago,
+# and the dialog should be able to tell them apart.
+def delete_impact(conn, kind, record_id):
+    """Counts of everything a delete would destroy, plus anything blocking it."""
+    out = {"counts": [], "blockers": [], "heavy": False}
+
+    def add(label, n):
+        if n:
+            out["counts"].append({"label": label, "count": n})
+
+    def one(sql, params):
+        return conn.execute(sql, params).fetchone()[0]
+
+    if kind == "system":
+        tables = one("SELECT COUNT(*) FROM schema_table WHERE system_id=?",
+                     (record_id,))
+        columns = one(
+            "SELECT COUNT(*) FROM schema_column WHERE table_id IN "
+            "(SELECT table_id FROM schema_table WHERE system_id=?)",
+            (record_id,))
+        add("database table", tables)
+        add("database column", columns)
+        add("uploaded schema version",
+            one("SELECT COUNT(*) FROM schema_snapshot WHERE system_id=?",
+                (record_id,)))
+        add("attached document or link",
+            one("SELECT COUNT(*) FROM resource "
+                "WHERE entity_type='system' AND entity_id=?", (record_id,)))
+        # Typing the name is asked for only when there is a schema to lose.
+        # That is the delete that cannot be reconstructed by hand, and the one
+        # where the count in the dialog is a number nobody expects.
+        out["heavy"] = bool(tables or columns)
+
+        # Not a count: a system used by a flow cannot be deleted at all, so
+        # this is the reason the button will refuse rather than a consequence.
+        flows = conn.execute(
+            "SELECT flow_id, name FROM data_flow "
+            "WHERE (source_system_id=? OR destination_system_id=?) "
+            "AND scenario_id IS NULL ORDER BY flow_id",
+            (record_id, record_id)).fetchall()
+        if flows:
+            out["blockers"].append({
+                "reason": "Used by data flows. Delete or repoint these first.",
+                "count": len(flows),
+                "named": [{"id": r["flow_id"], "label": r["name"]}
+                          for r in flows[:MAX_NAMED_REFERENCES]],
+            })
+
+    elif kind == "flow":
+        add("data element link",
+            one("SELECT COUNT(*) FROM flow_element WHERE flow_id=?",
+                (record_id,)))
+        add("attached document or link",
+            one("SELECT COUNT(*) FROM resource "
+                "WHERE entity_type='data_flow' AND entity_id=?", (record_id,)))
+
+    return out
+
+
+# Where a contributor is named. Used to warn before deactivating one: the
+# assignments are kept, so the point of the warning is scale and specificity —
+# "this person is the Data Steward on these four systems" — rather than asking
+# permission to destroy something.
+CONTRIBUTOR_REFERENCES = [
+    ("system", "system", "system_id", "name", ["owner_id", "data_steward_id"]),
+    ("data_flow", "data_flow", "flow_id", "name", ["owner_id", "data_steward_id"]),
+    ("data_element", "data_element", "element_id", "name",
+     ["data_owner_id", "data_steward_id"]),
+    ("schema_table", "schema_table", "table_id", "table_name",
+     ["data_owner_id", "data_steward_id"]),
+    ("schema_column", "schema_column", "column_id", "column_name",
+     ["data_owner_id", "data_steward_id"]),
+]
+
+MAX_NAMED_REFERENCES = 10
+
+
+def contributor_references(conn, cid):
+    """What names this contributor, for the warning before deactivating.
+
+    Names up to `MAX_NAMED_REFERENCES` records per kind and counts the rest.
+    A warning that lists four hundred schema columns is one nobody reads, and
+    a warning that gives only a number does not tell you whether it matters.
+
+    Scenario copies are reported separately. A contributor can exist as a copy
+    inside a scenario, and deactivating the live record says nothing about
+    those, so the scenarios holding one are named rather than silently ignored.
+    """
+    out = {"records": [], "total": 0, "linked_user": None, "scenarios": []}
+    for kind, table, pk, label_col, columns in CONTRIBUTOR_REFERENCES:
+        clause = " OR ".join(f"{c}=?" for c in columns)
+        rows = conn.execute(
+            f"SELECT {pk} AS id, {label_col} AS label FROM {table} "
+            f"WHERE {clause} ORDER BY {pk}",
+            tuple([cid] * len(columns))).fetchall()
+        if not rows:
+            continue
+        out["records"].append({
+            "kind": kind,
+            "label": ENTITY_LABELS.get(kind, kind.replace("_", " ").title()),
+            "count": len(rows),
+            "named": [{"id": r["id"], "label": r["label"]}
+                      for r in rows[:MAX_NAMED_REFERENCES]],
+        })
+        out["total"] += len(rows)
+
+    user = conn.execute(
+        "SELECT user_id, email, is_active FROM app_user WHERE contributor_id=?",
+        (cid,)).fetchone()
+    if user:
+        # Named, not counted: there is at most one, and which account it is
+        # matters more than that there is one.
+        out["linked_user"] = {"user_id": user["user_id"], "email": user["email"],
+                              "is_active": user["is_active"]}
+
+    copies = conn.execute(
+        """SELECT s.scenario_id, s.name FROM contributor c
+             JOIN scenario s ON s.scenario_id = c.scenario_id
+            WHERE c.origin_id = ? AND c.scenario_id IS NOT NULL
+            ORDER BY s.name""", (cid,)).fetchall()
+    out["scenarios"] = [{"scenario_id": r["scenario_id"], "name": r["name"]}
+                        for r in copies]
+    return out
+
+
+def contact_emails(conn):
+    """{contributor_id: email} preferring the linked user account.
+
+    A person can exist twice: as a `contributor` (the governance record) and as
+    an `app_user` (the sign-in account), joined by `app_user.contributor_id`.
+    Both carry an email and they can disagree.
+
+    The account's address wins, because it is the one that provably works —
+    they sign in with it — while a contributor's own email is typed in by hand
+    and goes stale when someone changes name or department. The contributor's
+    own address is the fallback for the many contributors who have no account.
+
+    Resolved on the server so the rule lives in one place; the browser is handed
+    an answer rather than two addresses and a precedence rule to re-implement.
+    """
+    out = {}
+    for r in conn.execute(
+            "SELECT contributor_id, email FROM contributor "
+            "WHERE email IS NOT NULL AND email != ''").fetchall():
+        out[r["contributor_id"]] = r["email"]
+    for r in conn.execute(
+            "SELECT contributor_id, email FROM app_user "
+            "WHERE contributor_id IS NOT NULL AND is_active=1").fetchall():
+        out[r["contributor_id"]] = r["email"]
+    return out
+
+
+def with_contact(rows, conn):
+    """Add `contact_email` to contributor rows."""
+    emails = contact_emails(conn)
+    out = rows_to_list(rows) if not isinstance(rows, list) else rows
+    for r in out:
+        r["contact_email"] = emails.get(r.get("contributor_id"))
+    return out
+
 # ---------------------------------------------------------------------------
 # Each tuple is (governance field on schema_table/schema_column, the matching
 # field on the parent System row used as the inherited fallback). A None system
@@ -1264,7 +1429,7 @@ SEED_RELEASES = [
   follow in the next one, along with the ability to **hide fields** that your
   organisation does not use.
 """),
-    (VERSION, "Only the fields you use", None, 1, 1200, """\
+    ("0.5.1", "Only the fields you use", None, 1, 1200, """\
 ## What's new in this release
 
 **Switch off the fields you do not use**
@@ -1285,6 +1450,45 @@ SEED_RELEASES = [
 * A definition written in Preferences now appears while you are *creating* a
   record, not only when editing one afterwards.
 """),
+    (VERSION, "Names, not identifiers", None, 1, 1300, """\
+## What's new in this release
+
+**Fixes**
+
+* **Owner** on a data flow can be changed again — choosing one and saving used
+  to appear to work and do nothing.
+* **Source of Truth** on a data element is now chosen from a list of systems,
+  so what you pick is what gets saved.
+
+**People**
+
+* **Email address now appears for Owners and Data Stewards**, so they can more
+  easily be contacted with questions.
+* **Contributors can be deactivated** when someone is no longer involved, so
+  the list you choose from stays current. Records that already name them keep
+  the assignment, marked *deactivated*, so nothing quietly loses its steward.
+
+**Deleting**
+
+* **Deleting a system or data flow now says what goes with it** — the schema
+  tables, columns and documents attached to it — so nothing large disappears
+  by surprise. A system with an uploaded schema asks you to type its name.
+* A system still used by data flows now **names those flows**, instead of
+  refusing without saying why.
+
+**Data flows**
+
+* New **Manual Steps** tick box records that a flow depends on a person, so
+  the places where timing can slip are easy to find. Sortable in the data
+  flows table.
+
+**Smaller things**
+
+* **PII Elements** removed from the bar across the top of a view.
+* The knowledge base now explains **which changes can be reverted** from the
+  audit log, and which cannot.
+* Confirmation windows no longer close when you click outside them.
+"""),
 ]
 
 
@@ -1298,6 +1502,60 @@ def get_system_types(conn=None):
         conn.close()
     return rows_to_list(rows)
 
+
+
+# Definitions shipped with the app, for fields whose name genuinely does not
+# carry their meaning. Seeded once and then left alone: an administrator can
+# reword or remove one in Preferences and that edit survives every restart,
+# which is why this is a seed rather than something re-applied on boot.
+#
+# Keep this list short. A definition is worth shipping when the field would
+# otherwise be misread as a different field — not merely because it could use
+# some explanation.
+SEED_FIELD_DEFINITIONS = [
+    ("data_flow", "manual_steps",
+     "Manual steps means there is human intervention at some point in the "
+     "data flow (e.g., reviewing data and approving it before flow occurs, "
+     "manually uploading a file to a location, or some other step that has "
+     "not been automated). Manual steps (as a flag on a data flow) differs "
+     "from Manual entry (as a system type). Manual entry is for creation of "
+     "data by entering it directly into a system (either by uploading a "
+     "spreadsheet the user has filled in manually, or by entering data "
+     "directly into a screen), rather than moving data between systems."),
+]
+
+
+def ensure_field_definitions(conn=None):
+    """Insert the shipped definitions, once, without disturbing edits.
+
+    Unlike `ensure_releases`, this never updates an existing row. A release
+    note that is still a draft is owned by the code; a field definition is
+    owned by whoever wrote it in Preferences the moment they touch it, and
+    re-applying the shipped wording on every restart would silently undo them.
+    """
+    own = conn is None
+    conn = conn or get_db()
+    added = 0
+    try:
+        for entity, column, text in SEED_FIELD_DEFINITIONS:
+            existing = conn.execute(
+                "SELECT 1 FROM field_definition "
+                "WHERE entity_type=? AND column_name=?", (entity, column)
+            ).fetchone()
+            if existing:
+                continue
+            conn.execute(
+                """INSERT INTO field_definition
+                     (entity_type, column_name, definition, updated_date)
+                   VALUES (?,?,?,?)""",
+                (entity, column, text, iso(utcnow())))
+            added += 1
+        if added:
+            conn.commit()
+            print(f"Field definitions: seeded {added}", flush=True)
+    finally:
+        if own:
+            conn.close()
 
 def ensure_releases(conn=None):
     """Insert release notes for versions that don't have an entry yet."""
@@ -2160,8 +2418,9 @@ if HAS_TORNADO:
                 frequency_detail,organization,managed_by,data_steward_id,
                 data_classification,encryption_method,disclosure_avoidance,
                 data_quality_measures,data_standard,retention_at_destination,legal_authority,
-                created_date,updated_date,scenario_id,change_state,display_name)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_date,updated_date,scenario_id,change_state,display_name,
+                manual_steps)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (fid, data.get('name',''), data.get('description',''),
                  data.get('source_system_id',''), data.get('destination_system_id',''),
                  data.get('direction','Inbound'), data.get('frequency','Daily'),
@@ -2180,7 +2439,8 @@ if HAS_TORNADO:
                  data.get('retention_at_destination'), data.get('legal_authority'),
                  now, now, self.scenario_id,
                  change_state_for_new(self, data),
-                 (data.get('display_name') or '').strip()[:MAX_DISPLAY_NAME] or None))
+                 (data.get('display_name') or '').strip()[:MAX_DISPLAY_NAME] or None,
+                 1 if data.get('manual_steps') else 0))
             # Attaching a flow to a system that had been tidied away brings it
             # back; otherwise the new flow would be invisible the moment it
             # was drawn.
@@ -2236,6 +2496,7 @@ if HAS_TORNADO:
                        'agreement_id','owner_id','status','known_issues',
                        'display_name',
                        'frequency_detail','organization','managed_by','data_steward_id',
+                       'manual_steps',
                        'data_classification','encryption_method','disclosure_avoidance',
                        'data_quality_measures','data_standard','retention_at_destination','legal_authority')
 
@@ -2470,8 +2731,14 @@ if HAS_TORNADO:
     CONTRIBUTOR_FIELDS = (
         'name', 'title', 'organization_unit', 'email', 'phone', 'role_type',
         'notes', 'governance_role', 'governance_responsibilities',
-        'training_status', 'last_training_date',
+        'training_status', 'last_training_date', 'is_active',
     )
+
+    # Deactivating someone removes them from everybody's pickers and hides them
+    # from everybody's lists, so it is not an ordinary edit. An Editor may
+    # correct a phone number; only a SuperAdmin may take a contributor out of
+    # circulation or bring them back.
+    CONTRIBUTOR_SUPERADMIN_FIELDS = {'is_active'}
 
     class ContributorsHandler(BaseAPIHandler):
         SCENARIO_AWARE = True
@@ -2484,11 +2751,19 @@ if HAS_TORNADO:
                 conn.close()
                 return self.fail(e.status, e.message)
             where, params = self.scope_sql(table="contributor")
+            # A deactivated contributor is still referenced by records and by
+            # the audit trail, so the row is never removed — it is only taken
+            # out of circulation. A SuperAdmin keeps seeing them, greyed, which
+            # is the only way to find one again and reactivate it.
+            if not permissions.at_least(self.current_user["role"],
+                                        permissions.SUPERADMIN):
+                where += " AND COALESCE(is_active,1)=1"
             rows = conn.execute(
                 f"SELECT * FROM contributor WHERE {where} ORDER BY contributor_id",
                 params).fetchall()
+            payload = with_contact(rows, conn)
             conn.close()
-            self.write_json(rows_to_list(rows))
+            self.write_json(payload)
 
         def post(self):
             data = self.get_json_body()
@@ -2526,16 +2801,71 @@ if HAS_TORNADO:
             self.set_status(201)
             self.write_json(row_to_dict(row))
 
+    class DeleteImpactHandler(BaseAPIHandler):
+        """What deleting this record would destroy, before deciding to.
+
+        Read-only and available to anyone who can delete the record, which is
+        the same role that can edit it: the dialog is part of the delete, not
+        a separate privilege.
+        """
+        READ_ROLE = permissions.EDITOR
+
+        def get(self, kind, record_id):
+            if kind not in ("systems", "flows"):
+                return self.fail(404, "Not found")
+            table, pk = (("system", "system_id") if kind == "systems"
+                         else ("data_flow", "flow_id"))
+            conn = get_db()
+            try:
+                row = conn.execute(
+                    f"SELECT {pk} AS id, name FROM {table} WHERE {pk}=?",
+                    (record_id,)).fetchone()
+                if not row:
+                    return self.fail(404, "Not found")
+                payload = delete_impact(
+                    conn, "system" if kind == "systems" else "flow", record_id)
+                payload["record"] = {"id": row["id"], "name": row["name"]}
+            finally:
+                conn.close()
+            self.write_json(payload)
+
+    class ContributorReferencesHandler(BaseAPIHandler):
+        """What names this contributor, before deactivating them.
+
+        SuperAdmin, because only a SuperAdmin can act on the answer, and
+        because it reports which user account is linked — which is more than
+        the contributors screen otherwise shows.
+        """
+        READ_ROLE = permissions.SUPERADMIN
+
+        def get(self, cid):
+            conn = get_db()
+            try:
+                row = conn.execute(
+                    "SELECT contributor_id, name, COALESCE(is_active,1) AS is_active "
+                    "FROM contributor WHERE contributor_id=?", (cid,)).fetchone()
+                if not row:
+                    return self.fail(404, "Not found")
+                payload = contributor_references(conn, cid)
+                payload["contributor"] = {"contributor_id": row["contributor_id"],
+                                          "name": row["name"],
+                                          "is_active": row["is_active"]}
+            finally:
+                conn.close()
+            self.write_json(payload)
+
     class ContributorHandler(BaseAPIHandler):
         SCENARIO_AWARE = True
         def get(self, cid):
             conn = get_db()
             row = conn.execute("SELECT * FROM contributor WHERE contributor_id=?",
                                (cid,)).fetchone()
-            conn.close()
             if not row:
+                conn.close()
                 return self.fail(404, "Not found")
-            self.write_json(row_to_dict(row))
+            payload = with_contact([row_to_dict(row)], conn)[0]
+            conn.close()
+            self.write_json(payload)
 
         def put(self, cid):
             data = self.get_json_body()
@@ -2553,10 +2883,22 @@ if HAS_TORNADO:
                 if gaps:
                     return self.fail(400, f"These fields are required: "
                                           f"{', '.join(gaps)}.", missing=gaps)
+                is_super = permissions.at_least(self.current_user["role"],
+                                                permissions.SUPERADMIN)
                 fields, vals = [], []
                 for key in CONTRIBUTOR_FIELDS:
-                    if key in data:
-                        fields.append(f"{key}=?")
+                    if key not in data:
+                        continue
+                    if key in CONTRIBUTOR_SUPERADMIN_FIELDS and not is_super:
+                        # Silently ignoring it would let the control appear to
+                        # work; refusing says which field and why.
+                        return self.fail(
+                            403, "Only a SuperAdmin can deactivate or "
+                                 "reactivate a contributor.")
+                    fields.append(f"{key}=?")
+                    if key == 'is_active':
+                        vals.append(1 if data[key] else 0)
+                    else:
                         vals.append(fk(data[key]) if key in FK_FIELDS else data[key])
                 if fields:
                     fields += ["updated_date=?", "updated_by=?"]
@@ -2568,7 +2910,30 @@ if HAS_TORNADO:
                                           (cid,)).fetchone())
                 self.audit_update(conn, "contributor", cid, before, after,
                                   fields=CONTRIBUTOR_FIELDS)
+                # The field diff records is_active 1 -> 0, which is accurate
+                # and unreadable. Deactivating someone changes who appears in
+                # every picker in the app, so it gets an event that says so in
+                # words, with the scale of what still names them.
+                was = 1 if before.get("is_active", 1) else 0
+                now_active = 1 if after.get("is_active", 1) else 0
+                if was != now_active:
+                    refs = contributor_references(conn, cid)
+                    verb = "Reactivated" if now_active else "Deactivated"
+                    tail = (f"; still named on {refs['total']} record(s)"
+                            if refs["total"] and not now_active else "")
+                    audit.record_event(
+                        conn, self.current_user, audit.UPDATE,
+                        entity_type="contributor", entity_id=cid,
+                        summary=f"{verb} {after.get('name') or cid}{tail}",
+                        scenario_id=self.scenario_id,
+                        ip_address=self.client_ip(),
+                        user_agent=self.user_agent())
                 conn.commit()
+                # The flyout is re-rendered straight from this response, so it
+                # has to carry everything a GET would — contact_email included,
+                # or editing a contributor would blank their address until the
+                # panel was closed and reopened.
+                after = with_contact([after], conn)[0]
             finally:
                 conn.close()
             self.write_json(after)
@@ -5899,6 +6264,8 @@ if HAS_TORNADO:
             (r"/api/resources/([0-9]+)/versions", ResourceVersionsHandler),
             (r"/api/resources/([0-9]+)", ResourceHandler),
             (r"/api/contributors", ContributorsHandler),
+            (r"/api/(systems|flows)/([^/]+)/delete-impact", DeleteImpactHandler),
+            (r"/api/contributors/([^/]+)/references", ContributorReferencesHandler),
             (r"/api/contributors/([^/]+)", ContributorHandler),
             (r"/api/agreements", AgreementsHandler),
             (r"/(.*)", AppStaticFileHandler, {
@@ -5931,6 +6298,7 @@ if __name__ == "__main__":
     seed_schema()
     ensure_preferences()
     ensure_releases()
+    ensure_field_definitions()
     bootstrap_superadmin()
 
     port = int(os.environ.get("PORT", 8765))

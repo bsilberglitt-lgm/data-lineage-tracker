@@ -156,6 +156,27 @@ Run all of these. They are ordered cheapest-first.
   If it reports being out of date, run it without `--check` and commit the
   result.
 
+- [ ] **1b-ii. State setters and handlers are declared** — a lost `useState`
+  pair or handler compiles cleanly and throws at render, which shows up as a
+  **blank page after sign-in** with the reason only in the browser console:
+
+  ```bash
+  python3 tools/check_identifiers.py --check
+  ```
+
+- [ ] **1c. Every field the server accepts is actually sent** — the details
+  panel builds its save payloads by hand, and the update handlers write only
+  the keys they are sent, so a field missing from a payload is silently
+  unsaveable: the control works, the save succeeds, the value never changes:
+
+  ```bash
+  python3 tools/check_payloads.py --check
+  ```
+
+  This is how Owner on a data flow was unchangeable for months. If it reports
+  a gap, add the field to the matching `saveData` in `DetailPanel`, or to
+  `DORMANT` in the checker with a reason.
+
 - [ ] **2. Real Babel compile** (authoritative — this is the compiler the
   browser uses)
 
@@ -656,6 +677,13 @@ JSX failed to compile. Run `python3 tools/check_jsx.py`, then
 If it mentions `import`, the Babel version pin in `static/index.html` has been
 disturbed — it must stay pinned.
 
+**Blank page after signing in, when the sign-in screen itself worked**
+Something threw while rendering the authenticated part of the app — most often
+an identifier that was never declared, which compiles fine. Run
+`python3 tools/check_identifiers.py`, and open the browser console
+(**Cmd + Option + J**) for the actual error. A blank sign-in screen as well
+means a compile failure instead; see "Blank page in the browser" above.
+
 **`check_jsx.py` reports a stray closing tag for an element that is plainly opened**
 Look at the few characters immediately *before* the opening tag, not at the tag.
 The scan decides whether a `<` starts JSX from the character preceding it, so a
@@ -663,6 +691,14 @@ comment ending in a full stop, or anything else that reads as the left-hand side
 of a comparison, meant the opening tag was never recorded — and the error is
 then reported at the *closing* tag, which can be hundreds of lines away. It now
 walks back over comments; if you see this again, that is the shape of it.
+
+**`Cannot add a NOT NULL column with default value NULL` when resetting the harness**
+The harness schema generator reads `server_default` out of the migration. Both
+`server_default="0"` and `server_default=sa.text("0")` are handled now; if a
+future migration uses some other form, the default is dropped and an
+`ALTER TABLE ADD COLUMN ... NOT NULL` fails, taking the whole schema with it.
+Check what `python3 tools/gen_harness_schema.py alembic/versions/<file>.py`
+prints for the new column.
 
 **`no such table` in a test suite, right after adding a migration**
 The harness builds its schema from `alembic/versions/`, so a new migration is

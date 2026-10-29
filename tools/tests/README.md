@@ -21,6 +21,7 @@ it, and they are kept so the same bug cannot come back quietly:
 | `t_labelpos.js` | Where a flow's label sits: clear of the arrowhead on short upward flows, unchanged everywhere else |
 | `t_migration_0010.py` | The Deprecated conversion, and that the original value is preserved in the audit log |
 | `t_fielddefs.py` | Field definitions: one definition found under every spelling of its field, the same label on two record types kept separate, permissions, and the audit trail |
+| `t_052.py` | The payload fix proved by round trip using the real payload shape, contributor deactivation keeping its assignments, and the delete confirmation's counts and blockers |
 | `t_fieldhide.py` | Field hiding: a required field cannot be switched off, the shared `*` scope is refused, the stored value survives, every label resolves to its column, permissions, and the audit trail |
 
 Four need no running server. `t_publish.py` and `t_migration_0010.py` drive the

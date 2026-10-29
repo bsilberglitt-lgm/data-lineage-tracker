@@ -19,6 +19,28 @@ making changes.
 4. Publish only after he has confirmed — flip the seed's `is_published` to `1`
    (or publish in the app).
 
+**How to write them.** Short. The 0.5.1 notes ran to 520 words across nineteen
+bullets; the same release rewritten as 0.5.2 was 234 words across ten, and that
+is the target shape. The rules, agreed with Ben in October 2026:
+
+- **One line per change.** A second sentence only where leaving it out would
+  let a reasonable person assume the opposite — that deactivating a contributor
+  clears their assignments, say. If a bullet needs three clauses, check whether
+  it is really two changes.
+- **State the benefit, not the mechanism.** "Email address now appears for
+  Owners and Data Stewards" — not an account of the column that used to hold an
+  identifier. Nobody reading the what's-new modal needs to know how it works.
+- **End with "so …" where the why is not obvious**, and leave it off where it
+  is. "Manual Steps records that a flow depends on a person, so the places
+  where timing can slip are easy to find" earns it; "PII Elements removed from
+  the bar across the top" does not.
+- **No internal detail at all.** Migrations, generators, test suites, contrast
+  measurements and the checks that stop a bug returning are real work and
+  belong in this file and in the commit message. They are not product changes.
+  In particular, do not reassure users that a guard now exists: it describes our
+  process, and it invites the question of what else is silently broken.
+- **Lead with fixes**, since those are what someone will want to confirm first.
+
 How the seed and the database relate, since it is easy to get wrong:
 
 - Release notes live in the **database**. `SEED_RELEASES` is what populates it.
@@ -192,6 +214,11 @@ walks back over comments as well as whitespace. If it ever reports a stray
 closing tag for an element that is plainly opened, suspect the few characters
 before the opening tag rather than the tag itself.
 
+A `{/* ... */}` comment cannot sit outside the root element of a `return`: it
+is a JSX expression container, and there is no element for it to belong to.
+Use a `//` comment above the `return` instead. This is a genuine syntax error
+rather than a scan artefact, and `check_jsx.py` reports it correctly.
+
 `check_jsx.py` is a scan, not a parser, and during 0.4.1 it **passed a region
 that had orphaned closing tags** left behind by a block that was moved. If you
 have reordered or spliced JSX rather than edited it in place, do not trust the
@@ -281,6 +308,14 @@ key already allowed it.
 
 ### The harness applies every migration in `alembic/versions/`
 
+`gen_harness_schema.py` understood `server_default=sa.text("0")` but not a bare
+`server_default="0"`, and silently dropped the latter. Harmless in a
+`CREATE TABLE`, where SQLite allows `NOT NULL` with no default — fatal in an
+`ALTER TABLE ADD COLUMN`, which fails with *Cannot add a NOT NULL column with
+default value NULL* and takes the whole harness schema down. Migration 0013
+found it; 0012 had been quietly losing its default since the release before.
+Both forms are handled now.
+
 `tools/harness_setup.py` used to carry a hand-written list of migration
 filenames. When 0012 arrived the harness simply did not have the new table, and
 every suite touching it failed with *no such table* — which reads like a bug in
@@ -301,6 +336,83 @@ Write `{!!record.label_locked && …}` or a ternary. This reached Ben in 0.4.4,
 under the resource edit form's label field. The INTEGER convention makes it a
 standing hazard rather than a one-off, and it is invisible to
 `tools/check_jsx.py` — the JSX is perfectly valid.
+
+### A blank page after sign-in is usually an undeclared identifier
+
+`check_jsx.py` proves the JSX is *structurally* sound and `check_payloads.py`
+proves the API contract holds. Neither notices a name that is used and declared
+nowhere — that compiles perfectly and throws at render.
+
+It happened in 0.5.2. One edit added a button calling `loadImpact`, a dialog
+reading `impact`, and a `useEffect` calling `setImpact(null)`; the edit that was
+supposed to declare them never wrote its result. The sign-in screen rendered,
+and everything after it was blank. Every server-side suite passed, because the
+fault was entirely in the browser.
+
+```bash
+python3 tools/check_identifiers.py --check    # run before commit
+```
+
+Two narrow rules: every `setX(...)` call has a declaration, and every
+`onClick={handler}` names something declared. A first attempt tried to find all
+undeclared identifiers and produced 183 false positives, because JSX *text
+content* reads as identifiers and separating prose from code needs a real JSX
+parser. These two rules need unambiguous syntax, so prose cannot trigger them,
+and they sit exactly where a lost declaration shows up. npm is blocked in the
+assistant's sandbox, so ESLint is not available to the thing making most of
+these edits; this is the substitute.
+
+### Hand-written payloads must name every field the server accepts
+
+`DetailPanel.saveEdit` builds each record type's PUT body as an object literal,
+and the update handlers write **only the keys they are sent**
+(`for key in self.FLOW_FIELDS: if key in data`). A field the server accepts but
+the browser never sends is therefore **silently unsaveable**: the control
+appears, the dropdown works, the save returns 200, and the value never changes.
+
+That is what happened to **Owner on a data flow**. It was in the Add window, in
+the edit view and in the read view, and missing from one object literal — so an
+Owner could be set when creating a flow and never changed afterwards. **Source
+of Truth on a data element** had the same hole, and fixing it exposed a second
+bug: it is a foreign key to `system.system_id` but was drawn as a free-text box,
+so sending it at all turned a silent no-op into a 500 for anyone typing a
+system's name. It is a picker now.
+
+```bash
+python3 tools/check_payloads.py            # report
+python3 tools/check_payloads.py --check    # exit 1 on a gap (run before commit)
+```
+
+The check is deliberately one-directional. A gap is a bug; the reverse is not —
+the browser sends `proposed`, which no field tuple contains because the server
+handles it separately. Fields that genuinely should not be editable from the
+flyout go in `DORMANT` in that file, each with a reason.
+
+This is the `field_catalog.py` lesson in a different place: a hand-kept list
+that has to track another hand-kept list drifts, and the failure is silent.
+
+### Deactivation, not deletion — and assignments survive it
+
+Contributors follow user accounts: `is_active` INTEGER 0/1 (migration 0014),
+never a delete. The audit trail refers to contributors by identifier, so
+deleting one leaves entries pointing at a record that no longer exists.
+
+**Deactivating never clears an assignment.** A system that named someone as its
+Data Steward goes on naming them, shown as deactivated, and `contributorLabel`
+appends "— deactivated" so the gap is visible. Clearing those references would
+leave the system with no steward and no record that it ever had one outside the
+audit log, which is the data loss deactivation exists to avoid. The linked user
+account and the link are untouched as well — deactivating a contributor is not
+deactivating a sign-in.
+
+`assignable()` is what keeps a deactivated person out of the pickers **except**
+on a record that already names them, where removing the current value from its
+own dropdown would make the assignment impossible to see or change.
+
+Writing `is_active` is SuperAdmin-only and **refused** rather than ignored for
+anyone else (`CONTRIBUTOR_SUPERADMIN_FIELDS`), which is why the browser only
+sends it when the viewer is a SuperAdmin — sending it unconditionally would
+make every Editor's save fail.
 
 ### Reused CSS classes carry their original layout assumptions
 

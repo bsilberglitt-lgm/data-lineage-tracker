@@ -45,11 +45,23 @@ def columns(body, collect_pk=None):
                 collect_pk.append((name, t, "autoincrement=True" in arg))
         if "nullable=False" in arg: frag += " NOT NULL"
         sd = re.search(r'server_default=sa\.text\(\s*"([^"]+)"\s*\)', arg)
+        plain = re.search(r'server_default="([^"]*)"', arg)
         if sd:
             v = sd.group(1)
             frag += " DEFAULT " + ("''" if "now()" in v else v)
         elif "server_default=NOW_TEXT" in arg:
             frag += " DEFAULT ''"
+        elif plain:
+            # A bare string default, as in server_default="0". Only sa.text()
+            # was recognised, so these were dropped silently: harmless in a
+            # CREATE TABLE, where SQLite allows NOT NULL without a default,
+            # but fatal in an ALTER TABLE ADD COLUMN — which is how migration
+            # 0013 broke the whole harness schema with "Cannot add a NOT NULL
+            # column with default value NULL". Quoted unless it is a number,
+            # so a text default survives too.
+            v = plain.group(1)
+            frag += " DEFAULT " + (v if re.fullmatch(r"-?\d+(\.\d+)?", v)
+                                   else "'" + v.replace("'", "''") + "'")
         cols.append(frag)
     return cols
 

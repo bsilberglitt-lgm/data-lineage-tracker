@@ -600,9 +600,15 @@ a date plainly visible in the table could return nothing.
 
 ## Reverting a change
 
-A SuperAdmin can revert an individual change from the log. If the record has
-been edited since, you are warned about the conflict before anything happens.
-Whoever made the original change is notified that it was reverted.
+A SuperAdmin can revert an individual change from the log. **Only edits can be
+reverted, and only to systems, data flows, data elements, contributors, and
+schema tables and columns.** Creations, deletions, and changes to settings,
+accounts, field definitions or attachments are recorded but cannot be undone
+from here.
+
+If the record has been edited since, you are warned about the conflict before
+anything happens. Whoever made the original change is notified that it was
+reverted.
 
 ## Scenarios in the log
 

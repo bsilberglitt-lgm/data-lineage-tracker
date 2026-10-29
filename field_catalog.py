@@ -360,6 +360,15 @@ FIELDS = [
     },
     {
         'entity': 'data_flow',
+        'column': 'manual_steps',
+        'label': 'Manual Steps',
+        'section': 'Transfer Details',
+        'read_label': None,
+        'modal_label': 'Manual Steps',
+        'required': False,
+    },
+    {
+        'entity': 'data_flow',
         'column': 'organization',
         'label': 'Organization',
         'section': 'Ownership',
