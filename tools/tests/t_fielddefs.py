@@ -80,7 +80,20 @@ ck("every entry carries a section, so the picker can group it",
    all(f["section"] for f in cat["fields"]))
 ck("record types are named for people, not for the database",
    cat["entity_labels"]["data_flow"] == "Data Flow", str(cat.get("entity_labels")))
-ck("nothing starts out defined", all(not f["definition"] for f in cat["fields"]))
+# The app ships with a small number of definitions for fields whose name
+# would otherwise be misread as a different field — see SEED_FIELD_DEFINITIONS
+# in app.py. Everything else must start blank: a definition appearing where
+# nobody wrote one would be indistinguishable from a bug.
+import app as _app  # noqa: E402  (only for the seed list)
+SEEDED = {(e, c) for e, c, _ in _app.SEED_FIELD_DEFINITIONS}
+unexpected = [f"{f['entity']}.{f['column']}" for f in cat["fields"]
+              if f["definition"] and (f["entity"], f["column"]) not in SEEDED]
+ck("nothing is defined except what the app ships with", not unexpected,
+   ", ".join(unexpected[:5]))
+ck("and what it ships with is present",
+   all(any(f["entity"] == e and f["column"] == c and f["definition"]
+           for f in cat["fields"]) for e, c in SEEDED),
+   str(sorted(SEEDED)))
 
 print("\n-- one definition, found under every spelling --")
 multi = [f for f in field_catalog.FIELDS

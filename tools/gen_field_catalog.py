@@ -108,12 +108,13 @@ SECTION_TOKEN = "@@SECTION@@"
 
 # Components that render one labelled field. `EditField` covers most of them;
 # `ContributorSelect` is a person picker and `ContributorField` its read-only
-# twin, and both were missed when this generator only knew about EditField —
+# twin; `SystemSelect` and `SystemField` are the same pair for a reference to a
+# system. The person pickers were missed when this generator only knew about EditField —
 # six fields, Data Steward among them, were silently absent from the catalogue
 # and so could not be given a definition. Anything else carrying a `label=` is
 # now reported rather than skipped; see `unknown_field_components`.
-EDIT_COMPONENTS = ("EditField", "ContributorSelect")
-READ_COMPONENTS = ("ReadField", "ContributorField")
+EDIT_COMPONENTS = ("EditField", "ContributorSelect", "SystemSelect")
+READ_COMPONENTS = ("ReadField", "ContributorField", "SystemField")
 
 # The Add windows. `ReqField` is the required variant, and that is where
 # required-ness is read from — a field drawn with it cannot be hidden, because
@@ -129,8 +130,15 @@ MODAL_REQUIRED_COMPONENTS = ("ReqField",)
 MODAL_OPTIONAL_COMPONENTS = ("ModalField", "ModalCheck")
 MODAL_COMPONENTS = MODAL_REQUIRED_COMPONENTS + MODAL_OPTIONAL_COMPONENTS
 
+# Carries a `label=` but defines no field: `FieldInfo` is the definition marker
+# itself, drawn beside a label. It appears directly in the markup wherever a row
+# is hand-written rather than built from one of the field components — the
+# Manual Steps row on a data flow, for instance. Listing it here says "known,
+# and not a field", which is different from not recognising it.
+NON_FIELD_COMPONENTS = ("FieldInfo", "Tooltip")
+
 KNOWN_COMPONENTS = (set(EDIT_COMPONENTS) | set(READ_COMPONENTS)
-                    | set(MODAL_COMPONENTS))
+                    | set(MODAL_COMPONENTS) | set(NON_FIELD_COMPONENTS))
 
 
 def unknown_field_components(body):

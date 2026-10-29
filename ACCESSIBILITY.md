@@ -142,9 +142,15 @@ Reported honestly rather than left for someone to discover:
 - **Focus is not moved to a dialog when it opens**, nor returned to the button
   that opened it on close.
 - **No skip-to-content link** for keyboard users to bypass the sidebar.
-- **Contrast has not been verified for every small UI element** — badges, the
-  grey secondary text on resources, and disabled states were not individually
-  measured in this pass.
+- **Contrast has not been verified for every small UI element** — the grey
+  secondary text on resources and disabled states were not individually
+  measured in this pass. Badges added since are measured as they are
+  introduced:
+
+  | Badge | Colours | Ratio | AA small text (4.5:1) |
+  |---|---|---|---|
+  | `badge-manual` — a data flow with manual steps | `#8a4b00` on `#fff3e0` | 6.20:1 | passes |
+  | `fd-off` — a field marked not used | `#8a4b00` on `#fff3e0` | 6.20:1 | passes |
 - **No testing with an actual screen reader.** The markup follows established
   patterns, but VoiceOver, NVDA, or JAWS have not been used against it. That
   testing is what would turn "should work" into "does work."

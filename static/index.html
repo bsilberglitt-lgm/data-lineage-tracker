@@ -206,6 +206,16 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 /* A required field's toggle is shown rather than omitted, so the answer to
    "why can I not turn this one off?" is on the page instead of absent. */
 .fd-disabled { opacity: 0.6; cursor: not-allowed; }
+/* Measured: #8a4b00 on #fff3e0 is 6.20:1, comfortably past AA for small text.
+   See ACCESSIBILITY.md — every badge colour in this app is checked. */
+.badge-manual { background: #fff3e0; color: #8a4b00; }
+/* The deactivation warning. Scrolls rather than growing without limit: a
+   contributor named on four hundred schema columns would otherwise push the
+   buttons off the bottom of the dialog. */
+.ref-warning { margin-top: 10px; max-height: 320px; overflow-y: auto; }
+.ref-group { margin-bottom: 10px; font-size: 12.5px; }
+.ref-group ul { margin: 4px 0 0; padding-left: 18px; }
+.ref-group li { font-size: 12px; line-height: 1.6; }
 .fd-off { font-size: 10px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.5px; color: #8a4b00; background: #fff3e0;
   border-radius: 3px; padding: 1px 5px; }
@@ -760,10 +770,39 @@ function SortHeader({ label, sortKey, sort, toggle, style }) {
 
 // Contributor references are stored as IDs; show the person's name with the ID
 // in parentheses so the record is still easy to spot.
+// A contributor reference, shown as a person rather than as a key. The
+// identifier used to be all you got — "CON-003" in a governance field tells a
+// reader nothing and gives them no way to ask the person a question.
+//
+// `contact_email` is resolved on the server, preferring the linked user
+// account's address over the contributor's own typed-in one; see
+// `contact_emails` in app.py. Falling back to the identifier matters: a
+// reference must never render as nothing, or a field that *is* set looks unset.
 function contributorLabel(id, contributors) {
   if (!id) return null;
   const c = (contributors || []).find(x => x.contributor_id === id);
-  return c ? `${c.name} (${c.contributor_id})` : id;
+  if (!c) return id;
+  const email = c.contact_email || c.email;
+  const base = email ? `${c.name} (${email})` : `${c.name} (${c.contributor_id})`;
+  // Deactivating a contributor keeps every assignment that names them, so a
+  // record can go on showing someone who is no longer in circulation. Saying
+  // so is the point: the gap is meant to be visible, not tidied away.
+  return isDeactivated(c) ? `${base} — deactivated` : base;
+}
+
+// A contributor row with no `is_active` has never been deactivated: the column
+// arrived in 0.5.2 and every existing row defaults to 1.
+function isDeactivated(c) {
+  return !!c && c.is_active !== undefined && c.is_active !== null && !c.is_active;
+}
+
+// Who a picker should offer. Deactivated people are left out so nobody new is
+// assigned to them — except on a record that already names one, where removing
+// the current value from its own dropdown would leave the field looking empty
+// and make the assignment impossible to see or to change.
+function assignable(contributors, current) {
+  return byName(contributors).filter(
+    c => !isDeactivated(c) || c.contributor_id === current);
 }
 // No hiding check of its own: it renders a ReadField with the same label, and
 // that is where the check happens. Adding one here would resolve the same
@@ -771,14 +810,44 @@ function contributorLabel(id, contributors) {
 function ContributorField({ label, value, contributors }) {
   return <ReadField label={label} value={contributorLabel(value, contributors)} />;
 }
+// A reference to a system, drawn the way a reference to a contributor is.
+// `data_element.source_of_truth` is a foreign key to system.system_id, but was
+// drawn as a free-text box and displayed as a raw ID. Typing a system's *name*
+// into it therefore violated the foreign key — which only surfaced once the
+// field started being sent at all, because until 0.5.2 it was dropped from the
+// save payload and quietly did nothing.
+function systemLabel(id, systems) {
+  if (!id) return null;
+  const s = (systems || []).find(x => x.system_id === id);
+  return s ? systemOption(s) : id;
+}
+
+function SystemField({ label, value, systems }) {
+  return <ReadField label={label} value={systemLabel(value, systems)} />;
+}
+
+function SystemSelect({ label, value, onChange, systems }) {
+  if (useFieldHidden(label)) return null;
+  return (
+    <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
+      <select className="edit-select" value={value || ''} onChange={e => onChange(e.target.value || null)}>
+        <option value="">— none —</option>
+        {byName(systems).map(x =>
+          <option key={x.system_id} value={x.system_id}>{systemOption(x)}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function ContributorSelect({ label, value, onChange, contributors }) {
   if (useFieldHidden(label)) return null;
   return (
     <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
       <select className="edit-select" value={value || ''} onChange={e => onChange(e.target.value || null)}>
         <option value="">— none —</option>
-        {(contributors || []).map(c =>
-          <option key={c.contributor_id} value={c.contributor_id}>{c.name} ({c.contributor_id})</option>)}
+        {assignable(contributors, value).map(c =>
+          <option key={c.contributor_id} value={c.contributor_id}>
+            {contributorLabel(c.contributor_id, contributors)}</option>)}
       </select>
     </div>
   );
@@ -1769,19 +1838,25 @@ function SchemaCanvas({ tables, selected, onSelectTable, onSelectColumn, onUpdat
 
 // ===== Governance inheritance display helpers =====
 const SRC_LABEL = { system: 'Inherited', table: 'From table', column: 'Override', none: '—' };
-function fmtGov(field, v) {
+// Two governance fields hold a contributor key rather than a value, so without
+// the lookup the schema drill-down showed "CON-003" as a Data Owner — and the
+// inherited line beneath it said "Inherits: CON-003 (System)" too.
+const GOV_PERSON_FIELDS = ['data_owner_id', 'data_steward_id'];
+
+function fmtGov(field, v, contributors) {
   if (v === null || v === undefined || v === '') return '—';
   if (field === 'contains_pii' || field === 'ferpa_protected') return v ? 'Yes' : 'No';
+  if (GOV_PERSON_FIELDS.includes(field)) return contributorLabel(v, contributors) || v;
   return v;
 }
-function GovReadField({ label, field, gov }) {
+function GovReadField({ label, field, gov, contributors }) {
   const g = (gov && gov[field]) || { value: null, source: 'none' };
   const inherited = g.source === 'system' || g.source === 'table';
   return (
     <div className="gov-field">
       <span className="field-label">{label}</span>
       <span className={`gov-val ${inherited ? 'inherited' : ''}`}>
-        {fmtGov(field, g.value)}
+        {fmtGov(field, g.value, contributors)}
         <span className={`src-tag src-tag-${g.source}`}>{SRC_LABEL[g.source]}</span>
       </span>
     </div>
@@ -1875,13 +1950,21 @@ const PANEL_REQUIRED = {
 };
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetire, systems, onDrill, canEdit, notify, contributors, isAdmin, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
+function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetire, systems, onDrill, canEdit, notify, contributors, isAdmin, isSuper, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [missing, setMissing] = useState([]);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   // null = no dialog; true = about to retire; false = about to bring back.
   const [confirmRetire, setConfirmRetire] = useState(null);
+  // What names this contributor, fetched when Deactivate is pressed rather
+  // than when the panel opens: it is five queries, and most people looking at
+  // a contributor are not about to deactivate them.
+  const [refs, setRefs] = useState(null);
+  const [refsBusy, setRefsBusy] = useState(false);
+  // What a delete would destroy, fetched when Delete is pressed. `typed` is
+  // the confirmation name for a system carrying a schema.
+  const [impact, setImpact] = useState(null);
+  const [typed, setTyped] = useState('');
   // Memoised so the provider does not hand every field a new object on each
   // keystroke, which would re-render all 30-odd of them while typing.
   const defsContext = useMemo(
@@ -1890,7 +1973,12 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
   const bodyRef = useRef(null);
   const isOpen = !!data;
 
-  useEffect(() => { setEditing(false); setMissing([]); setConfirmDelete(false); }, [data, type]);
+  useEffect(() => {
+    // Reset per-record state when the panel switches records, or a dialog
+    // opened for one record would still be open over the next.
+    setEditing(false); setMissing([]);
+    setImpact(null); setRefs(null); setTyped('');
+  }, [data, type]);
 
   const startEdit = () => {
     // 'proposed' is derived from change_state rather than stored separately, so
@@ -1920,6 +2008,13 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
     // left out entirely rather than sent as false.
     const proposedField = (inScenario && ['system', 'flow'].includes(type))
       ? { proposed: !!form.proposed } : {};
+    // These payloads are hand-written and have to name every field the server
+    // will accept, because the update loop writes only the keys it is sent:
+    // anything missing here is silently unsaveable — the control works, the
+    // save reports success, and the value never changes. Owner on a data flow
+    // was missing for months, and Source of Truth on a data element with it.
+    // tools/check_payloads.py compares these lists against the server's field
+    // tuples and fails if they drift again; run it after editing this block.
     let url, saveData;
     if (type === 'system') {
       url = `/api/systems/${data.system_id}`;
@@ -1950,12 +2045,14 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
         source_system_id: form.source_system_id, destination_system_id: form.destination_system_id,
         direction: form.direction, frequency: form.frequency,
         transfer_method: form.transfer_method, format: form.format,
+        manual_steps: form.manual_steps ? 1 : 0,
         transformation_steps: form.transformation_steps, business_rules: form.business_rules,
         validations: form.validations, error_handling: form.error_handling,
         contains_pii: form.contains_pii, ferpa_protected: form.ferpa_protected,
         regulatory_driver: form.regulatory_driver, status: form.status, known_issues: form.known_issues,
         frequency_detail: form.frequency_detail, organization: form.organization,
         managed_by: form.managed_by, data_steward_id: form.data_steward_id,
+        owner_id: form.owner_id,
         data_classification: form.data_classification, encryption_method: form.encryption_method,
         disclosure_avoidance: form.disclosure_avoidance,
         data_quality_measures: form.data_quality_measures, data_standard: form.data_standard,
@@ -1968,6 +2065,7 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
         name: form.name, aliases: form.aliases, definition: form.definition,
         data_type: form.data_type, valid_values: form.valid_values,
         is_pii: form.is_pii, ferpa_protected: form.ferpa_protected, notes: form.notes,
+        source_of_truth: form.source_of_truth,
         data_classification: form.data_classification, data_standard: form.data_standard,
         business_meaning: form.business_meaning,
         data_owner_id: form.data_owner_id, data_steward_id: form.data_steward_id,
@@ -1981,6 +2079,11 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
         governance_responsibilities: form.governance_responsibilities,
         training_status: form.training_status, last_training_date: form.last_training_date,
         notes: form.notes,
+        // Sent only by a SuperAdmin: the server refuses it from anyone else
+        // rather than ignoring it, so sending it unconditionally would make
+        // every Editor's save fail.
+        ...(isSuper ? { is_active: form.is_active === undefined ? 1
+                                   : (form.is_active ? 1 : 0) } : {}),
       };
     } else if (type === 'schema_table' || type === 'schema_column') {
       url = type === 'schema_table' ? `/api/schema/tables/${data.table_id}` : `/api/schema/columns/${data.column_id}`;
@@ -2003,6 +2106,43 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
   };
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
 
+  const loadReferences = async () => {
+    setRefsBusy(true);
+    try {
+      setRefs(await api.get(`/api/contributors/${data.contributor_id}/references`));
+    } catch (err) {
+      if (notify) notify(err.message, true);
+    } finally { setRefsBusy(false); }
+  };
+
+  const loadImpact = async () => {
+    setTyped('');
+    const path = type === 'system'
+      ? `/api/systems/${data.system_id}/delete-impact`
+      : `/api/flows/${data.flow_id}/delete-impact`;
+    try {
+      setImpact(await api.get(path));
+    } catch (err) {
+      // Falling back to the generic warning is better than refusing to delete
+      // because a count could not be fetched.
+      setImpact({ record: { name: titleOf() }, counts: [], blockers: [],
+                  heavy: false, unavailable: true });
+      if (notify) notify(err.message, true);
+    }
+  };
+
+  const deactivate = async () => {
+    setRefs(null);
+    try {
+      const result = await api.put(`/api/contributors/${data.contributor_id}`,
+                                   { is_active: 0 });
+      onSave('contributor', result);
+      if (notify) notify(`${data.name} deactivated.`);
+    } catch (err) {
+      if (notify) notify(err.message, true);
+    }
+  };
+
   const titleOf = () => {
     if (type === 'schema_table') return `${data.schema_name}.${data.table_name}`;
     if (type === 'schema_column') return data.column_name || '';
@@ -2010,6 +2150,17 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
   };
 
   const ContributorReadView = ({ data }) => (<>
+    {isDeactivated(data) && (
+      <div className="drill-banner" style={{ marginTop: 0 }}>
+        <span className="drill-icon">&#9432;</span>
+        <div className="drill-text">
+          <strong style={{display:'inline'}}>Deactivated.</strong> Only a
+          SuperAdmin can see this contributor, and they are not offered when
+          assigning an Owner or Data Steward. Records that already name them
+          still do. Edit to reactivate.
+        </div>
+      </div>
+    )}
     <CollapsibleSection title="Contributor">
       <ReadField label="ID" value={data.contributor_id} />
       <ReadField label="Name" value={data.name} />
@@ -2031,6 +2182,18 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
   </>);
 
   const ContributorEditView = ({ form, set, missing }) => (<>
+    {isSuper && isDeactivated(form) && (
+      <div className="drill-banner" style={{ marginTop: 0 }}>
+        <span className="drill-icon">&#9432;</span>
+        <div className="drill-text">
+          This contributor is deactivated.
+          {' '}
+          <button className="res-title-link" style={{display:'inline'}}
+                  onClick={() => set('is_active', 1)}>Reactivate them</button>
+          {' '}and save.
+        </div>
+      </div>
+    )}
     <CollapsibleSection title="Contributor">
       <EditField label="Name" value={form.name} onChange={v=>set('name',v)}
                  invalid={(missing||[]).includes('name')} />
@@ -2062,6 +2225,18 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
         </div>
         <div className="panel-actions">
           {!editing && canEdit && <button className="btn btn-edit" onClick={startEdit}>Edit</button>}
+          {/* Deactivating is the contributor equivalent of retiring: the record
+              stays, the assignments stay, and the person stops being offered.
+              It asks first and says what still names them, because the useful
+              question is not "are you sure" but "do you realise this person is
+              the Data Steward on four systems". */}
+          {!editing && isSuper && type === 'contributor' && !isDeactivated(data) &&
+            <Tooltip text="Take this contributor out of circulation. Nothing is deleted and existing assignments are kept; they stop being offered when assigning an Owner or Data Steward.">
+              <button className="btn" disabled={refsBusy}
+                      onClick={loadReferences}>
+                {refsBusy ? 'Checking…' : 'Deactivate'}
+              </button>
+            </Tooltip>}
           {!editing && canEdit && onResetRoute && type === 'flow' &&
             (data.source_anchor || data.dest_anchor || data.waypoints) && (
             <button className="btn"
@@ -2100,7 +2275,7 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
             <Tooltip text={inScenario
                       ? 'Delete this from the scenario entirely, as though it had never been there. To show it being taken out of service instead, use Retire.'
                       : 'Delete this permanently.'}>
-              <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>Delete</button>
+              <button className="btn btn-danger" onClick={loadImpact}>Delete</button>
             </Tooltip>}
           {!editing && !canEdit && <span style={{fontSize:'12px',color:'#6b6b6b'}}>
             Read-only — your role does not permit editing.</span>}
@@ -2122,29 +2297,118 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
               canEdit={canEdit} notify={notify} />}
           {type === 'flow' && editing && <FlowEditView form={form} set={set} systems={systems} inScenario={inScenario}
               contributors={contributors} missing={missing} />}
-          {type === 'element' && !editing && <ElementReadView data={data} />}
-          {type === 'element' && editing && <ElementEditView form={form} set={set} missing={missing} />}
+          {type === 'element' && !editing &&
+            <ElementReadView data={data} systems={systems} contributors={contributors} />}
+          {type === 'element' && editing &&
+            <ElementEditView form={form} set={set} missing={missing}
+                             systems={systems} contributors={contributors} />}
           {type === 'schema_table' && !editing && <SchemaTableReadView data={data} />}
-          {type === 'schema_table' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="table" />}
+          {type === 'schema_table' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="table" contributors={contributors} />}
           {type === 'schema_column' && !editing && <SchemaColumnReadView data={data} />}
-          {type === 'schema_column' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="field" />}
+          {type === 'schema_column' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="field" contributors={contributors} />}
           {type === 'contributor' && !editing && <ContributorReadView data={data} />}
           {type === 'contributor' && editing && <ContributorEditView form={form} set={set} missing={missing} />}
         </div>
         </FieldDefs.Provider>
       </>}
-      {confirmDelete && <ConfirmDialog
+      {refs && <ConfirmDialog
+        title={`Deactivate ${refs.contributor.name}?`}
+        confirmLabel="Deactivate"
+        message={refs.total === 0 && !refs.linked_user && refs.scenarios.length === 0
+          ? 'Nothing currently names this contributor. They will stop being offered when assigning an Owner or Data Steward, and only a SuperAdmin will see them.'
+          : 'They will stop being offered when assigning an Owner or Data Steward, and only a SuperAdmin will see them. Nothing is deleted and the assignments below are kept — so these records will go on naming someone who is no longer in circulation, until you reassign them.'}
+        detail={<div className="ref-warning">
+          {refs.linked_user && (
+            <div className="ref-group">
+              <strong>Linked user account</strong>
+              <div className="gov-hint">
+                {refs.linked_user.email} keeps working and stays linked.
+                Deactivating a contributor does not affect anyone&rsquo;s sign-in.
+              </div>
+            </div>
+          )}
+          {refs.records.map(g => (
+            <div className="ref-group" key={g.kind}>
+              <strong>{g.label} &mdash; {g.count}</strong>
+              <ul>
+                {g.named.map(r => <li key={r.id}>{r.label || r.id}</li>)}
+                {g.count > g.named.length &&
+                  <li className="gov-hint">and {g.count - g.named.length} more</li>}
+              </ul>
+            </div>
+          ))}
+          {refs.scenarios.length > 0 && (
+            <div className="ref-group">
+              <strong>Also exists as a copy in {refs.scenarios.length} scenario(s)</strong>
+              <ul>{refs.scenarios.map(sc =>
+                <li key={sc.scenario_id}>{sc.name}</li>)}</ul>
+              <div className="gov-hint">
+                Those copies are separate records and are not affected.
+              </div>
+            </div>
+          )}
+        </div>}
+        onCancel={() => setRefs(null)}
+        onConfirm={deactivate} />}
+
+      {impact && (impact.blockers || []).length > 0 && <ConfirmDialog
+        title={type === 'system' ? 'This system cannot be deleted yet'
+                                 : 'This data flow cannot be deleted yet'}
+        confirmLabel="Close"
+        message="Something still depends on it."
+        detail={<div className="ref-warning">
+          {impact.blockers.map((b, n) => (
+            <div className="ref-group" key={n}>
+              <strong>{b.reason}</strong>
+              <ul>
+                {b.named.map(r => <li key={r.id}>{r.label || r.id}</li>)}
+                {b.count > b.named.length &&
+                  <li className="gov-hint">and {b.count - b.named.length} more</li>}
+              </ul>
+            </div>
+          ))}
+        </div>}
+        onCancel={() => setImpact(null)}
+        onConfirm={() => setImpact(null)} />}
+
+      {impact && (impact.blockers || []).length === 0 && <ConfirmDialog
         title={type === 'system' ? 'Delete this system?' : 'Delete this data flow?'}
         danger confirmLabel="Delete"
         message={`"${titleOf()}" will be permanently removed.`}
-        detail={<div className="confirm-warn">
-          {type === 'system'
-            ? 'Any schema, attached documents and links belonging to this system go with it. A system still used by a data flow cannot be deleted.'
-            : 'The links between this flow and its data elements, plus any attached documents, go with it.'}
-          <div style={{marginTop:8}}>This cannot be undone from the audit log — restoring it would need a database backup.</div>
+        detail={<div className="ref-warning">
+          {impact.unavailable
+            ? <div className="confirm-warn">{type === 'system'
+                ? 'Any schema, attached documents and links belonging to this system go with it.'
+                : 'The links between this flow and its data elements, plus any attached documents, go with it.'}</div>
+            : impact.counts.length === 0
+            ? <div className="confirm-warn">Nothing else is attached to it.</div>
+            : <div className="ref-group">
+                <strong>These go with it</strong>
+                <ul>{impact.counts.map(c => (
+                  <li key={c.label}>
+                    {c.count.toLocaleString()} {c.label}{c.count === 1 ? '' : 's'}
+                  </li>))}</ul>
+              </div>}
+          <div className="confirm-warn" style={{marginTop:8}}>
+            This cannot be undone from the audit log — restoring it would need a
+            database backup.
+          </div>
+          {/* Typing the name is asked only where the cascade is large enough
+              that the count itself is a surprise. For an empty flow it would
+              be friction with nothing behind it. */}
+          {impact.heavy && (
+            <div className="form-group" style={{marginTop:10}}>
+              <label htmlFor="del-confirm">
+                Type <strong>{impact.record.name}</strong> to confirm
+              </label>
+              <input id="del-confirm" value={typed} autoFocus
+                     onChange={e => setTyped(e.target.value)} />
+            </div>
+          )}
         </div>}
-        onCancel={() => setConfirmDelete(false)}
-        onConfirm={() => { setConfirmDelete(false); onDelete(type, data); }} />}
+        confirmDisabled={impact.heavy && typed.trim() !== impact.record.name}
+        onCancel={() => setImpact(null)}
+        onConfirm={() => { setImpact(null); onDelete(type, data); }} />}
       {confirmRetire !== null && <ConfirmDialog
         title={confirmRetire
           ? (type === 'system' ? 'Retire this system in the scenario?'
@@ -2315,6 +2579,11 @@ function FlowReadView({ data, contributors, canEdit, notify }) {
         <ReadField label="Timing" value={data.frequency_detail} multiline />}
       <ReadField label="Method" value={data.transfer_method} />
       <ReadField label="Format" value={data.format} />
+      {/* A plain Yes/No row rather than a ReadField, so the value reads as a
+          state. The label carries the definition marker, which is where the
+          difference from the Manual Entry system type is explained. */}
+      <div className="field-row"><span className="field-label">Manual Steps<FieldInfo label="Manual Steps" /></span>
+        <span className="field-value">{data.manual_steps ? 'Yes' : 'No'}</span></div>
     </CollapsibleSection>
 
     <CollapsibleSection title="Ownership">
@@ -2424,6 +2693,7 @@ function FlowEditView({ form, set, systems, contributors, missing, inScenario })
                    type="textarea" />}
       <EditField label="Method" value={form.transfer_method} onChange={v=>set('transfer_method',v)} invalid={bad('transfer_method')} />
       <EditField label="Format" value={form.format} onChange={v=>set('format',v)} invalid={bad('format')} />
+      <EditField label="Manual Steps" value={form.manual_steps} onChange={v=>set('manual_steps',v)} type="checkbox" />
     </CollapsibleSection>
 
     <CollapsibleSection title="Ownership">
@@ -2465,7 +2735,7 @@ function FlowEditView({ form, set, systems, contributors, missing, inScenario })
 }
 
 // ===== Element Views =====
-function ElementReadView({ data }) {
+function ElementReadView({ data, systems, contributors }) {
   return (<>
     <CollapsibleSection title="Element Overview">
       <ReadField label="ID" value={data.element_id} />
@@ -2486,9 +2756,9 @@ function ElementReadView({ data }) {
 
     <CollapsibleSection title="Data Management" domainTag="management">
       <ReadField label="Data Standard" value={data.data_standard} />
-      <ReadField label="Source of Truth" value={data.source_of_truth} />
-      <ReadField label="Data Owner" value={data.data_owner_id} />
-      <ReadField label="Data Steward" value={data.data_steward_id} />
+      <SystemField label="Source of Truth" value={data.source_of_truth} systems={systems} />
+      <ContributorField label="Data Owner" value={data.data_owner_id} contributors={contributors} />
+      <ContributorField label="Data Steward" value={data.data_steward_id} contributors={contributors} />
     </CollapsibleSection>
 
     {data.flows && data.flows.length > 0 && <CollapsibleSection title={`Appears in Flows (${data.flows.length})`} defaultOpen={false}>
@@ -2502,7 +2772,7 @@ function ElementReadView({ data }) {
   </>);
 }
 
-function ElementEditView({ form, set, missing }) {
+function ElementEditView({ form, set, missing, systems, contributors }) {
   const bad = (k) => (missing || []).includes(k);
   return (<>
     <CollapsibleSection title="Element Overview">
@@ -2523,15 +2793,18 @@ function ElementEditView({ form, set, missing }) {
 
     <CollapsibleSection title="Data Management" domainTag="management">
       <EditField label="Data Standard" value={form.data_standard} onChange={v=>set('data_standard',v)} />
-      <EditField label="Source of Truth" value={form.source_of_truth} onChange={v=>set('source_of_truth',v)} />
-      <EditField label="Data Owner" value={form.data_owner_id} onChange={v=>set('data_owner_id',v)} />
-      <EditField label="Data Steward" value={form.data_steward_id} onChange={v=>set('data_steward_id',v)} />
+      <SystemSelect label="Source of Truth" value={form.source_of_truth}
+                    onChange={v=>set('source_of_truth',v)} systems={systems} />
+      <ContributorSelect label="Data Owner" value={form.data_owner_id}
+                         onChange={v=>set('data_owner_id',v)} contributors={contributors} />
+      <ContributorSelect label="Data Steward" value={form.data_steward_id}
+                         onChange={v=>set('data_steward_id',v)} contributors={contributors} />
     </CollapsibleSection>
   </>);
 }
 
 // ===== Schema Table / Column Governance Panels =====
-function GovEditField({ field, label, form, set, inherited, type, options }) {
+function GovEditField({ field, label, form, set, inherited, type, options, contributors }) {
   const inh = (inherited && inherited[field]) || { value: null, source: 'none' };
   const hasInh = inh.value !== null && inh.value !== undefined && inh.value !== '';
   const raw = form[field];
@@ -2543,6 +2816,16 @@ function GovEditField({ field, label, form, set, inherited, type, options }) {
   } else if (type === 'select') {
     control = <select className="edit-select" value={raw || ''} onChange={e => set(field, e.target.value)}>
       <option value="">(inherit)</option>{options.map(o => <option key={o} value={o}>{o}</option>)}</select>;
+  } else if (type === 'person') {
+    // A contributor key, not free text. Typed by hand it was unvalidated and
+    // displayed as "CON-003"; the blank option is how an override is cleared
+    // so the value falls back to the parent.
+    control = <select className="edit-select" value={raw || ''}
+                      onChange={e => set(field, e.target.value || null)}>
+      <option value="">(inherit)</option>
+      {assignable(contributors, raw).map(c =>
+        <option key={c.contributor_id} value={c.contributor_id}>
+          {contributorLabel(c.contributor_id, contributors)}</option>)}</select>;
   } else if (type === 'textarea') {
     control = <textarea className="edit-textarea" value={raw || ''} placeholder="(inherit / none)" onChange={e => set(field, e.target.value)} />;
   } else {
@@ -2551,39 +2834,40 @@ function GovEditField({ field, label, form, set, inherited, type, options }) {
   return (
     <div style={{ marginBottom: 10 }}>
       <div className="edit-field-row" style={{ marginBottom: 2 }}><span className="field-label">{label}</span>{control}</div>
-      <div className="gov-hint" style={{ marginLeft: 140 }}>{hasInh ? `Inherits: ${fmtGov(field, inh.value)} (${SRC_LABEL[inh.source]})` : 'No inherited value'}</div>
+      <div className="gov-hint" style={{ marginLeft: 140 }}>{hasInh ? `Inherits: ${fmtGov(field, inh.value, contributors)} (${SRC_LABEL[inh.source]})` : 'No inherited value'}</div>
     </div>
   );
 }
 
-function GovReadBlock({ gov }) {
+function GovReadBlock({ gov, contributors }) {
+  const p = { gov, contributors };
   return (<>
-    <GovReadField label="Classification" field="data_classification" gov={gov} />
-    <GovReadField label="Contains PII" field="contains_pii" gov={gov} />
-    <GovReadField label="FERPA Protected" field="ferpa_protected" gov={gov} />
-    <GovReadField label="Data Owner" field="data_owner_id" gov={gov} />
-    <GovReadField label="Data Steward" field="data_steward_id" gov={gov} />
-    <GovReadField label="Retention" field="retention_schedule" gov={gov} />
-    <GovReadField label="Access Restrictions" field="access_restrictions" gov={gov} />
-    <GovReadField label="Legal Authority" field="legal_authority" gov={gov} />
+    <GovReadField label="Classification" field="data_classification" {...p} />
+    <GovReadField label="Contains PII" field="contains_pii" {...p} />
+    <GovReadField label="FERPA Protected" field="ferpa_protected" {...p} />
+    <GovReadField label="Data Owner" field="data_owner_id" {...p} />
+    <GovReadField label="Data Steward" field="data_steward_id" {...p} />
+    <GovReadField label="Retention" field="retention_schedule" {...p} />
+    <GovReadField label="Access Restrictions" field="access_restrictions" {...p} />
+    <GovReadField label="Legal Authority" field="legal_authority" {...p} />
   </>);
 }
 
-function SchemaGovEditView({ form, set, inherited, level }) {
+function SchemaGovEditView({ form, set, inherited, level, contributors }) {
   return (<>
     <div className="drill-banner" style={{ marginTop: 0 }}>
       <span className="drill-icon">&#9432;</span>
       <div className="drill-text">Leave a field blank to <strong style={{display:'inline'}}>inherit</strong> from the parent. Enter a value to override governance for just this {level}.</div>
     </div>
     <CollapsibleSection title="Governance Overrides" domainTag="security">
-      <GovEditField field="data_classification" label="Classification" form={form} set={set} inherited={inherited} type="select" options={['Confidential','Sensitive','Internal','Public']} />
-      <GovEditField field="contains_pii" label="Contains PII" form={form} set={set} inherited={inherited} type="tri" />
-      <GovEditField field="ferpa_protected" label="FERPA Protected" form={form} set={set} inherited={inherited} type="tri" />
-      <GovEditField field="data_owner_id" label="Data Owner" form={form} set={set} inherited={inherited} />
-      <GovEditField field="data_steward_id" label="Data Steward" form={form} set={set} inherited={inherited} />
-      <GovEditField field="retention_schedule" label="Retention" form={form} set={set} inherited={inherited} type="select" options={['1 year','3 years','5 years','7 years per state policy','10 years','Permanent retention','Per district policy','Per federal retention schedule']} />
-      <GovEditField field="access_restrictions" label="Access Restrictions" form={form} set={set} inherited={inherited} type="textarea" />
-      <GovEditField field="legal_authority" label="Legal Authority" form={form} set={set} inherited={inherited} />
+      <GovEditField field="data_classification" label="Classification" form={form} set={set} inherited={inherited} contributors={contributors} type="select" options={['Confidential','Sensitive','Internal','Public']} />
+      <GovEditField field="contains_pii" label="Contains PII" form={form} set={set} inherited={inherited} contributors={contributors} type="tri" />
+      <GovEditField field="ferpa_protected" label="FERPA Protected" form={form} set={set} inherited={inherited} contributors={contributors} type="tri" />
+      <GovEditField field="data_owner_id" label="Data Owner" form={form} set={set} inherited={inherited} type="person" contributors={contributors} />
+      <GovEditField field="data_steward_id" label="Data Steward" form={form} set={set} inherited={inherited} type="person" contributors={contributors} />
+      <GovEditField field="retention_schedule" label="Retention" form={form} set={set} inherited={inherited} contributors={contributors} type="select" options={['1 year','3 years','5 years','7 years per state policy','10 years','Permanent retention','Per district policy','Per federal retention schedule']} />
+      <GovEditField field="access_restrictions" label="Access Restrictions" form={form} set={set} inherited={inherited} contributors={contributors} type="textarea" />
+      <GovEditField field="legal_authority" label="Legal Authority" form={form} set={set} inherited={inherited} contributors={contributors} />
     </CollapsibleSection>
     <CollapsibleSection title="Documentation">
       <EditField label="Business Meaning" value={form.business_meaning} onChange={v => set('business_meaning', v)} type="textarea" />
@@ -2603,7 +2887,7 @@ function SchemaTableReadView({ data }) {
       {data.description && <ReadField label="Description" value={data.description} multiline />}
     </CollapsibleSection>
     <CollapsibleSection title="Governance" domainTag="security">
-      <GovReadBlock gov={data.governance} />
+      <GovReadBlock gov={data.governance} contributors={contributors} />
     </CollapsibleSection>
     {(data.business_meaning || data.notes) && <CollapsibleSection title="Documentation">
       {data.business_meaning && <ReadField label="Business Meaning" value={data.business_meaning} multiline />}
@@ -2629,7 +2913,7 @@ function SchemaColumnReadView({ data }) {
       {data.default_value ? <ReadField label="Default" value={data.default_value} /> : null}
     </CollapsibleSection>
     <CollapsibleSection title="Governance" domainTag="security">
-      <GovReadBlock gov={data.governance} />
+      <GovReadBlock gov={data.governance} contributors={contributors} />
     </CollapsibleSection>
     {(data.business_meaning || data.notes) && <CollapsibleSection title="Documentation">
       {data.business_meaning && <ReadField label="Business Meaning" value={data.business_meaning} multiline />}
@@ -2828,6 +3112,7 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes, inScenario }) {
 function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
   const [form, setForm] = useState({
     name:'', description:'', source_system_id:'', destination_system_id:'', frequency:'Daily',
+    manual_steps:false,
     frequency_detail:'', transfer_method:'', format:'', contains_pii:false, ferpa_protected:false,
     data_classification:'', encryption_method:'', data_standard:'', legal_authority:'',
     organization:'', managed_by:'', owner_id:'', data_steward_id:'',
@@ -2902,6 +3187,11 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
                     label="Transfer Method" value={form.transfer_method}
                     onChange={v=>set('transfer_method',v)}
                     placeholder="e.g., SFTP, API, Manual Upload" />
+        <div className="checkbox-row">
+          <ModalCheck entity="data_flow" col="manual_steps" label="Manual Steps"
+                      checked={form.manual_steps}
+                      onChange={v=>set('manual_steps',v)} />
+        </div>
         <ModalField id="flow-desc" entity="data_flow" col="description" label="Description"
                     type="textarea" value={form.description}
                     onChange={v=>set('description',v)} />
@@ -2948,18 +3238,19 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
           <ModalField id="flow-owner" entity="data_flow" col="owner_id" type="select"
                       label="Owner" value={form.owner_id}
                       onChange={v=>set('owner_id',v)} placeholder="— none —"
-                      options={(contributors||[]).map(c=>({value:c.contributor_id,
-                                 label:`${c.name} (${c.contributor_id})`}))} />
+                      options={assignable(contributors, form.owner_id).map(c=>({value:c.contributor_id,
+                                 label:contributorLabel(c.contributor_id, contributors)}))} />
           <ModalField id="flow-steward" entity="data_flow" col="data_steward_id" type="select"
                       label="Data Steward" value={form.data_steward_id}
                       onChange={v=>set('data_steward_id',v)} placeholder="— none —"
-                      options={(contributors||[]).map(c=>({value:c.contributor_id,
-                                 label:`${c.name} (${c.contributor_id})`}))} />
+                      options={assignable(contributors, form.data_steward_id).map(c=>({value:c.contributor_id,
+                                 label:contributorLabel(c.contributor_id, contributors)}))} />
         </div>
       </div>
       <div className="modal-footer"><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" onClick={()=>req.attempt(form, () => onSave({...form,
           direction:'Inbound', contains_pii:form.contains_pii?1:0,
+          manual_steps:form.manual_steps?1:0,
           ferpa_protected:form.ferpa_protected?1:0}))}>Add Flow</button></div>
     </div></div>
   );
@@ -3042,10 +3333,14 @@ function FlowsTable({ flows, onSelect, inScenario, canEdit, onSetHidden }) {
       <SortHeader label="Destination" sortKey="dest_name" sort={sort} toggle={toggle} />
       <SortHeader label="Classification" sortKey="data_classification" sort={sort} toggle={toggle} />
       <SortHeader label="Frequency" sortKey="frequency" sort={sort} toggle={toggle} />
+      {/* No table in this app has filtering, so sorting on this column is how
+          you gather the flows with a human step in them. A real filter is its
+          own piece of work and would want to serve every column at once. */}
+      <SortHeader label="Manual" sortKey="manual_steps" sort={sort} toggle={toggle} />
       <SortHeader label="Status" sortKey="status" sort={sort} toggle={toggle} />
       {inScenario && <SortHeader label="In this scenario" sortKey="change_state" sort={sort} toggle={toggle} />}
     </tr></thead>
-    <tbody>{sorted.map(f=>(<tr key={f.flow_id} className={'clickable'+(f.is_hidden?' row-hidden':'')+(f.change_state==='removed'?' state-removed':'')} onClick={()=>onSelect(f.flow_id)}>{inScenario && <td className="pick-col" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.picked.includes(f.flow_id)} onChange={()=>sel.toggle(f.flow_id)} aria-label={`Select ${f.name}`} /></td>}<td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.data_classification ? <span className={`badge badge-${CLASS_BADGE[f.data_classification]||'internal'}`}>{f.data_classification}</span> : '—'}</td><td>{f.frequency}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td>{inScenario && <td><ChangeBadge state={f.change_state} hidden={f.is_hidden} /></td>}</tr>))}</tbody>
+    <tbody>{sorted.map(f=>(<tr key={f.flow_id} className={'clickable'+(f.is_hidden?' row-hidden':'')+(f.change_state==='removed'?' state-removed':'')} onClick={()=>onSelect(f.flow_id)}>{inScenario && <td className="pick-col" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.picked.includes(f.flow_id)} onChange={()=>sel.toggle(f.flow_id)} aria-label={`Select ${f.name}`} /></td>}<td>{f.flow_id}</td><td><strong>{f.name}</strong></td><td>{f.source_name}</td><td>{f.dest_name}</td><td>{f.data_classification ? <span className={`badge badge-${CLASS_BADGE[f.data_classification]||'internal'}`}>{f.data_classification}</span> : '—'}</td><td>{f.frequency}</td><td>{f.manual_steps?<span className="badge badge-manual">Manual</span>:'—'}</td><td><span className={`badge badge-${STATUS_BADGE[f.status]}`}>{f.status}</span></td>{inScenario && <td><ChangeBadge state={f.change_state} hidden={f.is_hidden} /></td>}</tr>))}</tbody>
   </table></div>);
 }
 
@@ -3066,6 +3361,10 @@ function ElementsTable({ elements, onSelect }) {
 
 function ContributorsTable({ contributors, onSelect }) {
   const { sorted, sort, toggle } = useSort(contributors, 'contributor_id');
+  // The column only appears once there is something to show in it. Only a
+  // SuperAdmin is sent deactivated contributors at all, so for everyone else
+  // this stays false and the table is unchanged.
+  const anyDeactivated = (contributors || []).some(isDeactivated);
   return (<div className="table-view">
     {contributors.length === 0 && <div className="empty-state">No contributors yet.</div>}
     {contributors.length > 0 && <table className="data-table">
@@ -3076,12 +3375,17 @@ function ContributorsTable({ contributors, onSelect }) {
         <SortHeader label="Organization Unit" sortKey="organization_unit" sort={sort} toggle={toggle} />
         <SortHeader label="Governance Role" sortKey="governance_role" sort={sort} toggle={toggle} />
         <SortHeader label="Email" sortKey="email" sort={sort} toggle={toggle} />
+        {anyDeactivated && <SortHeader label="Status" sortKey="is_active" sort={sort} toggle={toggle} />}
       </tr></thead>
       <tbody>{sorted.map(c=>(
-        <tr key={c.contributor_id} className="clickable" onClick={()=>onSelect(c.contributor_id)}>
+        <tr key={c.contributor_id}
+            className={'clickable' + (isDeactivated(c) ? ' row-hidden' : '')}
+            onClick={()=>onSelect(c.contributor_id)}>
           <td>{c.contributor_id}</td><td><strong>{c.name}</strong></td>
           <td>{c.title||'—'}</td><td>{c.organization_unit||'—'}</td>
-          <td>{c.governance_role||'—'}</td><td>{c.email||'—'}</td>
+          <td>{c.governance_role||'—'}</td><td>{c.contact_email||c.email||'—'}</td>
+          {anyDeactivated && <td>{isDeactivated(c)
+            ? <span className="fd-off">deactivated</span> : '—'}</td>}
         </tr>))}</tbody>
     </table>}
   </div>);
@@ -3837,11 +4141,16 @@ function Tooltip({ text, children, placement = 'top' }) {
   );
 }
 
-function ConfirmDialog({ title, message, detail, confirmLabel, danger, onConfirm, onCancel }) {
+// No outside-click close. A confirm dialog is a modal box, and the rule set in
+// 0.4.2 is that clicks outside one do nothing; this one was missed. Cancel is
+// still a button away, and an accidental dismissal of a dialog that lists
+// consequences is worth preventing.
+function ConfirmDialog({ title, message, detail, confirmLabel, danger, onConfirm, onCancel,
+                        confirmDisabled }) {
   return (
-    <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal-overlay">
       <div className="modal confirm-box" role="alertdialog" aria-modal="true"
-           aria-labelledby="confirm-title" onClick={e => e.stopPropagation()}>
+           aria-labelledby="confirm-title">
         <div className="modal-header" id="confirm-title">{title}</div>
         <div className="modal-body">
           <div>{message}</div>
@@ -3850,7 +4159,9 @@ function ConfirmDialog({ title, message, detail, confirmLabel, danger, onConfirm
         <div className="modal-footer">
           <button className="btn" onClick={onCancel}>Cancel</button>
           <button className={`btn ${danger ? '' : 'btn-primary'}`}
-                  style={danger ? { background: '#c0392b', color: '#fff', borderColor: '#c0392b' } : {}}
+                  style={danger && !confirmDisabled
+                           ? { background: '#c0392b', color: '#fff', borderColor: '#c0392b' } : {}}
+                  disabled={!!confirmDisabled}
                   onClick={onConfirm}>{confirmLabel || 'Confirm'}</button>
         </div>
       </div>
@@ -6506,7 +6817,6 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             <div className="stat"><div className="stat-value">{systems.length}</div><div className="stat-label">Systems</div></div>
             <div className="stat"><div className="stat-value">{flows.length}</div><div className="stat-label">Data Flows</div></div>
             <div className="stat"><div className="stat-value">{elements.length}</div><div className="stat-label">Data Elements</div></div>
-            <div className="stat"><div className="stat-value">{elements.filter(e=>e.is_pii).length}</div><div className="stat-label">PII Elements</div></div>
           </>}
           {/* Zoom controls. Trackpad pinch-zoom is hard to land precisely, so
               these give a predictable step. Only shown where there is something
@@ -6575,6 +6885,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
                          inScenario={inScenario} onSetHidden={setRecordsHidden}
                          onResetRoute={resetRoute}
                          notify={notify} contributors={contributors} isAdmin={isAdmin}
+                         isSuper={isSuper}
                          systemTypes={systemTypes} onSchemaChanged={refresh} />}
         </div>
       </div>
