@@ -57,6 +57,7 @@ ENTITY_LABELS = {
     "data_flow": "Data Flow",
     "data_element": "Data Element",
     "contributor": "Contributor",
+    "task": "Task",
 }
 
 # A field definition is a tooltip, not an essay. Long enough for a sentence or
@@ -359,6 +360,35 @@ def rows_to_list(rows):
 # Deleting a system with 1,240 schema columns and three attached documents is a
 # different act from deleting one someone created by mistake five minutes ago,
 # and the dialog should be able to tell them apart.
+def delete_tasks_for(conn, kind, parent_id):
+    """Remove a parent's tasks, with their steps and assignments.
+
+    A task has no meaning without the thing it is attached to — a validation
+    step for a flow that no longer exists is not work anybody can do — so it
+    goes with its parent rather than being orphaned or blocking the delete.
+    The confirmation dialog counts them first (`delete_impact`), so this is
+    never a surprise.
+    """
+    ids = [r["task_id"] for r in conn.execute(
+        "SELECT task_id FROM task WHERE anchor_kind=? AND anchor_id=?",
+        (kind, parent_id)).fetchall()]
+    if not ids:
+        return 0
+    marks = ",".join("?" for _ in ids)
+    conn.execute(f"DELETE FROM task_step WHERE task_id IN ({marks})", tuple(ids))
+    conn.execute(f"DELETE FROM task_contributor WHERE task_id IN ({marks})",
+                 tuple(ids))
+    conn.execute(
+        f"DELETE FROM resource_version WHERE resource_id IN "
+        f"(SELECT resource_id FROM resource WHERE entity_type='task' "
+        f" AND entity_id IN ({marks}))", tuple(ids))
+    conn.execute(
+        f"DELETE FROM resource WHERE entity_type='task' "
+        f"AND entity_id IN ({marks})", tuple(ids))
+    conn.execute(f"DELETE FROM task WHERE task_id IN ({marks})", tuple(ids))
+    return len(ids)
+
+
 def delete_impact(conn, kind, record_id):
     """Counts of everything a delete would destroy, plus anything blocking it."""
     out = {"counts": [], "blockers": [], "heavy": False}
@@ -385,6 +415,9 @@ def delete_impact(conn, kind, record_id):
         add("attached document or link",
             one("SELECT COUNT(*) FROM resource "
                 "WHERE entity_type='system' AND entity_id=?", (record_id,)))
+        add("task",
+            one("SELECT COUNT(*) FROM task "
+                "WHERE anchor_kind='system' AND anchor_id=?", (record_id,)))
         # Typing the name is asked for only when there is a schema to lose.
         # That is the delete that cannot be reconstructed by hand, and the one
         # where the count in the dialog is a number nobody expects.
@@ -412,6 +445,9 @@ def delete_impact(conn, kind, record_id):
         add("attached document or link",
             one("SELECT COUNT(*) FROM resource "
                 "WHERE entity_type='data_flow' AND entity_id=?", (record_id,)))
+        add("task",
+            one("SELECT COUNT(*) FROM task "
+                "WHERE anchor_kind='data_flow' AND anchor_id=?", (record_id,)))
 
     return out
 
@@ -492,6 +528,154 @@ def linked_accounts(conn):
             for r in conn.execute(
                 "SELECT contributor_id, email, title FROM app_user "
                 "WHERE contributor_id IS NOT NULL AND is_active=1").fetchall()}
+
+
+# ---------------------------------------------------------------------------
+# Tasks
+# ---------------------------------------------------------------------------
+TASK_STATUSES = ["not_started", "in_progress", "completed"]
+TASK_STATUS_LABELS = {
+    "not_started": "Not started",
+    "in_progress": "In progress",
+    "completed": "Completed",
+}
+# "Other" is always available, and is deliberately NOT a row in `task_type`.
+# See migration 0018: a seeded row would appear for new installations and never
+# for an existing one, and a typed value landing in `task_type` would make
+# every Editor a type author, which is the boundary TaskTypesHandler draws.
+TASK_TYPE_OTHER = "Other"
+
+
+def task_type_label(row):
+    """What to show for a task's type: "Other \u2014 whatever they typed"."""
+    base = row.get("task_type") or ""
+    if base == TASK_TYPE_OTHER and (row.get("task_type_other") or "").strip():
+        return f"{base} \u2014 {row['task_type_other'].strip()}"
+    return base
+
+
+TASK_ANCHORS = {
+    # anchor_kind -> (table, primary key, display column)
+    "system": ("system", "system_id", "name"),
+    "data_flow": ("data_flow", "flow_id", "name"),
+}
+
+
+def derived_task_status(step_rows):
+    """The status a task's subtasks add up to, or None when there is none.
+
+    A task with subtasks does not carry its own status: it would let one read
+    Completed with three subtasks unfinished underneath, and nothing would say
+    so. The rule is the obvious one, with the ordering that matters — *any*
+    subtask started means the task is under way, even if most are untouched,
+    because "not started" would be false the moment somebody began.
+
+    **A subtask with no status is ignored** (migration 0019). Nobody having
+    said is different from somebody having said "not started", so a task whose
+    subtasks are all unset has no status either rather than claiming one on
+    their behalf — which is the lie the NOT NULL default used to tell.
+
+    Returns None both when there are no subtasks and when none of them says
+    anything. Callers that need to tell those apart check `step_rows`
+    themselves: the difference matters because **once a task has subtasks its
+    status is theirs**, so "they say nothing" has to mean the task has no
+    status, not that a value somebody typed earlier shows through. The flyout
+    labels the field "Determined based on subtasks" — leaving a stale hand-set
+    value visible under that caption would be a plain contradiction.
+    """
+    if not step_rows:
+        return None
+    states = [r["status"] for r in step_rows]
+    said = [st for st in states if st]
+    if not said:
+        return None
+    # "All completed" is over **every** subtask, not only the ones with a
+    # status. Testing it against the ones that said something made one finished
+    # subtask out of three report the whole task Completed, because the other
+    # two had been filtered out of the question — an unset subtask is not a
+    # finished one.
+    if all(st == "completed" for st in states):
+        return "completed"
+    if any(st in ("in_progress", "completed") for st in said):
+        return "in_progress"
+    return "not_started"
+
+
+def task_rows(conn, where, params, include_children=True):
+    """Tasks for a view, each carrying its steps, its people and its parent.
+
+    One assembled shape for the catalog, the flyout and the diagram, so the
+    three cannot disagree about what a task is. The alternative — each caller
+    joining what it happens to need — is how a status comes to read one way in
+    a table and another in a flyout.
+    """
+    rows = rows_to_list(conn.execute(
+        f"SELECT * FROM task WHERE {where} ORDER BY task_id", params).fetchall())
+    if not rows:
+        return []
+    ids = [r["task_id"] for r in rows]
+    marks = ",".join("?" for _ in ids)
+
+    steps, people = {}, {}
+    if include_children:
+        for st in conn.execute(
+                f"SELECT * FROM task_step WHERE task_id IN ({marks}) "
+                f"ORDER BY sort_order, step_id", tuple(ids)).fetchall():
+            steps.setdefault(st["task_id"], []).append(dict(st))
+        for tc in conn.execute(
+                f"SELECT task_id, contributor_id FROM task_contributor "
+                f"WHERE task_id IN ({marks}) ORDER BY contributor_id",
+                tuple(ids)).fetchall():
+            people.setdefault(tc["task_id"], []).append(tc["contributor_id"])
+
+    # Parent names, so a catalog row can say what the task is attached to
+    # without the browser holding every system and flow.
+    parents = {}
+    for kind, (table, pk, label) in TASK_ANCHORS.items():
+        wanted = [r["anchor_id"] for r in rows if r["anchor_kind"] == kind]
+        if not wanted:
+            continue
+        m = ",".join("?" for _ in wanted)
+        for pr in conn.execute(
+                f"SELECT {pk} AS id, {label} AS label FROM {table} "
+                f"WHERE {pk} IN ({m})", tuple(wanted)).fetchall():
+            parents[(kind, pr["id"])] = pr["label"]
+
+    for r in rows:
+        r["steps"] = steps.get(r["task_id"], [])
+        r["contributor_ids"] = people.get(r["task_id"], [])
+        r["anchor_name"] = parents.get((r["anchor_kind"], r["anchor_id"]))
+        # The stored status is authoritative only for a task with no subtasks.
+        # Resolved on read as well as on write, so a row edited directly in the
+        # database still reports something true. Once there ARE subtasks the
+        # answer is theirs, including when it is "nothing" — see
+        # derived_task_status.
+        has_steps = bool(r["steps"])
+        derived = derived_task_status(r["steps"])
+        r["status"] = derived if has_steps else r["status"]
+        # An unset status has no label. Each surface decides how to show the
+        # absence — the catalog a dash, the circle's tooltip nothing at all.
+        r["status_label"] = TASK_STATUS_LABELS.get(r["status"]) if r["status"] else None
+        r["type_label"] = task_type_label(r)
+        r["status_from_steps"] = has_steps
+    return rows
+
+
+def apply_task_status(conn, task_id):
+    """Recompute and store a task's status after its subtasks change.
+
+    A task with **no** subtasks keeps the status somebody set by hand. A task
+    **with** subtasks has theirs written to it, even when that is NULL: the
+    field is presented as derived, so a hand-set value left showing underneath
+    would contradict its own caption.
+    """
+    steps = conn.execute(
+        "SELECT status FROM task_step WHERE task_id=?", (task_id,)).fetchall()
+    if not steps:
+        return None
+    derived = derived_task_status(steps)
+    conn.execute("UPDATE task SET status=? WHERE task_id=?", (derived, task_id))
+    return derived
 
 
 def contact_emails(conn):
@@ -1548,7 +1732,7 @@ SEED_RELEASES = [
   the record counts, which is where the space freed up by the account menu
   went.
 """),
-    (VERSION, "Tidier diagrams", None, 1, 1500, """\
+    ("0.6.1", "Tidier diagrams", None, 1, 1500, """\
 ## What's new in this release
 
 **Lining things up**
@@ -1568,6 +1752,31 @@ SEED_RELEASES = [
 * The file holds the **whole diagram**, not just the part you can see, and is
   headed with the view it came from.
 """),
+    # Published 4 November 2026, after Ben reviewed and rewrote the wording.
+    # Published notes are never overwritten by `ensure_releases`, so from here
+    # on an administrator's edits in the app survive restarts and deploys.
+    (VERSION, "Tasks", None, 1, 1600, """\
+## What's new in this release
+
+**Tasks**
+
+* New **Tasks** record type for the work a flow or a data store depends on —
+  validation steps, a stored procedure, a file somebody downloads and uploads
+  by hand.
+* A task is attached to a data flow or data store, and includes a person
+  responsible, status, and expected start and end dates.
+* Subtasks can be added to a task, each with its own person responsible,
+  status, and dates.
+* A task's status is worked out from its subtasks.
+* **Task Types** in Preferences — the four supplied are a starting point, and
+  **Other** is always available with a box to say what the work actually is.
+* Tasks appear on the **lineage diagram** as small circles on the flow or
+  inside the system box — hover for the name and status, click to open,
+  drag to reposition.
+* Documents and links can be attached to a task, as they can to a system or a
+  data flow.
+* Tasks can be copied into or added in scenarios, as well.
+"""),
 ]
 
 
@@ -1577,6 +1786,17 @@ def get_system_types(conn=None):
     conn = conn or get_db()
     rows = conn.execute(
         "SELECT * FROM system_type ORDER BY sort_order, type_name").fetchall()
+    if own:
+        conn.close()
+    return rows_to_list(rows)
+
+
+def get_task_types(conn=None):
+    """The configured task types, in display order."""
+    own = conn is None
+    conn = conn or get_db()
+    rows = conn.execute(
+        "SELECT * FROM task_type ORDER BY sort_order, type_name").fetchall()
     if own:
         conn.close()
     return rows_to_list(rows)
@@ -1602,6 +1822,53 @@ SEED_FIELD_DEFINITIONS = [
      "spreadsheet the user has filled in manually, or by entering data "
      "directly into a screen), rather than moving data between systems."),
 ]
+
+
+# The starting set of task types. Kept here rather than in migration 0016 so
+# the list exists once: the test harness builds its schema from the migration
+# files and ignores anything that is not DDL, which is why the system-type list
+# ended up written twice — once in 0004 and once by hand in harness_setup.py.
+#
+# A starting point, not a taxonomy. Ben named these four; the whole reason task
+# types are a table is that the list belongs to whoever is using the app.
+SEED_TASK_TYPES = [
+    ("Validation", "A set of checks run against the data before it is accepted, "
+     "usually as a numbered list of steps.", 10),
+    ("Stored Procedure", "Code run against a database on a schedule or on "
+     "request, rather than as part of an automated transfer.", 20),
+    ("Manual Transfer", "A file somebody downloads, uploads, or moves by hand "
+     "between two places.", 30),
+    ("Review and Approval", "A person checks the data and signs off before it "
+     "moves on.", 40),
+]
+
+
+def ensure_task_types(conn=None):
+    """Fill task_type on a fresh database, and never again.
+
+    Seeded only when the table is **entirely empty**, unlike
+    `ensure_field_definitions` which checks row by row. The difference matters:
+    a definition an administrator removes is a gap worth refilling with the
+    shipped wording, but a task type they delete is a decision, and bringing it
+    back at the next restart would look like the delete had failed.
+    """
+    own = conn is None
+    conn = conn or get_db()
+    try:
+        if conn.execute("SELECT COUNT(*) FROM task_type").fetchone()[0]:
+            return
+        now = iso(utcnow())
+        for name, desc, order in SEED_TASK_TYPES:
+            conn.execute(
+                """INSERT INTO task_type
+                     (type_name, description, sort_order, created_date, updated_date)
+                   VALUES (?,?,?,?,?)""",
+                (name, desc, order, now, now))
+        conn.commit()
+        print(f"Task types: seeded {len(SEED_TASK_TYPES)}", flush=True)
+    finally:
+        if own:
+            conn.close()
 
 
 def ensure_field_definitions(conn=None):
@@ -2445,6 +2712,7 @@ if HAS_TORNADO:
                          " WHERE entity_type='system' AND entity_id=?)", (sid,))
             conn.execute("DELETE FROM resource WHERE entity_type='system' AND entity_id=?",
                          (sid,))
+            delete_tasks_for(conn, "system", sid)
             conn.execute("DELETE FROM system WHERE system_id=?", (sid,))
             self.audit_delete(conn, "system", sid, dict(before))
             conn.commit()
@@ -2698,14 +2966,15 @@ if HAS_TORNADO:
                         fields=["change_state"])
                     conn.commit()
                     return self.write_json({"flow_id": fid, "change_state": state})
-                # Its links to data elements and any attached resources go with
-                # it; nothing else references a flow.
+                # Its links to data elements, its attached resources and its
+                # tasks go with it; nothing else references a flow.
                 conn.execute("DELETE FROM flow_element WHERE flow_id=?", (fid,))
                 conn.execute("DELETE FROM resource_version WHERE resource_id IN "
                              "(SELECT resource_id FROM resource "
                              " WHERE entity_type='data_flow' AND entity_id=?)", (fid,))
                 conn.execute("DELETE FROM resource WHERE entity_type='data_flow' "
                              "AND entity_id=?", (fid,))
+                delete_tasks_for(conn, "data_flow", fid)
                 conn.execute("DELETE FROM data_flow WHERE flow_id=?", (fid,))
                 self.audit_delete(conn, "data_flow", fid, dict(before))
                 conn.commit()
@@ -2932,6 +3201,610 @@ if HAS_TORNADO:
             self.set_status(201)
             self.write_json(payload)
 
+    TASK_FIELDS = ('name', 'task_type', 'task_type_other', 'description',
+                   'anchor_kind', 'anchor_id',
+                   'pos_main', 'pos_cross', 'expected_start', 'expected_end',
+                   'status', 'completed_date', 'notes')
+
+    def next_task_id(conn, scenario_id, where, params):
+        last = conn.execute(
+            f"SELECT task_id FROM task WHERE {where} "
+            f"ORDER BY task_id DESC LIMIT 1", params).fetchone()
+        num = (int(re.search(r'\d+', scenarios.base_id(last['task_id'])).group()) + 1
+               if last else 1)
+        return scenarios.scoped_id(scenario_id, f"TSK-{num:03d}")
+
+    def check_task_type(conn, ttype, other):
+        """None if the type is usable, otherwise the complaint to return.
+
+        One function because three handlers ask the same question, and a type
+        accepted on create but refused on edit would be the sort of asymmetry
+        that only shows up when somebody tries to fix a typo.
+        """
+        ttype = (ttype or "").strip()
+        if not ttype:
+            return "A task type is required."
+        if ttype == TASK_TYPE_OTHER:
+            if not (other or "").strip():
+                return "Say what the task type is."
+            return None
+        if ttype not in {t["type_name"] for t in get_task_types(conn)}:
+            return f"Unknown task type '{ttype}'."
+        return None
+
+    def check_task_anchor(conn, handler, kind, anchor_id):
+        """Is this a real parent, visible in the view being written to?
+
+        Both halves matter. An unknown kind or id is a client error; a parent
+        in a *different* view is the cross-view reference the scenario leak
+        tests exist to catch, and it would put a task on a diagram where its
+        system does not exist.
+        """
+        if kind not in TASK_ANCHORS:
+            return "A task must be attached to a system or a data flow."
+        table, pk, _label = TASK_ANCHORS[kind]
+        where, params = handler.scope_sql(table=table)
+        found = conn.execute(
+            f"SELECT 1 FROM {table} WHERE {pk}=? AND {where}",
+            (anchor_id,) + params).fetchone()
+        if not found:
+            return ("That system or data flow is not part of the view you are "
+                    "editing.")
+        return None
+
+    def write_task_children(conn, handler, task_id, data, replace_steps):
+        """Save the people and, when asked, the steps.
+
+        Steps are replaced wholesale rather than diffed. They are an ordered
+        list a person edits as a list — reordering, inserting in the middle,
+        deleting — and matching that up row by row produces either a diff
+        algorithm or a pile of edge cases. Their statuses travel in the payload,
+        so nothing is lost by rewriting them.
+        """
+        now = iso(utcnow())
+        uid = handler.current_user["user_id"]
+
+        if "contributor_ids" in data:
+            conn.execute("DELETE FROM task_contributor WHERE task_id=?", (task_id,))
+            seen = set()
+            for cid in (data.get("contributor_ids") or []):
+                if not cid or cid in seen:
+                    continue
+                seen.add(cid)
+                conn.execute(
+                    """INSERT INTO task_contributor
+                         (task_id, contributor_id, added_date, added_by)
+                       VALUES (?,?,?,?)""", (task_id, cid, now, uid))
+
+        if replace_steps and "steps" in data:
+            conn.execute("DELETE FROM task_step WHERE task_id=?", (task_id,))
+            for i, step in enumerate(data.get("steps") or []):
+                text = (step.get("description") or "").strip()
+                if not text:
+                    continue
+                status = step.get("status")
+                if status not in TASK_STATUSES:
+                    status = None
+                conn.execute(
+                    """INSERT INTO task_step
+                         (task_id, sort_order, description, contributor_id,
+                          status, expected_start, expected_end,
+                          completed_date, notes, created_date,
+                          updated_date, updated_by)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (task_id, (i + 1) * 10, text, fk(step.get("contributor_id")),
+                     status,
+                     step.get("expected_start") or None,
+                     step.get("expected_end") or None,
+                     step.get("completed_date") or None, step.get("notes"),
+                     now, now, uid))
+
+    class TasksHandler(BaseAPIHandler):
+        """The task catalog, and creating one."""
+        SCENARIO_AWARE = True
+
+        def get(self):
+            conn = get_db()
+            try:
+                self.scenario_access(conn)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            # Deliberately not `respect_hidden`: a task has no hidden flag of
+            # its own. Scenario focus hides *systems and flows* to declutter
+            # the diagram, and a task is drawn on its parent, so it disappears
+            # with the parent and reappears with it. A separate flag would be a
+            # second thing to keep in step, and a task hidden while its system
+            # is showing would be a circle nobody could find.
+            where, params = self.scope_sql()
+            try:
+                payload = task_rows(conn, where, params)
+            finally:
+                conn.close()
+            self.write_json(payload)
+
+        def post(self):
+            data = self.get_json_body() or {}
+            if not (data.get("name") or "").strip():
+                return self.fail(400, "A task name is required.")
+            kind = (data.get("anchor_kind") or "").strip()
+            anchor_id = (data.get("anchor_id") or "").strip()
+
+            conn = get_db()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            try:
+                complaint = reject_proposed_on_live(self, data)
+                if complaint:
+                    return self.fail(400, complaint)
+                problem = check_task_anchor(conn, self, kind, anchor_id)
+                if problem:
+                    return self.fail(400, problem)
+
+                ttype = (data.get("task_type") or "").strip()
+                other = (data.get("task_type_other") or "").strip()
+                complaint = check_task_type(conn, ttype, other)
+                if complaint:
+                    return self.fail(400, complaint)
+                # Only kept when it means something, so a type changed away
+                # from Other does not leave its old wording behind.
+                if ttype != TASK_TYPE_OTHER:
+                    other = None
+
+                where, params = self.scope_sql()
+                tid = next_task_id(conn, self.scenario_id, where, params)
+                now = iso(utcnow())
+                uid = self.current_user["user_id"]
+                conn.execute(
+                    """INSERT INTO task
+                         (task_id, name, task_type, task_type_other,
+                          description, anchor_kind,
+                          anchor_id, pos_main, pos_cross, expected_start,
+                          expected_end, status, completed_date, notes,
+                          created_date, updated_date, created_by, updated_by,
+                          scenario_id, change_state)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (tid, data["name"].strip(), ttype, other,
+                     data.get("description"),
+                     kind, anchor_id, data.get("pos_main"), data.get("pos_cross"),
+                     data.get("expected_start") or None,
+                     data.get("expected_end") or None,
+                     # No default: a task nobody has assessed has no status,
+                     # which is a different fact from "not started".
+                     data.get("status") if data.get("status") in TASK_STATUSES
+                     else None,
+                     data.get("completed_date") or None, data.get("notes"),
+                     now, now, uid, uid, self.scenario_id,
+                     change_state_for_new(self, data)))
+                write_task_children(conn, self, tid, data, replace_steps=True)
+                apply_task_status(conn, tid)
+                self.audit_create(conn, "task", tid,
+                                  {k: data.get(k) for k in TASK_FIELDS})
+                conn.commit()
+                payload = task_rows(conn, "task_id=?", (tid,))[0]
+            finally:
+                conn.close()
+            self.set_status(201)
+            self.write_json(payload)
+
+    class TaskHandler(BaseAPIHandler):
+        """One task: read it, change it, delete it."""
+        SCENARIO_AWARE = True
+
+        def _load(self, conn):
+            where, params = self.scope_sql()
+            return conn.execute(
+                f"SELECT * FROM task WHERE task_id=? AND {where}",
+                (self.path_args[0],) + params).fetchone()
+
+        def get(self, tid):
+            conn = get_db()
+            try:
+                self.scenario_access(conn)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            try:
+                where, params = self.scope_sql()
+                found = task_rows(conn, f"task_id=? AND {where}", (tid,) + params)
+            finally:
+                conn.close()
+            if not found:
+                return self.fail(404, "Not found")
+            self.write_json(found[0])
+
+        def put(self, tid):
+            data = self.get_json_body() or {}
+            conn = get_db()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            try:
+                complaint = reject_proposed_on_live(self, data)
+                if complaint:
+                    return self.fail(400, complaint)
+                before = self._load(conn)
+                if not before:
+                    return self.fail(404, "Not found")
+                before = dict(before)
+                gaps = missing_required("task", data, before)
+                if gaps:
+                    return self.fail(
+                        400, f"These fields are required: {', '.join(gaps)}.",
+                        missing=gaps)
+
+                if "task_type" in data or "task_type_other" in data:
+                    ttype = (data.get("task_type", before["task_type"]) or "").strip()
+                    other = (data.get("task_type_other",
+                                      before["task_type_other"]) or "").strip()
+                    complaint = check_task_type(conn, ttype, other)
+                    if complaint:
+                        return self.fail(400, complaint)
+                    # Changing away from Other clears the wording, so it cannot
+                    # linger and reappear if someone switches back.
+                    if ttype != TASK_TYPE_OTHER:
+                        data["task_type_other"] = None
+                # Moving a task to another parent is allowed — a validation step
+                # genuinely does move when a flow is redrawn — but the new
+                # parent is checked exactly as hard as the original was.
+                if "anchor_kind" in data or "anchor_id" in data:
+                    kind = (data.get("anchor_kind") or before["anchor_kind"]).strip()
+                    aid = (data.get("anchor_id") or before["anchor_id"]).strip()
+                    problem = check_task_anchor(conn, self, kind, aid)
+                    if problem:
+                        return self.fail(400, problem)
+                    if (kind, aid) != (before["anchor_kind"], before["anchor_id"]):
+                        # The stored position means different things on a system
+                        # and on a flow (see migration 0016), so carrying it
+                        # across would put the circle somewhere arbitrary.
+                        # Clearing it lets the default placement run again.
+                        data.setdefault("pos_main", None)
+                        data.setdefault("pos_cross", None)
+
+                fields, vals = [], []
+                for key in TASK_FIELDS:
+                    if key not in data:
+                        continue
+                    value = data[key]
+                    if key == "status":
+                        # An empty value clears it; anything unrecognised is
+                        # ignored rather than stored.
+                        if value in (None, "", "none"):
+                            value = None
+                        elif value not in TASK_STATUSES:
+                            continue
+                    if key == "name":
+                        value = (value or "").strip()
+                        if not value:
+                            return self.fail(400, "A task name is required.")
+                    if key in ("expected_start", "expected_end", "completed_date"):
+                        value = value or None
+                    fields.append(f"{key}=?")
+                    vals.append(value)
+                now = iso(utcnow())
+                if fields:
+                    fields += ["updated_date=?", "updated_by=?"]
+                    vals += [now, self.current_user["user_id"], tid]
+                    conn.execute(
+                        f"UPDATE task SET {','.join(fields)} WHERE task_id=?", vals)
+
+                touched_children = "steps" in data or "contributor_ids" in data
+                write_task_children(conn, self, tid, data, replace_steps=True)
+                apply_task_status(conn, tid)
+
+                if "proposed" in data and self.scenario_id is not None:
+                    conn.execute(
+                        "UPDATE task SET change_state=? "
+                        "WHERE task_id=? AND scenario_id=? AND change_state!=?",
+                        (scenarios.PROPOSED if data["proposed"]
+                         else scenarios.UNCHANGED,
+                         tid, self.scenario_id, scenarios.REMOVED))
+                elif fields or touched_children:
+                    mark_modified(conn, "task", "task_id", tid, self.scenario_id)
+
+                after = dict(conn.execute(
+                    "SELECT * FROM task WHERE task_id=?", (tid,)).fetchone())
+                self.audit_update(conn, "task", tid, before, after,
+                                  fields=TASK_FIELDS)
+                conn.commit()
+                payload = task_rows(conn, "task_id=?", (tid,))[0]
+            finally:
+                conn.close()
+            self.write_json(payload)
+
+        def delete(self, tid):
+            conn = get_db()
+            try:
+                try:
+                    self.scenario_access(conn, write=True)
+                except scenarios.ScenarioError as e:
+                    return self.fail(e.status, e.message)
+                before = self._load(conn)
+                if not before:
+                    return self.fail(404, "Not found")
+
+                # In a scenario, retiring is a proposal rather than a deletion,
+                # matching systems and flows: the circle stays on the diagram
+                # struck through so the plan reads as a change set.
+                mode = self.get_argument("mode", "")
+                if self.scenario_id is not None and mode in ("remove", "restore"):
+                    try:
+                        state = scenarios.set_retired(
+                            conn, "task", "task_id", tid, self.scenario_id,
+                            retired=(mode == "remove"))
+                    except scenarios.RetireRefused as e:
+                        return self.fail(400, str(e))
+                    self.audit_update(
+                        conn, "task", tid, dict(before),
+                        {**dict(before), "change_state": state},
+                        fields=["change_state"])
+                    conn.commit()
+                    return self.write_json({"task_id": tid, "change_state": state})
+
+                # Steps and assignments are parts of the task, not records in
+                # their own right, so they go with it.
+                conn.execute("DELETE FROM task_step WHERE task_id=?", (tid,))
+                conn.execute("DELETE FROM task_contributor WHERE task_id=?", (tid,))
+                conn.execute("DELETE FROM resource_version WHERE resource_id IN "
+                             "(SELECT resource_id FROM resource "
+                             " WHERE entity_type='task' AND entity_id=?)", (tid,))
+                conn.execute("DELETE FROM resource WHERE entity_type='task' "
+                             "AND entity_id=?", (tid,))
+                conn.execute("DELETE FROM task WHERE task_id=?", (tid,))
+                self.audit_delete(conn, "task", tid, dict(before))
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"ok": True, "deleted": tid})
+
+    class TaskCopyHandler(BaseAPIHandler):
+        """Copy a task, carrying everything except the dates and the progress.
+
+        This is what replaced recurrence. A quarterly job is four tasks, so
+        making the second one has to be cheap — type, parent, position,
+        description, notes, the people and the whole checklist come across.
+
+        **Dates and progress deliberately do not.** The dates are the one thing
+        that differs between occurrences, and a copy that arrived pre-filled
+        with March's dates would be wrong in a way nobody would notice until it
+        was overdue. Progress resets for the same reason: a new occurrence has
+        not been done, and inheriting ticks from the last one would report work
+        that never happened.
+        """
+        SCENARIO_AWARE = True
+
+        def post(self, tid):
+            data = self.get_json_body() or {}
+            conn = get_db()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            try:
+                where, params = self.scope_sql()
+                src = conn.execute(
+                    f"SELECT * FROM task WHERE task_id=? AND {where}",
+                    (tid,) + params).fetchone()
+                if not src:
+                    return self.fail(404, "Not found")
+                src = dict(src)
+
+                new_id = next_task_id(conn, self.scenario_id, where, params)
+                now = iso(utcnow())
+                uid = self.current_user["user_id"]
+                name = (data.get("name") or f"{src['name']} (copy)").strip()
+                conn.execute(
+                    """INSERT INTO task
+                         (task_id, name, task_type, task_type_other,
+                          description, anchor_kind,
+                          anchor_id, pos_main, pos_cross, expected_start,
+                          expected_end, status, completed_date, notes,
+                          created_date, updated_date, created_by, updated_by,
+                          scenario_id, change_state)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (new_id, name, src["task_type"], src["task_type_other"],
+                     src["description"],
+                     src["anchor_kind"], src["anchor_id"],
+                     # Position is dropped: two circles at identical
+                     # coordinates look like one, and the copy would be
+                     # undraggable because the original is on top of it.
+                     None, None,
+                     data.get("expected_start") or None,
+                     data.get("expected_end") or None,
+                     None, None, src["notes"],
+                     now, now, uid, uid, self.scenario_id,
+                     change_state_for_new(self, data)))
+
+                for p in conn.execute(
+                        "SELECT contributor_id FROM task_contributor WHERE task_id=?",
+                        (tid,)).fetchall():
+                    conn.execute(
+                        """INSERT INTO task_contributor
+                             (task_id, contributor_id, added_date, added_by)
+                           VALUES (?,?,?,?)""",
+                        (new_id, p["contributor_id"], now, uid))
+                for st in conn.execute(
+                        "SELECT * FROM task_step WHERE task_id=? "
+                        "ORDER BY sort_order, step_id", (tid,)).fetchall():
+                    # A subtask's own dates are dropped for the same reason
+                    # the task's are: they are what differs between
+                    # occurrences, and inheriting March's would be wrong in a
+                    # way nobody notices until it is overdue.
+                    conn.execute(
+                        """INSERT INTO task_step
+                             (task_id, sort_order, description, contributor_id,
+                              status, expected_start, expected_end,
+                              completed_date, notes, created_date,
+                              updated_date, updated_by)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (new_id, st["sort_order"], st["description"],
+                         st["contributor_id"], None, None, None,
+                         None, st["notes"], now, now, uid))
+                apply_task_status(conn, new_id)
+
+                after = dict(conn.execute(
+                    "SELECT * FROM task WHERE task_id=?", (new_id,)).fetchone())
+                self.audit_create(conn, "task", new_id, after)
+                audit.record_event(
+                    conn, self.current_user, audit.CREATE, "task", new_id,
+                    summary=f"Task copied from {tid}",
+                    scenario_id=self.scenario_id,
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                payload = task_rows(conn, "task_id=?", (new_id,))[0]
+            finally:
+                conn.close()
+            self.set_status(201)
+            self.write_json(payload)
+
+    # -----------------------------------------------------------------------
+    # Task types (everyone reads; SuperAdmin edits) — the same shape as system
+    # types, for the same reason: the list belongs to whoever uses the app.
+    # -----------------------------------------------------------------------
+    class TaskTypesHandler(BaseAPIHandler):
+        READ_ROLE = permissions.VIEWER
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def get(self):
+            conn = get_db()
+            try:
+                types = get_task_types(conn)
+                # Counted across every view, not just this one: a type in use
+                # by a scenario is still in use, and reporting zero would offer
+                # a delete that then has to be refused.
+                counts = {r["task_type"]: r["n"] for r in conn.execute(
+                    "SELECT task_type, COUNT(*) AS n FROM task "
+                    "GROUP BY task_type").fetchall()}
+            finally:
+                conn.close()
+            for t in types:
+                t["in_use"] = counts.get(t["type_name"], 0)
+            self.write_json({"types": types, "other": TASK_TYPE_OTHER,
+                             "statuses": [
+                {"value": v, "label": TASK_STATUS_LABELS[v]} for v in TASK_STATUSES]})
+
+        def post(self):
+            data = self.get_json_body() or {}
+            name = (data.get("type_name") or "").strip()
+            if not name:
+                return self.fail(400, "A type name is required.")
+            conn = get_db()
+            try:
+                if name == TASK_TYPE_OTHER:
+                    return self.fail(
+                        409, f"'{TASK_TYPE_OTHER}' is always offered, with a box "
+                             f"to say what the task actually is, so it does not "
+                             f"need to be in this list.")
+                if conn.execute("SELECT 1 FROM task_type WHERE type_name=?",
+                                (name,)).fetchone():
+                    return self.fail(409, f"A type called '{name}' already exists.")
+                top = conn.execute(
+                    "SELECT COALESCE(MAX(sort_order),0) AS m FROM task_type").fetchone()
+                now = iso(utcnow())
+                conn.execute(
+                    """INSERT INTO task_type
+                         (type_name, description, sort_order, created_date,
+                          updated_date, updated_by)
+                       VALUES (?,?,?,?,?,?)""",
+                    (name, data.get("description"), int(top["m"]) + 10, now, now,
+                     self.current_user["user_id"]))
+                self.audit_create(conn, "task_type", name,
+                                  {"type_name": name,
+                                   "description": data.get("description")})
+                conn.commit()
+                types = get_task_types(conn)
+            finally:
+                conn.close()
+            self.set_status(201)
+            self.write_json({"types": types})
+
+    class TaskTypeHandler(BaseAPIHandler):
+        READ_ROLE = permissions.SUPERADMIN
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def put(self, type_name):
+            data = self.get_json_body() or {}
+            conn = get_db()
+            try:
+                before = conn.execute("SELECT * FROM task_type WHERE type_name=?",
+                                      (type_name,)).fetchone()
+                if not before:
+                    return self.fail(404, "Not found")
+                before = dict(before)
+                new_name = (data.get("type_name") or type_name).strip()
+
+                fields, vals = [], []
+                if "description" in data:
+                    fields.append("description=?")
+                    vals.append(data["description"])
+                if fields:
+                    fields += ["updated_date=?", "updated_by=?"]
+                    vals += [iso(utcnow()), self.current_user["user_id"], type_name]
+                    conn.execute(
+                        f"UPDATE task_type SET {','.join(fields)} WHERE type_name=?",
+                        vals)
+
+                renamed = 0
+                if new_name != type_name:
+                    if conn.execute("SELECT 1 FROM task_type WHERE type_name=?",
+                                    (new_name,)).fetchone():
+                        return self.fail(
+                            409, f"A type called '{new_name}' already exists.")
+                    # Tasks store the type by name, so a rename carries across
+                    # or every task using it is orphaned.
+                    renamed = conn.execute(
+                        "SELECT COUNT(*) FROM task WHERE task_type=?",
+                        (type_name,)).fetchone()[0]
+                    conn.execute(
+                        "UPDATE task_type SET type_name=? WHERE type_name=?",
+                        (new_name, type_name))
+                    conn.execute("UPDATE task SET task_type=? WHERE task_type=?",
+                                 (new_name, type_name))
+
+                after = dict(conn.execute(
+                    "SELECT * FROM task_type WHERE type_name=?",
+                    (new_name,)).fetchone())
+                self.audit_update(conn, "task_type", new_name, before, after,
+                                  fields=("type_name", "description"))
+                if renamed:
+                    audit.record_event(
+                        conn, self.current_user, audit.UPDATE, "task", None,
+                        summary=(f"Task type renamed '{type_name}' -> "
+                                 f"'{new_name}'; {renamed} task(s) updated"),
+                        ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                types = get_task_types(conn)
+            finally:
+                conn.close()
+            self.write_json({"types": types, "renamed_tasks": renamed})
+
+        def delete(self, type_name):
+            conn = get_db()
+            try:
+                before = conn.execute("SELECT * FROM task_type WHERE type_name=?",
+                                      (type_name,)).fetchone()
+                if not before:
+                    return self.fail(404, "Not found")
+                in_use = conn.execute("SELECT COUNT(*) FROM task WHERE task_type=?",
+                                      (type_name,)).fetchone()[0]
+                if in_use:
+                    return self.fail(
+                        409, f"{in_use} task(s) use the '{type_name}' type. "
+                             f"Change them to another type first.")
+                conn.execute("DELETE FROM task_type WHERE type_name=?", (type_name,))
+                self.audit_delete(conn, "task_type", type_name, dict(before))
+                conn.commit()
+                types = get_task_types(conn)
+            finally:
+                conn.close()
+            self.write_json({"types": types})
+
     class DeleteImpactHandler(BaseAPIHandler):
         """What deleting this record would destroy, before deciding to.
 
@@ -3119,6 +3992,50 @@ if HAS_TORNADO:
             conn.commit()
             conn.close()
             self.write_json({"ok": True})
+
+    class TaskPositionHandler(BaseAPIHandler):
+        """Where a task's circle sits. Layout, not content.
+
+        A separate endpoint from the task's own PUT for the same reason
+        `FlowRouteHandler` is separate from a flow's: dragging a circle to tidy
+        a diagram is **not audited** and does not mark a scenario record as
+        Modified. Tidying a picture should not make a plan look like it changed.
+
+        It also means a drag sends two numbers rather than the whole task, so
+        a position cannot arrive carrying a stale copy of every other field.
+        """
+        SCENARIO_AWARE = True
+
+        def put(self, tid):
+            data = self.get_json_body() or {}
+            conn = get_db()
+            try:
+                self.scenario_access(conn, write=True)
+            except scenarios.ScenarioError as e:
+                conn.close()
+                return self.fail(e.status, e.message)
+            try:
+                where, params = self.scope_sql()
+                found = conn.execute(
+                    f"SELECT 1 FROM task WHERE task_id=? AND {where}",
+                    (tid,) + params).fetchone()
+                if not found:
+                    return self.fail(404, "Not found")
+                # None is meaningful: it means "no stored position, use the
+                # default slot", which is how a task moved to another parent
+                # gets placed again.
+                main = data.get("pos_main")
+                cross = data.get("pos_cross")
+                conn.execute(
+                    "UPDATE task SET pos_main=?, pos_cross=? WHERE task_id=?",
+                    (None if main is None else float(main),
+                     None if cross is None else float(cross), tid))
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"ok": True, "task_id": tid,
+                             "pos_main": data.get("pos_main"),
+                             "pos_cross": data.get("pos_cross")})
 
     # -- Schema drill-down --
     class SystemSchemaHandler(BaseAPIHandler):
@@ -4077,11 +4994,15 @@ if HAS_TORNADO:
     FIELD_LIST_LABEL = "Data entry field list"
 
     def next_flow_id(conn, scenario_id=None):
-        """Next free flow identifier within one view.
+        r"""Next free flow identifier within one view.
 
         Scoped, and parsed from the un-prefixed id: in a scenario the highest
         id is something like ``S3-PL-007``, where a bare ``\d+`` search finds
         the *scenario* number and generates a colliding ``PL-002``.
+
+        The docstring is raw because of that ``\d+``: in a normal string it is
+        an invalid escape, which Python warns about today and will reject
+        outright in a future version.
         """
         where, params = scenarios.scope(scenario_id)
         last = conn.execute(
@@ -4844,6 +5765,11 @@ if HAS_TORNADO:
     RESOURCE_PARENTS = {
         "system": ("system", "system_id"),
         "data_flow": ("data_flow", "flow_id"),
+        # A task's documents are the procedure somebody follows to do it: the
+        # checklist, the spreadsheet template, the memo saying who signed off.
+        # Nothing here is task-specific — this dict is the whole switch, and
+        # `require_parent_in_view` works for any scoped table with an id.
+        "task": ("task", "task_id"),
     }
 
     def resource_rows(conn, entity_type, entity_id):
@@ -6004,6 +6930,8 @@ if HAS_TORNADO:
                 if counts:
                     summary += (f" — copied {counts.get('system', 0)} system(s) and "
                                 f"{counts.get('data_flow', 0)} data flow(s)")
+                    if counts.get("task"):
+                        summary += f" with {counts['task']} task(s)"
                 if focused:
                     summary += f", {focused} hidden to focus the diagram"
                 if copied_members:
@@ -6460,6 +7388,14 @@ if HAS_TORNADO:
             (r"/api/preferences", PreferencesHandler),
             (r"/api/system-types", SystemTypesHandler),
             (r"/api/system-types/([^/]+)", SystemTypeHandler),
+            (r"/api/task-types", TaskTypesHandler),
+            (r"/api/task-types/([^/]+)", TaskTypeHandler),
+            # Tasks. The copy route sits above the bare id so it cannot be
+            # shadowed by a task literally called "copy".
+            (r"/api/tasks", TasksHandler),
+            (r"/api/tasks/([^/]+)/copy", TaskCopyHandler),
+            (r"/api/tasks/([^/]+)/position", TaskPositionHandler),
+            (r"/api/tasks/([^/]+)", TaskHandler),
             # Scenarios. The member route is listed before the single-scenario
             # route so "/api/scenarios/3/members/7" is not swallowed by it.
             (r"/api/help", HelpHandler),
@@ -6504,7 +7440,7 @@ if HAS_TORNADO:
             # Resources (documents and links)
             # More specific routes first, so they cannot be shadowed.
             (r"/api/resources/(system|data_flow)/([^/]+)/field-list", FieldListHandler),
-            (r"/api/resources/(system|data_flow)/([^/]+)", ResourcesHandler),
+            (r"/api/resources/(system|data_flow|task)/([^/]+)", ResourcesHandler),
             (r"/api/resources/([0-9]+)/clear", ResourceClearHandler),
             (r"/api/resources/([0-9]+)/file", ResourceFileHandler),
             (r"/api/resources/([0-9]+)/versions", ResourceVersionsHandler),
@@ -6545,6 +7481,7 @@ if __name__ == "__main__":
     ensure_preferences()
     ensure_releases()
     ensure_field_definitions()
+    ensure_task_types()
     bootstrap_superadmin()
 
     port = int(os.environ.get("PORT", 8765))

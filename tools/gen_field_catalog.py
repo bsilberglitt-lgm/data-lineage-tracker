@@ -56,6 +56,13 @@ VIEWS = [
     ("data_element", "ElementEditView", "ElementReadView", None),
     ("contributor", "ContributorEditView", "ContributorReadView",
      "AddContributorModal"),
+    # A task's parent, its people and its steps are drawn by hand rather than
+    # with a field component, so they are absent from the catalogue on purpose:
+    # the parent is two columns answered by one choice, and the other two are
+    # lists. None has a single column for a definition or for hiding to
+    # resolve against — the same reason the four hand-written blocks on a data
+    # flow carry no `col`.
+    ("task", "TaskEditView", "TaskReadView", "AddTaskModal"),
 ]
 
 # Fields nothing should offer a definition for: either not a field at all, or

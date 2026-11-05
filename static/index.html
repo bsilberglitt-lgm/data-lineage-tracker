@@ -395,6 +395,57 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .legend-title { font-weight: 600; margin-bottom: 6px; color: #555; }
 .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
 .legend-color { width: 14px; height: 14px; border-radius: 3px; }
+/* A task's circle. Deliberately NOT coloured by status yet — status colours
+   are a later release, and one neutral circle now is better than a palette
+   that has to be explained before it is finished.
+
+   The ring must read against every system fill in TYPE_PALETTE, because a
+   task attached to a system is drawn INSIDE its box. #1B3A5C measures 8.69:1
+   against the worst of the eight (purple, #e8daef) and 11.63:1 on white, so
+   it clears AA everywhere. The fill is a soft grey rather than white, and the
+   ring reads 9.02:1 against it, so the outline stays crisp while the circle
+   reads as an object rather than a hole in the diagram. The fill itself is
+   decorative — against some box fills it is nearly the same luminance
+   (1.01:1 on magenta), and the *ring* is what delineates the shape, which is
+   what WCAG 1.4.11 asks of a non-text indicator.
+
+   **Selection is an outer halo, not a recolour.** Using the app's selected
+   orange for the ring itself was the obvious thing and it fails: #D4772C is
+   only 2.43:1 against that purple fill, under the 3:1 WCAG 1.4.11 needs for a
+   non-text indicator — so a selected task inside a purple box would be less
+   visible than an unselected one. The dark ring therefore stays put and the
+   orange is drawn outside it, where its neighbours are the dark ring (3.58:1)
+   and the fill. Selection is also never colour alone: the flyout opens. */
+.task-node .task-ring { fill: #dfe3e8; stroke: #1B3A5C; stroke-width: 2; }
+.task-node .task-hit { fill: transparent; stroke: none; }
+.task-node .task-halo { fill: none; stroke: #D4772C; stroke-width: 2.5;
+  display: none; }
+.task-node.selected .task-halo { display: inline; }
+/* The legend swatch reuses the same class, so it cannot drift from the circle
+   it is explaining. */
+.legend .task-ring { fill: #dfe3e8; stroke: #1B3A5C; stroke-width: 2; }
+/* A rule across the key, so System Types reads as one group and what follows
+   as another. Without it the task entry looked like a ninth system type. */
+.legend-divider { border-top: 1px solid #d7dde5; margin: 8px 0 7px; }
+/* The line under a flyout's title, for context the title cannot carry — what
+   a task is attached to. Quiet enough not to compete with the name. */
+.panel-subtitle { font-size: 11px; color: #5a6472; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A task's hover card. Appears immediately, which is the entire reason it
+   exists rather than a `<title>`. Centred on the circle and lifted above it by
+   its own transform, so the inline left/top can be the circle's screen
+   position without this needing to know its own size. */
+.task-card { position: absolute; z-index: 6; transform: translate(-50%, -100%);
+  background: #1B3A5C; color: #fff; padding: 6px 9px; border-radius: 5px;
+  font-size: 11px; line-height: 1.45; max-width: 240px; pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+.task-card-name { font-weight: 700; }
+/* The legend lives INSIDE .canvas-container, which sets
+   `svg { width: 100%; height: 100% }` for the diagram itself — so a small
+   swatch SVG dropped in here was stretched to the size of the whole canvas.
+   Width and height attributes on the element do not win against that rule.
+   Pinned to match `.legend-color`, which is the square beside it. */
+.legend svg { width: 14px; height: 14px; flex: 0 0 auto; }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
@@ -469,6 +520,68 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .src-tag-column { background: #fdebd0; color: #b9770e; }
 .src-tag-none { background: #f5f5f5; color: #bbb; }
 .gov-hint { font-size: 10px; color: #6b6b6b; margin-top: 2px; }
+/* A task's checklist. Each step is a row of its own rather than a line in a
+   textarea, because a step carries an assignee and a status as well as text.
+
+   `.edit-input` is `width: 100%` where it was written — a field row that owns
+   its whole line. Dropped into this flex header it would push the buttons off
+   the end, so it is given `flex` and `min-width: 0` here instead. The same
+   applies to `.edit-select` in the meta row below: both are reused classes
+   carrying the layout assumptions of somewhere else. */
+.task-step { border: 1px solid #e0e0e0; border-radius: 5px; padding: 8px;
+  margin-bottom: 8px; background: #fafafa; }
+.task-step-head { display: flex; align-items: center; gap: 6px; }
+.task-step-head .edit-input { flex: 1; min-width: 0; }
+.task-step-num { flex: 0 0 auto; width: 18px; font-size: 12px; font-weight: 600;
+  color: #5a6472; text-align: right; }
+.task-step-meta { display: flex; gap: 6px; margin-top: 6px; }
+.task-step-meta .edit-select { flex: 1; min-width: 0; }
+/* The four controls under a subtask's description, on a 2x2 grid.
+
+   `margin-left` is the number column (18px) plus the head row's gap (6px), so
+   the grid's left edge lands exactly under the description box, and the grid
+   runs to the container's right edge, which is the Remove button's. That is
+   what makes Status line up with Expected Start, and Person Responsible with
+   Expected End, instead of each row dividing the width its own way.
+
+   `.edit-input` and `.edit-select` carry width assumptions from the field rows
+   they were written for, so both are pinned to the grid cell here. */
+.task-step-grid { display: grid; grid-template-columns: 1fr 1fr;
+  gap: 6px 10px; margin: 6px 0 0 24px; }
+.task-step-grid label { display: flex; flex-direction: column; gap: 2px;
+  min-width: 0; font-size: 11px; color: #5a6472; }
+.task-step-grid label > span { font-weight: 600; }
+.task-step-grid .edit-input,
+.task-step-grid .edit-select { width: 100%; min-width: 0; box-sizing: border-box; }
+/* A dropdown sitting on its "do something" line rather than on a value.
+   **The style goes on the SELECT, not the OPTION.** macOS draws native select
+   popups itself and ignores `option { color; font-style }` entirely, so
+   styling the option looked right on one platform and did nothing on Ben's.
+   Styling the control works everywhere, and the italics disappear by
+   themselves the moment a real value is chosen. */
+.select-hint { font-style: italic; color: #6b7684; }
+/* Kept for the option as well: where a browser does honour it, the popup list
+   matches the closed control. Harmless where it does not. */
+.opt-hint { font-style: italic; color: #6b7684; }
+/* `.edit-select` is sized by its flex parent in the flyout and has no width of
+   its own, so dropped into a modal `form-group` — which stacks label above
+   control — it shrank to its content. Matched to the modal's inputs instead. */
+.form-group > .edit-select { width: 100%; box-sizing: border-box; }
+/* One subtask in the flyout: a number, then its fields, then a rule. The rule
+   is what lets the eye group five labelled rows with the number above them;
+   without it five subtasks are twenty-five rows of the same shape. */
+.subtask-read { padding-bottom: 8px; margin-bottom: 8px;
+  border-bottom: 1px solid #e8ecf0; }
+.subtask-read:last-child { border-bottom: none; margin-bottom: 0;
+  padding-bottom: 0; }
+.subtask-read-num { font-size: 11px; font-weight: 700; color: #1B3A5C;
+  text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+/* "(Optional)" beside a section heading, smaller and quieter than the
+   heading itself without being as faint as a hint. */
+.optional-note { font-size: 11px; color: #5a6472; font-weight: 400; }
+/* A compact button for the controls inside a step row, where a full-size one
+   would make every step twice as tall as its text. */
+.btn-small { padding: 3px 7px; font-size: 11px; }
 .col-meta-row { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; margin-bottom: 4px; }
 .col-meta-row .chip { background: #eef2f7; border-radius: 4px; padding: 2px 8px; color: #4a5764; }
 /* ===== Auth / admin ===== */
@@ -693,10 +806,23 @@ const setViewShowHidden = (on) => { viewShowHidden = !!on; };
 // Architecture. Forgetting to add an endpoint here now means a harmless extra
 // query parameter that unscoped handlers ignore, instead of a silent edit to
 // live data.
+// Views that get the counts bar across the top. **Every view with an Add
+// button must be in here**, because the Add buttons are rendered inside that
+// bar: leaving one out hides its button with no error anywhere. Tasks was
+// missing in 0.7.0 and the + Add Task button simply never appeared on the
+// Tasks catalog, while working fine on the diagram.
+const STATS_BAR_VIEWS = ['diagram', 'schema', 'systems', 'flows', 'elements',
+                         'contributors', 'tasks'];
+
 const UNSCOPED_ENDPOINTS = [
   '/api/auth', '/api/users', '/api/sessions', '/api/preferences',
   '/api/releases', '/api/version', '/api/whats-new', '/api/notifications',
   '/api/scenarios', '/api/system-types', '/api/branding',
+  // Task types are configuration, like system types — one list for every
+  // view. `/api/tasks` is deliberately NOT here: tasks are records and are
+  // scoped, so leaving them out is what makes a scenario's tasks separate
+  // from live's. This being a deny-list is why that is the safe default.
+  '/api/task-types',
 ];
 
 function scopedUrl(url) {
@@ -1590,6 +1716,209 @@ function labelPointOf(points) {
   return pointBackFromEnd(points, Math.max(total / 2, LABEL_CLEARANCE));
 }
 
+// ===== Where a task's circle sits =====
+// Pure functions: numbers in, numbers out, no DOM and no React. That is the
+// only reason `tools/tests/t_taskpos.js` can exercise them — there is no
+// browser in the assistant's sandbox, so placement logic that reached into the
+// DOM would be placement nobody could check until Ben clicked on it.
+//
+// **A task stores `pos_main` / `pos_cross`, and what they mean depends on the
+// parent** (see migration 0016). On a flow, `pos_main` is a fraction 0..1
+// along the path and `pos_cross` a perpendicular offset in diagram units; on a
+// system, both are offsets from the box's own origin. Storing absolute
+// coordinates would strand every circle in open space the first time somebody
+// moved a system or rerouted an arrow.
+const TASK_R = 11;                 // circle radius, in diagram units
+const TASK_SLOT = TASK_R * 2 + 6;  // centre-to-centre spacing between circles
+// How far along a flow the first circle sits, and how far it steps when that
+// spot is taken. 0.5 is the midpoint.
+const TASK_FLOW_STEP = 0.12;
+// **A circle on a flow sits ON the line, always.** `pos_cross` is kept in the
+// schema but is forced to zero for a flow, so the only thing a drag can change
+// is how far along the line the circle sits.
+//
+// It was a free perpendicular offset first, clamped to a distance after Ben
+// could drag a circle anywhere. Clamping was not enough: where two flows run
+// close together, a circle a little off one line is ambiguous between them,
+// and the one thing the circle has to communicate is which flow it belongs
+// to. Centred on the path there is nothing to misread. It also removes a
+// degree of freedom nobody needed — dragging up and down the line is the whole
+// gesture.
+const TASK_FLOW_OFFSET = 0;
+
+// The point a fraction of the way along a polyline, with the unit tangent and
+// normal there. One traversal, because every caller wants all three.
+function pointAlong(points, t) {
+  if (!points || points.length < 2) return { x: 0, y: 0, tx: 1, ty: 0, nx: 0, ny: -1 };
+  const clamped = Math.max(0, Math.min(1, Number(t) || 0));
+  const lens = [];
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    const l = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    lens.push(l); total += l;
+  }
+  let want = total * clamped;
+  for (let i = 0; i < lens.length; i++) {
+    // `<=` with a zero-length segment would return the joint itself and a
+    // meaningless tangent, so a degenerate segment is stepped over.
+    if (lens[i] > 0 && want <= lens[i]) {
+      const a = points[i], b = points[i + 1];
+      const f = want / lens[i];
+      const tx = (b.x - a.x) / lens[i], ty = (b.y - a.y) / lens[i];
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f,
+               tx, ty, nx: -ty, ny: tx };
+    }
+    want -= lens[i];
+  }
+  const a = points[points.length - 2], b = points[points.length - 1];
+  const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const tx = (b.x - a.x) / l, ty = (b.y - a.y) / l;
+  return { x: b.x, y: b.y, tx, ty, nx: -ty, ny: tx };
+}
+
+// The absolute position of a task's circle. `parent` is the flow's point list
+// or the system row, depending on `anchor_kind`.
+function taskPoint(task, parent, W = DIAGRAM_NODE_W, H = DIAGRAM_NODE_H) {
+  const main = task.pos_main, cross = task.pos_cross;
+  if (task.anchor_kind === 'data_flow') {
+    const pts = parent || [];
+    if (pts.length < 2) return null;
+    const at = pointAlong(pts, main === null || main === undefined ? 0.5 : main);
+    // `cross` is deliberately ignored: a circle on a flow is centred on the
+    // line. A non-zero value stored by an earlier build is simply not used,
+    // so those circles snap onto their lines rather than needing a migration.
+    return { x: at.x, y: at.y };
+  }
+  const sys = parent;
+  if (!sys) return null;
+  // `x_pos` / `y_pos`, because that is what a system row carries — the
+  // property-name mistake that made alignment guides never appear once
+  // already. The Node suite asserts an `x`/`y`-shaped system places nothing.
+  if (sys.x_pos === undefined || sys.y_pos === undefined) return null;
+  const slot = taskSystemSlotXY(main, cross, W, H);
+  return { x: sys.x_pos + slot.x, y: sys.y_pos + slot.y };
+}
+
+// A slot inside a system box, as an offset from the box origin. Defaults put
+// the first circle just inside the top-left corner.
+function taskSystemSlotXY(main, cross, W = DIAGRAM_NODE_W, H = DIAGRAM_NODE_H) {
+  const x = main === null || main === undefined ? TASK_R + 4 : main;
+  const y = cross === null || cross === undefined ? TASK_R + 4 : cross;
+  // Kept inside the box however it was dragged or stored, so a circle cannot
+  // end up floating beside a system it belongs to.
+  return { x: Math.max(TASK_R + 2, Math.min(W - TASK_R - 2, x)),
+           y: Math.max(TASK_R + 2, Math.min(H - TASK_R - 2, y)) };
+}
+
+// --- default placement ------------------------------------------------------
+// Both of these take the slots already in use, so a new task does not land on
+// top of an existing one. "In use" is compared loosely: two circles closer
+// than one slot apart read as one circle.
+
+// On a flow: near the midpoint, but clear of the label.
+//
+// The label sits at `labelPointOf` — usually the midpoint — in a box about
+// 23px ABOVE the line. So the circle goes on the other side, below it, which
+// is free whatever the label says. Where the midpoint is taken, the next task
+// slides ALONG the path rather than further from it: drifting outward would
+// stop it looking attached to the flow, while sliding along keeps every circle
+// the same distance from its own line.
+//
+// Sliding alternates either side of the middle — 0.5, 0.38, 0.62, 0.26 — so a
+// pair of tasks straddles the midpoint instead of trailing off toward one end.
+function taskFlowSlot(taken) {
+  const used = (taken || []).filter(v => v !== null && v !== undefined);
+  const tooClose = (t) => used.some(u => Math.abs(u - t) < TASK_FLOW_STEP * 0.75);
+  // **The midpoint itself is skipped**, because the flow's label is drawn
+  // there. The label used to be cleared by offsetting the circle sideways;
+  // now that circles sit ON the line, the only way past it is along the path.
+  // One step clears a typical label: a label is 44-120 units wide and a path
+  // is usually several hundred, so 0.12 of the length is more than half a
+  // label plus the circle's radius for anything but a very short flow.
+  //
+  // Candidates alternate either side — 0.38, 0.62, 0.26, 0.74 — so a pair of
+  // tasks straddles the middle instead of trailing off toward one end.
+  for (let i = 0; i < 12; i++) {
+    const step = (Math.floor(i / 2) + 1) * TASK_FLOW_STEP * (i % 2 ? 1 : -1);
+    const t = 0.5 + step;
+    if (t < 0.06 || t > 0.94) continue;
+    if (!tooClose(t)) return { pos_main: t, pos_cross: 0 };
+  }
+  // Nowhere left: stacking beats falling off the end of the line.
+  return { pos_main: 0.5 - TASK_FLOW_STEP, pos_cross: 0 };
+}
+
+// In a system: the first free slot, filling from the top-left, left to right
+// and then down. A box is 200x70 and a slot is 28, so a row holds six and the
+// box holds two rows — beyond that it stacks on the last slot rather than
+// spilling outside the box, because a circle outside its own system would be
+// worse than two overlapping.
+function taskSystemSlot(taken, W = DIAGRAM_NODE_W, H = DIAGRAM_NODE_H) {
+  const used = (taken || []).map(p => taskSystemSlotXY(p.pos_main, p.pos_cross, W, H));
+  const free = (x, y) => !used.some(u => Math.hypot(u.x - x, u.y - y) < TASK_SLOT * 0.75);
+  const x0 = TASK_R + 4, y0 = TASK_R + 4;
+  const cols = Math.max(1, Math.floor((W - x0 - TASK_R - 2) / TASK_SLOT) + 1);
+  const rows = Math.max(1, Math.floor((H - y0 - TASK_R - 2) / TASK_SLOT) + 1);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = x0 + c * TASK_SLOT, y = y0 + r * TASK_SLOT;
+      if (free(x, y)) return { pos_main: x, pos_cross: y };
+    }
+  }
+  return { pos_main: x0, pos_cross: y0 };
+}
+
+// The slot a newly created or copied task should take, worked out from what is
+// already on the diagram. Called from the browser rather than the server
+// because only the browser knows where the arrows currently run: a flow's path
+// depends on resolved anchors and waypoints, which the server does not compute.
+//
+// Returns null when the parent is not on this diagram at all, in which case
+// the task keeps no position and falls back to its default slot when drawn.
+function defaultTaskSlot(task, tasks, flows, systems) {
+  if (!task) return null;
+  const siblings = (tasks || []).filter(
+    t => t.task_id !== task.task_id
+      && t.anchor_kind === task.anchor_kind
+      && t.anchor_id === task.anchor_id);
+  if (task.anchor_kind === 'data_flow') {
+    const flow = (flows || []).find(f => f.flow_id === task.anchor_id);
+    if (!flow) return null;
+    return taskFlowSlot(siblings.map(t => t.pos_main));
+  }
+  const sys = (systems || []).find(x => x.system_id === task.anchor_id);
+  if (!sys) return null;
+  return taskSystemSlot(siblings);
+}
+
+// Where a dragged circle lands, in the parent's own terms. The inverse of
+// `taskPoint`, so a drag followed by a re-render leaves the circle under the
+// cursor rather than somewhere near it.
+function taskDropPosition(kind, parent, x, y, W = DIAGRAM_NODE_W, H = DIAGRAM_NODE_H) {
+  if (kind === 'data_flow') {
+    const pts = parent || [];
+    if (pts.length < 2) return null;
+    // Sample rather than solve: a polyline with bends has no closed form for
+    // "fraction nearest this point", and 200 samples over a path a few hundred
+    // units long is sub-pixel.
+    let best = null;
+    for (let i = 0; i <= 200; i++) {
+      const t = i / 200;
+      const at = pointAlong(pts, t);
+      const d = Math.hypot(at.x - x, at.y - y);
+      if (!best || d < best.d) best = { d, t, at };
+    }
+    // Only the position along the path is taken from the cursor. How far the
+    // pointer strayed sideways is discarded rather than stored, which is what
+    // keeps every circle on its own line — see TASK_FLOW_OFFSET.
+    return { pos_main: best.t, pos_cross: 0 };
+  }
+  const sys = parent;
+  if (!sys || sys.x_pos === undefined || sys.y_pos === undefined) return null;
+  const slot = taskSystemSlotXY(x - sys.x_pos, y - sys.y_pos, W, H);
+  return { pos_main: slot.x, pos_cross: slot.y };
+}
+
 // Closest point on a polyline to (px,py), and which segment it fell on — used
 // to decide where a new bend goes when someone drags the line itself.
 function closestOnPath(points, px, py) {
@@ -1608,7 +1937,7 @@ function closestOnPath(points, px, py) {
 }
 
 // ===== SVG Diagram =====
-function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow, onUpdatePosition, onUpdateRoute, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes, inScenario, zoom, setZoom, exportTitle, exportScenario, exportRef }) {
+function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSelectFlow, onSelectTask, onUpdatePosition, onUpdateRoute, onUpdateTaskPosition, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes, inScenario, zoom, setZoom, exportTitle, exportScenario, exportRef }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -1732,6 +2061,35 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
   });
   const hops = computeHops(flowOrder, pointsById);
 
+  // --- tasks on the diagram ------------------------------------------------
+  // A task is drawn on its parent, so its position is resolved from the
+  // parent's live geometry — which means a circle follows its arrow while the
+  // arrow is being rerouted, and follows its box while the box is dragged.
+  const [taskDrag, setTaskDrag] = useState(null);
+  // Which circle the pointer is over, and so which hover card to draw. Held
+  // here rather than relying on the browser's own tooltip: a `<title>` waits
+  // about a second and restarts that timer on every pixel of movement, so it
+  // needs one steady spot and feels broken on something as small as a circle.
+  // That is the same complaint that produced the app's `Tooltip` component —
+  // which cannot be used here, because it renders through a DOM portal and a
+  // portal cannot be a child of an SVG node.
+  const [taskHover, setTaskHover] = useState(null);
+  const taskList = tasks || [];
+  const taskParentOf = (t) => t.anchor_kind === 'data_flow'
+    ? pointsById[t.anchor_id]
+    : sysMap[t.anchor_id];
+  // While dragging, draw where it *would* land rather than where it is stored,
+  // or the circle only moves once the mouse is released.
+  const taskPositions = {};
+  taskList.forEach(t => {
+    const parent = taskParentOf(t);
+    if (!parent) return;                 // parent not in this view
+    const live = taskDrag && taskDrag.taskId === t.task_id && taskDrag.pos
+      ? { ...t, ...taskDrag.pos } : t;
+    const at = taskPoint(live, parent, NODE_W, NODE_H);
+    if (at) taskPositions[t.task_id] = at;
+  });
+
   const diagramPoint = (e) => {
     const svg = svgRef.current;
     const rect = svg.getBoundingClientRect();
@@ -1758,6 +2116,36 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
     setRouteDrag({ kind: 'bend', flowId: flow.flow_id, index: null,
                    insertAt: near.segment, at: { x: p.x, y: p.y } });
   };
+
+  const beginTaskDrag = (e, task) => {
+    e.stopPropagation(); e.preventDefault();
+    setTaskDrag({ taskId: task.task_id, pos: null, moved: false });
+  };
+
+  const taskMove = useCallback((e) => {
+    if (!taskDrag) return;
+    const task = taskList.find(t => t.task_id === taskDrag.taskId);
+    if (!task) return;
+    const parent = task.anchor_kind === 'data_flow'
+      ? pointsById[task.anchor_id] : sysMap[task.anchor_id];
+    const p = diagramPoint(e);
+    const pos = taskDropPosition(task.anchor_kind, parent, p.x, p.y, NODE_W, NODE_H);
+    if (pos) setTaskDrag(d => d && ({ ...d, pos, moved: true }));
+  }, [taskDrag, taskList, pointsById, sysMap, panOffset, zoom]);
+
+  const taskUp = useCallback(() => {
+    if (!taskDrag) return;
+    // A click that never moved is a click, not a drag: it opens the record.
+    // Without this, every attempt to open a task from the diagram would also
+    // save a position identical to the one it already had, writing an audit
+    // entry for nothing.
+    if (taskDrag.moved && taskDrag.pos && onUpdateTaskPosition) {
+      onUpdateTaskPosition(taskDrag.taskId, taskDrag.pos);
+    } else if (!taskDrag.moved && onSelectTask) {
+      onSelectTask(taskDrag.taskId);
+    }
+    setTaskDrag(null);
+  }, [taskDrag, onUpdateTaskPosition, onSelectTask]);
 
   // Build a standalone copy of the diagram and hand it to the browser as a
   // download. Everything here operates on a *clone* — the live SVG is never
@@ -2022,6 +2410,16 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
     };
   }, [routeDrag, routeMove, routeUp]);
 
+  useEffect(() => {
+    if (!taskDrag) return;
+    window.addEventListener('mousemove', taskMove);
+    window.addEventListener('mouseup', taskUp);
+    return () => {
+      window.removeEventListener('mousemove', taskMove);
+      window.removeEventListener('mouseup', taskUp);
+    };
+  }, [taskDrag, taskMove, taskUp]);
+
   return (
     <div className="canvas-container">
       {/* While a details panel is open the diagram is frozen: the next click
@@ -2154,6 +2552,64 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
               earlier, the dots and grab handles sat underneath the boxes and
               could not be clicked at all. */}
 
+          {/* Task circles. A task attached to a system sits INSIDE its box, so
+              drawn before the systems it would be covered by exactly the box
+              it belongs to — the same trap as the anchor dots, and it looks
+              like a dead click handler rather than a paint-order mistake. */}
+          {taskList.map(task => {
+            const at = taskPositions[task.task_id];
+            if (!at) return null;
+            const isSel = selected && selected.type === 'task'
+                          && selected.id === task.task_id;
+            const dragging = taskDrag && taskDrag.taskId === task.task_id;
+            const n = (task.steps || []).length;
+            const done = (task.steps || []).filter(x => x.status === 'completed').length;
+            return (
+              <g key={task.task_id}
+                 className={`task-node${isSel ? ' selected' : ''}`}
+                 role="img" aria-label={taskTooltip(task).replace(/\n/g, '. ')}
+                 opacity={task.change_state === 'removed' ? 0.45 : 1}
+                 transform={`translate(${at.x},${at.y})`}
+                 style={{ cursor: canEdit ? (dragging ? 'grabbing' : 'grab') : 'pointer' }}
+                 onMouseDown={(e) => {
+                   // A press starts a drag; releasing without moving opens the
+                   // record (see taskUp). One gesture, so there is no separate
+                   // handle to discover.
+                   if (canEdit) beginTaskDrag(e, task);
+                   else e.stopPropagation();
+                 }}
+                 onMouseEnter={() => setTaskHover(task.task_id)}
+                 onMouseLeave={() => setTaskHover(h => h === task.task_id ? null : h)}
+                 onClick={(e) => {
+                   e.stopPropagation();
+                   if (!canEdit && onSelectTask) onSelectTask(task.task_id);
+                 }}>
+                {/* The halo is drawn first so the dark ring sits on top of
+                    it, which is what keeps the dark ring's contrast against
+                    the fill intact. */}
+                {/* An invisible disc wider than the circle, so hovering and
+                    grabbing have a target the size of the thing you are
+                    pointing at rather than the thing that is drawn. Without
+                    it the tooltip only appeared over a few pixels, and at low
+                    zoom the circle is small enough to be hard to hit at all.
+                    First child, so it is under everything else and nothing
+                    drawn later steals its events. */}
+                <circle className="task-hit" r={TASK_R + 6} />
+                <circle className="task-halo" r={TASK_R + 3} />
+                <circle className="task-ring" r={TASK_R}
+                        strokeDasharray={task.change_state === 'proposed'
+                          ? '4,3' : undefined} />
+                {task.change_state === 'removed' && (
+                  <line x1={-TASK_R} y1={0} x2={TASK_R} y2={0}
+                        stroke="#1B3A5C" strokeWidth={1.5} />
+                )}
+                {/* No <title>: the hover card replaces it. The same text is on
+                    the group's aria-label, which is what a screen reader
+                    reads and what a visual card cannot provide. */}
+              </g>
+            );
+          })}
+
           {/* Connection points on the two systems this arrow joins. Clicking
               one attaches that end to it. */}
           {adjustFlow && flowById[adjustFlow] && [
@@ -2224,6 +2680,28 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
 
         </g>
       </svg>
+      {/* The hover card, in HTML rather than SVG so it can have a shadow,
+          padding and wrapping text. Positioned from the circle's diagram
+          coordinates through the same pan and zoom the circles use.
+          `pointer-events: none` so it can never come between the cursor and
+          the circle it describes, which would make it flicker. */}
+      {(() => {
+        if (!taskHover) return null;
+        const task = taskList.find(t => t.task_id === taskHover);
+        const at = taskPositions[taskHover];
+        if (!task || !at) return null;
+        const lines = taskTooltip(task).split('\n');
+        return (
+          <div className="task-card" style={{
+            left: at.x * zoom + panOffset.x,
+            top: at.y * zoom + panOffset.y - TASK_R * zoom - 8,
+          }}>
+            {lines.map((line, i) =>
+              <div key={i} className={i === 0 ? 'task-card-name' : undefined}>
+                {line}</div>)}
+          </div>
+        );
+      })()}
       <div className="legend">
         <div className="legend-title">
           System Types
@@ -2237,11 +2715,30 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
                  border: `2px solid ${t.stroke_color}`}}></div>{t.type_name}
           </div>
         ))}
+        {/* A rule under the last system type, so the key reads as groups
+            rather than one list in which a circle looks like a ninth system
+            type. Drawn whenever anything follows it. */}
+        {(taskList.length > 0 || inScenario) && <div className="legend-divider" />}
+        {/* One entry, and only once there is a task on the diagram. What each
+            status looks like is deliberately not here: the status is on the
+            circle's own tooltip, where you are already pointing when you want
+            it. The swatch is sized to match the system-type swatches beside
+            it — 14px, the same as `.legend-color`. */}
+        {taskList.length > 0 && (
+          <div className="legend-item">
+            <svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"
+                 style={{flex:'0 0 auto'}}>
+              <circle className="task-ring" r={6.5} />
+            </svg>
+            Task
+          </div>
+        )}
         {/* Only shown in a scenario: on Current Architecture nothing is
             proposed or being retired, so the entries would be noise. */}
         {inScenario && (
           <React.Fragment>
-            <div className="legend-title" style={{marginTop:10}}>In this scenario</div>
+            {taskList.length > 0 && <div className="legend-divider" />}
+            <div className="legend-title">In this scenario</div>
             <div className="legend-item">
               <div className="legend-color" style={{background:'#fff',
                    border:'2px dashed #4a5764'}}></div>Proposed &mdash; new here
@@ -2249,9 +2746,6 @@ function DiagramCanvas({ systems, flows, selected, onSelectSystem, onSelectFlow,
             <div className="legend-item">
               <div className="legend-color" style={{background:'#e2e6ea',
                    border:'2px solid #4a5764', opacity:0.45}}></div>Being retired
-            </div>
-            <div className="legend-item" style={{color:'#6b6b6b'}}>
-              Hidden items are left out until you show them
             </div>
           </React.Fragment>
         )}
@@ -2451,6 +2945,15 @@ function useFieldHidden(label, col) {
   return isHidden(ctx, ctx.entity, { col, label });
 }
 
+// ' select-hint' when the current value is an option marked as a hint, '' when
+// it is a real value. Returned as a class fragment so the call site stays one
+// expression.
+function selectHintClass(value, options) {
+  const hit = (options || []).find(
+    o => typeof o !== 'string' && o.value === (value || ''));
+  return hit && hit.hint ? ' select-hint' : '';
+}
+
 function EditField({ label, value, onChange, type, options, invalid }) {
   if (useFieldHidden(label)) return null;
   const bad = invalid ? ' field-error' : '';
@@ -2460,11 +2963,20 @@ function EditField({ label, value, onChange, type, options, invalid }) {
       <div style={{flex:1}}><textarea className={'edit-textarea'+bad} value={value||''}
         aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)} />{note}</div></div>
   );
+  // An option may be a plain string or a {value,label} pair. It was strings
+  // only, so a column storing `not_started` offered the user "not_started" —
+  // a database value read aloud in a dropdown.
   if (type === 'select') return (
     <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
-      <div style={{flex:1}}><select className={'edit-select'+bad} value={value||''}
+      <div style={{flex:1}}><select
+        className={'edit-select' + bad + (selectHintClass(value, options))}
+        value={value||''}
         aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)}>
-        {options.map(o=><option key={o} value={o}>{o}</option>)}</select>{note}</div></div>
+        {options.map(o => typeof o === 'string'
+          ? <option key={o} value={o}>{o}</option>
+          : <option key={o.value} value={o.value}
+                    className={o.hint ? 'opt-hint' : undefined}>{o.label}</option>)}
+        </select>{note}</div></div>
   );
   // The box used to be followed by the word "Yes" or "No" reflecting the
   // current value, which read as a choice being offered rather than a state —
@@ -2484,6 +2996,15 @@ function EditField({ label, value, onChange, type, options, invalid }) {
         <input type="checkbox" checked={!!value} aria-label={label}
                onChange={e=>onChange(e.target.checked?1:0)} />
       </div></div>
+  );
+  // `type="date"` gives the browser's own calendar, and it reads and writes
+  // exactly the YYYY-MM-DD the database stores, so no parsing is needed on
+  // either side. A free-text box invited "Jan 5" and "5/1/27", which sort
+  // wrongly and compare wrongly.
+  if (type === 'date') return (
+    <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
+      <div style={{flex:1}}><input type="date" className={'edit-input'+bad} value={value||''}
+        aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)} />{note}</div></div>
   );
   return (
     <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
@@ -2518,6 +3039,10 @@ const PANEL_REQUIRED = {
     { key: 'destination_system_id', label: 'Destination' },
     { key: 'frequency', label: 'Frequency' },
   ],
+  task: [
+    { key: 'name', label: 'Name' },
+    { key: 'task_type', label: 'Task Type' },
+  ],
   element: [
     { key: 'name', label: 'Name' },
     { key: 'definition', label: 'Definition' },
@@ -2529,7 +3054,7 @@ const PANEL_REQUIRED = {
 };
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetire, systems, onDrill, canEdit, notify, contributors, isAdmin, isSuper, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
+function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetire, systems, flows, taskTypes, onCopyTask, onDrill, canEdit, notify, contributors, isAdmin, isSuper, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [missing, setMissing] = useState([]);
@@ -2544,6 +3069,10 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
   // the confirmation name for a system carrying a schema.
   const [impact, setImpact] = useState(null);
   const [typed, setTyped] = useState('');
+  // A task's delete needs no counted cascade: its steps and assignments are
+  // parts of it, not records of their own, so the dialog can say what goes
+  // without asking the server first.
+  const [confirmTaskDelete, setConfirmTaskDelete] = useState(false);
   // Memoised so the provider does not hand every field a new object on each
   // keystroke, which would re-render all 30-odd of them while typing.
   const defsContext = useMemo(
@@ -2557,6 +3086,7 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
     // opened for one record would still be open over the next.
     setEditing(false); setMissing([]);
     setImpact(null); setRefs(null); setTyped('');
+    setConfirmTaskDelete(false);
   }, [data, type]);
 
   const startEdit = () => {
@@ -2585,6 +3115,8 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
     // Only systems and flows carry a change state, and only inside a scenario.
     // Sending it on Current Architecture is refused by the server, so it is
     // left out entirely rather than sent as false.
+    // A task carries a change state too, but builds its own payload below,
+    // so it is deliberately not in this list.
     const proposedField = (inScenario && ['system', 'flow'].includes(type))
       ? { proposed: !!form.proposed } : {};
     // These payloads are hand-written and have to name every field the server
@@ -2663,6 +3195,30 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
         // every Editor's save fail.
         ...(isSuper ? { is_active: form.is_active === undefined ? 1
                                    : (form.is_active ? 1 : 0) } : {}),
+      };
+    } else if (type === 'task') {
+      url = `/api/tasks/${data.task_id}`;
+      saveData = {
+        name: form.name, task_type: form.task_type,
+        task_type_other: form.task_type_other, description: form.description,
+        anchor_kind: form.anchor_kind, anchor_id: form.anchor_id,
+        expected_start: form.expected_start, expected_end: form.expected_end,
+        completed_date: form.completed_date, notes: form.notes,
+        // Steps and the people are parts of the task, replaced wholesale.
+        steps: (form.steps || [])
+          .filter(st => (st.description || '').trim())
+          .map(st => ({ description: st.description,
+                        status: st.status || null,
+                        contributor_id: st.contributor_id || null,
+                        expected_start: st.expected_start || null,
+                        expected_end: st.expected_end || null,
+                        completed_date: st.completed_date || null,
+                        notes: st.notes || null })),
+        contributor_ids: form.contributor_ids || [],
+        // Only meaningful with no steps: with steps the server recomputes it,
+        // which is why the edit view shows it as a value rather than a control.
+        ...((form.steps || []).length ? {} : { status: form.status || null }),
+        ...(inScenario ? { proposed: !!form.proposed } : {}),
       };
     } else if (type === 'schema_table' || type === 'schema_column') {
       url = type === 'schema_table' ? `/api/schema/tables/${data.table_id}` : `/api/schema/columns/${data.column_id}`;
@@ -2808,7 +3364,14 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
     <div className={`detail-panel ${isOpen ? '' : 'closed'}`}>
       {isOpen && <>
         <div className="panel-header">
-          <h2>{editing ? `Edit: ${titleOf()}` : titleOf()}</h2>
+          <div style={{flex:1, minWidth:0}}>
+            <h2>{editing ? `Edit: ${titleOf()}` : titleOf()}</h2>
+            {/* A task's name says nothing about which flow or store it belongs
+                to, and that is the first thing you want to know when a flyout
+                opens from a circle on the diagram. */}
+            {type === 'task' && <div className="panel-subtitle">
+              {taskParentLabel(data)}</div>}
+          </div>
           <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button>
         </div>
         <div className="panel-actions">
@@ -2859,6 +3422,30 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
                 {data.change_state === 'removed' ? 'Not retired after all' : 'Retire in this scenario'}
               </button>
             </Tooltip>}
+          {/* Copy is how a repeating job is recorded: one task per occurrence,
+              so March's outcome stays visible in June. Everything but the
+              dates and the progress comes across. */}
+          {!editing && canEdit && onCopyTask && type === 'task' &&
+            <Tooltip text="Make another task just like this one — same type, parent, people and subtasks. Every date comes up blank and the progress starts again, so a quarterly job becomes four tasks each with its own outcome.">
+              <button className="btn" onClick={() => onCopyTask(data)}>Copy task</button>
+            </Tooltip>}
+          {!editing && canEdit && onRetire && inScenario && type === 'task' &&
+            data.change_state !== 'proposed' &&
+            <Tooltip text={data.change_state === 'removed'
+                      ? 'Stop marking this task as dropped by this plan.'
+                      : 'Mark this task as dropped by this plan. It stays visible, struck through, so the plan shows what goes as well as what arrives.'}>
+              <button className="btn"
+                      onClick={() => setConfirmRetire(data.change_state !== 'removed')}>
+                {data.change_state === 'removed' ? 'Not retired after all' : 'Retire in this scenario'}
+              </button>
+            </Tooltip>}
+          {!editing && canEdit && onDelete && type === 'task' &&
+            <Tooltip text={inScenario
+                      ? 'Delete this task from the scenario entirely. To show it being dropped instead, use Retire.'
+                      : 'Delete this task permanently, with its steps.'}>
+              <button className="btn btn-danger"
+                      onClick={() => setConfirmTaskDelete(true)}>Delete</button>
+            </Tooltip>}
           {!editing && canEdit && onDelete && ['system','flow'].includes(type) &&
             <Tooltip text={inScenario
                       ? 'Delete this from the scenario entirely, as though it had never been there. To show it being taken out of service instead, use Retire.'
@@ -2896,6 +3483,15 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
           {type === 'schema_column' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="field" contributors={contributors} />}
           {type === 'contributor' && !editing && <ContributorReadView data={data} />}
           {type === 'contributor' && editing && <ContributorEditView form={form} set={set} missing={missing} />}
+          {type === 'task' && !editing &&
+            <TaskReadView data={data} contributors={contributors}
+                          canEdit={canEdit} notify={notify} />}
+          {type === 'task' && editing &&
+            <TaskEditView form={form} set={set} original={data} missing={missing}
+                          onParent={v => setForm(f => ({ ...f, ...splitParent(v),
+                                                         pos_main: null, pos_cross: null }))}
+                          contributors={contributors} systems={systems} flows={flows}
+                          taskTypes={taskTypes} inScenario={inScenario} />}
         </div>
         </FieldDefs.Provider>
       </>}
@@ -2997,9 +3593,26 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
         confirmDisabled={impact.heavy && typed.trim() !== impact.record.name}
         onCancel={() => setImpact(null)}
         onConfirm={() => { setImpact(null); onDelete(type, data); }} />}
+      {confirmTaskDelete && <ConfirmDialog
+        title="Delete this task?"
+        danger confirmLabel="Delete"
+        message={`"${titleOf()}" will be permanently removed.`}
+        detail={<div className="ref-warning">
+          <div className="confirm-warn">
+            Its steps and the people named on it go with it. The flow or system
+            it is attached to is not affected.
+          </div>
+          <div className="confirm-warn" style={{marginTop:8}}>
+            This cannot be undone from the audit log — restoring it would need a
+            database backup.
+          </div>
+        </div>}
+        onCancel={() => setConfirmTaskDelete(false)}
+        onConfirm={() => { setConfirmTaskDelete(false); onDelete(type, data); }} />}
       {confirmRetire !== null && <ConfirmDialog
         title={confirmRetire
           ? (type === 'system' ? 'Retire this system in the scenario?'
+             : type === 'task' ? 'Retire this task in the scenario?'
                                : 'Retire this data flow in the scenario?')
           : 'No longer retired?'}
         confirmLabel={confirmRetire ? 'Retire it' : 'Bring it back'}
@@ -3551,7 +4164,6 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes, inScenario }) {
             <input type="checkbox" checked={!!form.proposed}
                    onChange={e=>set('proposed', e.target.checked)} />
             Proposed &mdash; something this scenario adds
-            <span className="gov-hint"> (clear this if it already exists today)</span>
           </label>
         )}
         <div className="modal-section-title">Overview</div>
@@ -3727,7 +4339,6 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
             <input type="checkbox" checked={!!form.proposed}
                    onChange={e=>set('proposed', e.target.checked)} />
             Proposed &mdash; something this scenario adds
-            <span className="gov-hint"> (clear this if it already exists today)</span>
           </label>
         )}
         <div className="modal-section-title">Flow Overview</div>
@@ -4137,7 +4748,9 @@ function ModalField({ entity, col, label, value, onChange, type, options,
           </select>
         : type === 'textarea'
         ? <textarea {...common} placeholder={placeholder} />
-        : <input {...common} placeholder={placeholder} maxLength={maxLength} />}
+        : <input {...common} type={type === 'date' ? 'date' : undefined}
+                 placeholder={type === 'date' ? undefined : placeholder}
+                 maxLength={maxLength} />}
       {hint && <div className="gov-hint">{hint}</div>}
     </div>
   );
@@ -4563,12 +5176,644 @@ function ReleasesScreen({ canEdit, notify, currentVersion }) {
   </div></div>);
 }
 
+// ===== Tasks =====
+// A task is the work that keeps a flow or a store running: the validation
+// steps before a load is accepted, the stored procedure somebody runs, the
+// file a person moves by hand. Four things about the shape, because they are
+// what the UI has to respect:
+//
+// * **One parent.** A task is attached to exactly one system or one flow, and
+//   the picker offers both lists for that reason rather than two controls.
+// * **One start and one end — no recurrence.** A quarterly job is four tasks,
+//   made with Copy, so each occurrence keeps its own outcome.
+// * **The status is the steps' status**, wherever there are steps. The control
+//   is shown as a fixed value in that case, with a line saying why, rather
+//   than hidden: a missing control looks like a bug, and a disabled one that
+//   explains itself does not.
+// * **Subtasks are an ordered list**, each with its own assignee, status and
+//   optional date range, replaced wholesale on save. The database table is
+//   still `task_step`; "subtask" is the word users see. See CLAUDE.md.
+const TASK_STATUS_OPTIONS = [
+  { value: 'not_started', label: 'Not started' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'completed',   label: 'Completed' },
+];
+
+// What the circle says on hover. One function because it is the only place a
+// task's identity is read as a sentence, and because the rules about what to
+// leave out are easier to see in one place than spread across JSX.
+const taskTooltip = (task) => {
+  const lines = [];
+  const status = taskStatusLabel(task.status);
+  const n = (task.steps || []).length;
+  const done = (task.steps || []).filter(x => x.status === 'completed').length;
+  // No status means no parentheses. A task that nobody has set a status on is
+  // a real state, and "Name ()" reads as a fault.
+  lines.push(task.name + (status ? ` (${status})` : ''));
+  if (n) lines.push(`${done} of ${n} subtasks done`);
+  const type = task.type_label || task.task_type;
+  if (type) lines.push(type);
+  return lines.join('\n');
+};
+
+// An unset status reads as nothing, not as a dash: callers decide how to show
+// an absence, and the tooltip's answer ("leave the parentheses out") is
+// different from the catalog's ("show a dash").
+// The choices a status dropdown offers: the empty one first, phrased as an
+// invitation rather than as a value, then the three real states. One list so
+// the flyout and every subtask row cannot disagree about either the wording or
+// the order.
+const TASK_STATUS_CHOICES = [
+  { value: '', label: 'Add Status', hint: true },
+  ...TASK_STATUS_OPTIONS,
+];
+
+const taskStatusLabel = (value) => {
+  const found = TASK_STATUS_OPTIONS.find(o => o.value === value);
+  return found ? found.label : '';
+};
+
+// What a task is attached to, named rather than identified. The server sends
+// `anchor_name` already resolved, because the catalog would otherwise need
+// every system and flow loaded to render one column.
+const taskParentLabel = (task) => {
+  if (!task) return '—';
+  const kind = task.anchor_kind === 'system' ? 'System' : 'Data flow';
+  return `${kind}: ${task.anchor_name || task.anchor_id}`;
+};
+
+// The options for the parent picker: every system and every flow in one list,
+// each value carrying both halves of the answer. A single control because a
+// task has a single parent — two dropdowns would allow both or neither, which
+// is the state the schema deliberately cannot store.
+const taskParentOptions = (systems, flows) => [
+  ...byName(systems).map(s => ({
+    value: `system:${s.system_id}`, label: `System — ${systemOption(s)}` })),
+  ...byName(flows).map(f => ({
+    value: `data_flow:${f.flow_id}`, label: `Data flow — ${f.name} (${f.flow_id})` })),
+];
+
+const taskParentValue = (t) =>
+  t && t.anchor_kind && t.anchor_id ? `${t.anchor_kind}:${t.anchor_id}` : '';
+
+const splitParent = (value) => {
+  const at = String(value || '').indexOf(':');
+  return at < 0 ? { anchor_kind: '', anchor_id: '' }
+                : { anchor_kind: value.slice(0, at), anchor_id: value.slice(at + 1) };
+};
+
+// Picking a parent out of a list of every system and every flow. A plain
+// `<select>` means scrolling a list that grows with the department, so this is
+// an input with a `<datalist>`: typing filters it, and the browser supplies
+// the dropdown, the keyboard handling and the accessibility for free. A
+// hand-built combobox would be a few hundred lines of focus management to get
+// the same thing slightly worse.
+//
+// The datalist's option values are the **labels**, because that is what the
+// browser puts in the input when one is chosen — so the label is matched back
+// to its `kind:id` on change. Every label ends in the record's own identifier,
+// which is what makes them unique and the match unambiguous.
+//
+// A half-typed value resolves to nothing, which leaves the field empty and
+// lets the required check say so. That is deliberate: silently keeping the
+// previous parent while the box shows different text would be worse.
+function TaskParentPicker({ id, value, options, onChange, invalid, hint }) {
+  const label = (options.find(o => o.value === value) || {}).label || '';
+  const [text, setText] = useState(label);
+  // Re-sync when the record changes underneath, e.g. opening another task.
+  useEffect(() => { setText(label); }, [label]);
+  const listId = id + '-list';
+  const commit = (typed) => {
+    setText(typed);
+    const hit = options.find(o => o.label === typed);
+    onChange(hit ? hit.value : '');
+  };
+  return (<>
+    <input id={id} list={listId} value={text}
+           className={'edit-input' + (invalid ? ' field-error' : '')}
+           placeholder="Type to find a system or data flow"
+           aria-invalid={!!invalid}
+           onChange={e => commit(e.target.value)} />
+    <datalist id={listId}>
+      {options.map(o => <option key={o.value} value={o.label} />)}
+    </datalist>
+    {invalid && <div className="field-error-msg">This field is required</div>}
+    {hint && <div className="gov-hint">{hint}</div>}
+  </>);
+}
+
+// A subtask's dates as one phrase, for the places that have room for a line
+// and not a table: the circle's tooltip. The flyout labels each date
+// separately instead. Either end can be missing — a subtask with only a
+// due date is common, and printing "to 2027-01-09" with nothing before it
+// would look like a bug.
+const dateRangeLabel = (row) => {
+  const a = row.expected_start, b = row.expected_end;
+  if (a && b) return `${a} to ${b}`;
+  if (a) return `from ${a}`;
+  if (b) return `due ${b}`;
+  return '';
+};
+
+// "Other" is always offered, whatever the configured list holds, with a box
+// to say what the task actually is. The free text is a separate column rather
+// than a value in `task_type` — see migration 0018: a typed value landing in
+// the controlled list would make every Editor a type author, and fifty one-off
+// spellings would make the catalog's Type column useless.
+//
+// The constant comes from the server (`/api/task-types` reports it) so the
+// browser is not the second place that decides what the word is.
+const TASK_TYPE_OTHER = 'Other';
+
+const taskTypeLabel = (row) => {
+  const base = (row && row.task_type) || '';
+  const other = ((row && row.task_type_other) || '').trim();
+  return base === TASK_TYPE_OTHER && other ? `${base} \u2014 ${other}` : base;
+};
+
+function TaskReadView({ data, contributors, canEdit, notify }) {
+  const people = (data.contributor_ids || []);
+  return (<>
+    <CollapsibleSection title="Task">
+      <ReadField label="ID" value={data.task_id} />
+      <ReadField label="Name" value={data.name} />
+      <ReadField label="Task Type" value={data.type_label || taskTypeLabel(data)} />
+      {data.change_state === 'proposed' && (
+        <div className="field-row"><span className="field-label">In this scenario</span>
+          <span className="field-value">Proposed &mdash; new here</span></div>
+      )}
+      <ReadField label="Description" value={data.description} multiline />
+      {/* Hand-written: the parent is two columns stored together and read as
+          one sentence, so there is no single column for a definition or for
+          hiding to resolve against. Same reason as the four hand-written
+          blocks on a data flow. */}
+      <div className="field-row"><span className="field-label">Attached to</span>
+        <span className="field-value">{taskParentLabel(data)}</span></div>
+    </CollapsibleSection>
+    <CollapsibleSection title="Timing and progress">
+      <ReadField label="Expected Start" value={data.expected_start} />
+      <ReadField label="Expected End" value={data.expected_end} />
+      <ReadField label="Status" value={taskStatusLabel(data.status)} />
+      {!!data.status_from_steps &&
+        <div className="gov-hint">Determined based on subtasks</div>}
+      <ReadField label="Completed Date" value={data.completed_date} />
+      {/* Hand-written, and here rather than under a heading of its own: a list
+          of people is not one column, so neither a definition nor hiding has
+          anything to attach to, and one row did not justify a section. */}
+      <div className="field-row">
+        <span className="field-label">Person Responsible</span>
+        <span className="field-value">
+          {people.length === 0 ? '—'
+            : people.map(cid => contributorLabel(cid, contributors)).join(', ')}
+        </span>
+      </div>
+    </CollapsibleSection>
+    {(data.steps || []).length > 0 && (
+      <CollapsibleSection title={`Subtasks (${data.steps.length})`} defaultOpen>
+        {/* One labelled block per subtask, numbered, with a rule between them.
+            The first version put the description in a value column and crammed
+            status, person and dates into one grey line underneath — which read
+            as a jumble, left most of the values unlabelled, and made a missing
+            one impossible to tell from a value nobody had entered.
+
+            These are NOT `ReadField`s, deliberately. `ReadField` resolves
+            hiding by LABEL, so a task field hidden in Preferences called
+            "Status" would blank a subtask's status too — two unrelated things
+            sharing a word. */}
+        {data.steps.map((s, i) => (
+          <div className="subtask-read" key={s.step_id || i}>
+            <div className="subtask-read-num">Subtask {i + 1}</div>
+            <div className="field-row"><span className="field-label">Description</span>
+              <span className="field-value">{s.description || '—'}</span></div>
+            <div className="field-row"><span className="field-label">Status</span>
+              <span className="field-value">
+                {taskStatusLabel(s.status) || '—'}</span></div>
+            <div className="field-row"><span className="field-label">Person Responsible</span>
+              <span className="field-value">
+                {s.contributor_id
+                  ? contributorLabel(s.contributor_id, contributors) : '—'}</span></div>
+            <div className="field-row"><span className="field-label">Expected Start</span>
+              <span className="field-value">{s.expected_start || '—'}</span></div>
+            <div className="field-row"><span className="field-label">Expected End</span>
+              <span className="field-value">{s.expected_end || '—'}</span></div>
+            {s.completed_date && (
+              <div className="field-row"><span className="field-label">Completed</span>
+                <span className="field-value">{s.completed_date}</span></div>)}
+            {s.notes && (
+              <div className="field-row"><span className="field-label">Notes</span>
+                <span className="field-value multiline">{s.notes}</span></div>)}
+          </div>))}
+      </CollapsibleSection>)}
+    {data.notes && <CollapsibleSection title="Notes">
+      <ReadField label="Notes" value={data.notes} multiline />
+    </CollapsibleSection>}
+    {/* Wrapped in a section, as it is on a system and a data flow — without
+        the heading the documents list sat at the bottom of the panel with
+        nothing saying what it was. */}
+    <CollapsibleSection title="Resources">
+      <ResourcesSection entityType="task" entityId={data.task_id}
+                        canEdit={canEdit} notify={notify} />
+    </CollapsibleSection>
+  </>);
+}
+
+function TaskEditView({ form, set, onParent, original, missing, contributors,
+                        systems, flows, taskTypes, inScenario }) {
+  const fromSteps = (form.steps || []).length > 0;
+  const types = (taskTypes || []).map(t => t.type_name);
+  return (<>
+    <CollapsibleSection title="Task">
+      {/* Only inside a scenario, and first, exactly as it is on a system and a
+          data flow: whether this is something the plan invents is the frame
+          for everything below it. The server has always accepted `proposed`
+          on a task — the checkbox was simply never drawn, so the state could
+          be set when creating one and never changed afterwards. That is the
+          silently-unsaveable-field shape from the other direction: the field
+          worked, the control was missing. */}
+      {inScenario && (
+        <EditField label="Proposed" type="checkbox" value={form.proposed}
+                   onChange={v => set('proposed', !!v)} />
+      )}
+      <EditField label="Name" value={form.name} onChange={v=>set('name',v)}
+                 invalid={(missing||[]).includes('name')} />
+      <EditField label="Task Type" value={form.task_type}
+                 onChange={v=>set('task_type',v)} type="select"
+                 options={['', ...types, TASK_TYPE_OTHER]}
+                 invalid={(missing||[]).includes('task_type')} />
+      {form.task_type === TASK_TYPE_OTHER &&
+        <EditField label="Type (other)" value={form.task_type_other}
+                   onChange={v=>set('task_type_other',v)} />}
+      <EditField label="Description" value={form.description}
+                 onChange={v=>set('description',v)} type="textarea" />
+      {/* Hand-written: see TaskReadView. Changing the parent clears the stored
+          position, because a position on a flow and a position in a box are
+          measured differently — the server does the same thing, and the circle
+          falls back to its default placement. */}
+      <div className="edit-field-row">
+        <span className="field-label">Attached to</span>
+        <div style={{flex:1}}>
+          <TaskParentPicker id="task-parent-edit" value={taskParentValue(form)}
+                            options={taskParentOptions(systems, flows)}
+                            onChange={onParent}
+                            hint={taskParentValue(form) !== taskParentValue(original)
+                              ? 'Moving this task puts the circle back to its default position on the new parent.'
+                              : null} />
+        </div>
+      </div>
+    </CollapsibleSection>
+    <CollapsibleSection title="Timing and progress">
+      <EditField label="Expected Start" type="date" value={form.expected_start}
+                 onChange={v=>set('expected_start',v)} />
+      <EditField label="Expected End" type="date" value={form.expected_end}
+                 onChange={v=>set('expected_end',v)} />
+      {fromSteps
+        /* Shown as a value, not a control: with steps present the server
+           recomputes this on every save, so an editable box would accept a
+           choice and then overwrite it. */
+        ? <div className="edit-field-row">
+            <span className="field-label">Status</span>
+            <div style={{flex:1}}>
+              <span className="field-value">{taskStatusLabel(form.status)}</span>
+              <div className="gov-hint">Determined based on subtasks</div>
+            </div>
+          </div>
+        : <EditField label="Status" value={form.status || ''}
+                     onChange={v=>set('status',v)} type="select"
+                     options={TASK_STATUS_CHOICES} />}
+      <EditField label="Completed Date" type="date" value={form.completed_date}
+                 onChange={v=>set('completed_date',v)} />
+      {/* The people sit here rather than under a heading of their own: one
+          contributor row did not justify a section, and it belongs beside the
+          dates it is answerable for. */}
+      <TaskPeople value={form.contributor_ids} contributors={contributors}
+                  onChange={v=>set('contributor_ids',v)} />
+    </CollapsibleSection>
+    <CollapsibleSection title="Subtasks" defaultOpen>
+      <TaskSubtasks steps={form.steps} contributors={contributors} showHint
+                    onChange={v=>set('steps',v)} />
+    </CollapsibleSection>
+    <CollapsibleSection title="Notes">
+      <EditField label="Notes" value={form.notes}
+                 onChange={v=>set('notes',v)} type="textarea" />
+    </CollapsibleSection>
+  </>);
+}
+
+// One or more people responsible for the task as a whole. A row of dropdowns
+// rather than a multi-select list box: a native multiple-select needs
+// ctrl-click to add a second name and nothing on screen says so, and the
+// people here are chosen one at a time from a list of hundreds.
+//
+// Deactivated contributors are kept out by `assignable`, except where one is
+// already named — removing the current value from its own dropdown would make
+// the assignment impossible to see or change.
+// `variant` decides which of the app's two field layouts to use: `panel` is
+// the flyout's label-beside-control row, `modal` is the Add window's
+// label-above-control block. Without it the people rows kept the flyout's
+// styling inside the Add window, where every field around them is laid out the
+// other way — the label was a different size, weight and position from
+// "Expected start" directly above it.
+//
+// Two layouts rather than one is the app's existing convention, not something
+// introduced here; this component is simply the first to appear in both.
+function TaskPeople({ value, contributors, onChange, variant }) {
+  const modal = variant === 'modal';
+  const Row = ({ label, children }) => modal
+    ? <div className="form-group"><label>{label}</label>{children}</div>
+    : <div className="edit-field-row">
+        <span className="field-label">{label}</span>
+        <div style={{flex:1}}>{children}</div>
+      </div>;
+  const chosen = value || [];
+  const setAt = (i, cid) => {
+    const next = [...chosen];
+    if (!cid) next.splice(i, 1); else next[i] = cid;
+    onChange(next);
+  };
+  const taken = new Set(chosen);
+  return (<>
+    {chosen.map((cid, i) => (
+      <Row label="Person Responsible" key={cid + i}>
+        <select className="edit-select" value={cid}
+                onChange={e => setAt(i, e.target.value)}>
+          <option value="">— remove —</option>
+          {assignable(contributors, cid)
+            .filter(c => c.contributor_id === cid || !taken.has(c.contributor_id))
+            .map(c => <option key={c.contributor_id} value={c.contributor_id}>
+              {contributorLabel(c.contributor_id, contributors)}</option>)}
+        </select>
+      </Row>))}
+    <Row label={chosen.length ? 'Add another' : 'Person Responsible'}>
+      {/* The empty choice is the invitation, in grey italics, rather than a
+          dash: a dropdown whose first line reads "— none —" says what is
+          selected, not what to do with it. */}
+      <select className="edit-select select-hint" value=""
+              onChange={e => { if (e.target.value) onChange([...chosen, e.target.value]); }}>
+        <option value="" className="opt-hint">Add Contributor</option>
+        {assignable(contributors, null)
+          .filter(c => !taken.has(c.contributor_id))
+          .map(c => <option key={c.contributor_id} value={c.contributor_id}>
+            {contributorLabel(c.contributor_id, contributors)}</option>)}
+      </select>
+    </Row>
+  </>);
+}
+
+// The checklist. Each subtask carries its own description, assignee, status
+// and optional date range, and the order is the order on screen —
+// `sort_order` is assigned by the server from the position in the list, so
+// moving one up is a local change that needs no ids.
+//
+// A subtask's dates are its own, not a slice of the task's. The task's pair is
+// the outer window; a validation whose first check happens the day the file
+// lands and whose sign-off is a week later has two dates that matter, and one
+// range over the whole task hides which part is late. Either end can be left
+// blank, because plenty of subtasks only have a due date.
+//
+// Subtasks are not record fields, so nothing here goes through `EditField`:
+// there is no column for a definition or for hiding to resolve against, the
+// same reason the parent picker and the people list are hand-written.
+//
+// The prop is still called `steps` and the table is still `task_step`. See
+// CLAUDE.md: "subtask" is the word users see, and renaming the table would
+// mean editing a migration that has already run.
+function TaskSubtasks({ steps, contributors, onChange, showHint }) {
+  const list = steps || [];
+  const change = (i, patch) =>
+    onChange(list.map((s, j) => j === i ? { ...s, ...patch } : s));
+  const move = (i, by) => {
+    const j = i + by;
+    if (j < 0 || j >= list.length) return;
+    const next = [...list];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  return (<>
+    {list.length === 0 && showHint && (
+      <div className="gov-hint">
+        A task with no subtasks carries a status you set yourself; add subtasks
+        and the status follows them instead.
+      </div>)}
+    {list.map((s, i) => (
+      <div className="task-step" key={i}>
+        <div className="task-step-head">
+          <span className="task-step-num">{i + 1}</span>
+          <input className="edit-input" value={s.description || ''}
+                 aria-label={`Subtask ${i + 1} description`}
+                 placeholder="What has to be done"
+                 onChange={e => change(i, { description: e.target.value })} />
+          <button className="btn btn-small" aria-label={`Move subtask ${i + 1} up`}
+                  disabled={i === 0} onClick={() => move(i, -1)}>&uarr;</button>
+          <button className="btn btn-small" aria-label={`Move subtask ${i + 1} down`}
+                  disabled={i === list.length - 1} onClick={() => move(i, 1)}>&darr;</button>
+          <button className="btn btn-small btn-danger"
+                  aria-label={`Remove subtask ${i + 1}`}
+                  onClick={() => onChange(list.filter((_, j) => j !== i))}>
+            Remove</button>
+        </div>
+        {/* Two columns, indented to start under the description box and
+            running out to the Remove button's right edge. So Status sits above
+            Start and shares its edges, and Person Responsible sits above End
+            and shares its edges — four controls on a grid rather than two rows
+            that each divide the width differently. */}
+        <div className="task-step-grid">
+          <label>
+            <span>Status</span>
+            <select className={'edit-select' + (s.status ? '' : ' select-hint')}
+                    value={s.status || ''}
+                    onChange={e => change(i, { status: e.target.value || null })}>
+              {TASK_STATUS_CHOICES.map(o =>
+                <option key={o.value} value={o.value}
+                        className={o.hint ? 'opt-hint' : undefined}>{o.label}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Person Responsible</span>
+            <select className={'edit-select' + (s.contributor_id ? '' : ' select-hint')}
+                    value={s.contributor_id || ''}
+                    onChange={e => change(i, { contributor_id: e.target.value || null })}>
+              <option value="" className="opt-hint">Add Contributor</option>
+              {assignable(contributors, s.contributor_id).map(c =>
+                <option key={c.contributor_id} value={c.contributor_id}>
+                  {contributorLabel(c.contributor_id, contributors)}</option>)}
+            </select>
+          </label>
+          {/* Captions matter more here than anywhere: a date input shows no
+              placeholder, so two empty boxes side by side say nothing about
+              which is which. */}
+          <label>
+            <span>Expected Start</span>
+            <input type="date" className="edit-input"
+                   value={s.expected_start || ''}
+                   onChange={e => change(i, { expected_start: e.target.value || null })} />
+          </label>
+          <label>
+            <span>Expected End</span>
+            <input type="date" className="edit-input"
+                   value={s.expected_end || ''}
+                   onChange={e => change(i, { expected_end: e.target.value || null })} />
+          </label>
+        </div>
+      </div>))}
+    {/* `display: block` rather than inline: with no subtasks yet the button
+        was the only thing after the heading and sat on the same line as it,
+        reading as part of the heading rather than as an action. */}
+    <button className="btn btn-small" style={{marginTop:6, display:'block'}}
+            onClick={() => onChange([...list, { description: '', status: null,
+                                                contributor_id: null,
+                                                expected_start: null,
+                                                expected_end: null }])}>
+      Add Subtask
+    </button>
+  </>);
+}
+
+function TasksTable({ tasks, onSelect }) {
+  const { sorted, sort, toggle } = useSort(tasks, 'task_id');
+  return (<div className="table-view">
+    {tasks.length === 0 && <div className="empty-state">
+      No tasks yet. A task is the work a flow or a store depends on — a set of
+      validation checks, a stored procedure, a file somebody moves by hand.
+    </div>}
+    {tasks.length > 0 && <table className="data-table">
+      <thead><tr>
+        <SortHeader label="ID" sortKey="task_id" sort={sort} toggle={toggle} />
+        <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
+        <SortHeader label="Type" sortKey="task_type" sort={sort} toggle={toggle} />
+        <SortHeader label="Attached to" sortKey="anchor_name" sort={sort} toggle={toggle} />
+        <SortHeader label="Expected Start" sortKey="expected_start" sort={sort} toggle={toggle} />
+        <SortHeader label="Expected End" sortKey="expected_end" sort={sort} toggle={toggle} />
+        <SortHeader label="Status" sortKey="status" sort={sort} toggle={toggle} />
+        <SortHeader label="Subtasks" sortKey="step_count" sort={sort} toggle={toggle} />
+      </tr></thead>
+      <tbody>{sorted.map(t => (
+        <tr key={t.task_id} className="clickable" onClick={()=>onSelect(t.task_id)}>
+          <td>{t.task_id}</td>
+          <td><strong>{t.name}</strong></td>
+          <td>{t.type_label || t.task_type || '—'}</td>
+          <td>{taskParentLabel(t)}</td>
+          <td>{t.expected_start || '—'}</td>
+          <td>{t.expected_end || '—'}</td>
+          <td>{taskStatusLabel(t.status) || '—'}</td>
+          <td>{(t.steps || []).length
+                 ? `${(t.steps || []).filter(s => s.status === 'completed').length} of ${(t.steps || []).length}`
+                 : '—'}</td>
+        </tr>))}</tbody>
+    </table>}
+  </div>);
+}
+
+function AddTaskModal({ onClose, onSave, systems, flows, contributors, taskTypes }) {
+  const [form, setForm] = useState({
+    name: '', task_type: '', task_type_other: '', description: '', parent: '',
+    expected_start: '', expected_end: '', notes: '',
+    contributor_ids: [], steps: [],
+  });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const bodyRef = useRef(null);
+  // "Other" needs its own wording, so that box is required exactly when
+  // "Other" is the choice — stated here rather than checked at save time, so
+  // the error appears beside the field like every other required one.
+  const req = useRequired([
+    { key: 'name', label: 'Name' },
+    { key: 'task_type', label: 'Task type' },
+    { key: 'parent', label: 'Attached to' },
+    ...(form.task_type === TASK_TYPE_OTHER
+      ? [{ key: 'task_type_other', label: 'Type (other)' }] : []),
+  ], bodyRef);
+  const summary = req.summary(form);
+  // Nothing to attach a task to. The window would otherwise offer an empty
+  // dropdown and refuse to submit, which reads as a broken form rather than
+  // as "there is nothing here yet".
+  const parents = taskParentOptions(systems, flows);
+
+  return (
+    <div className="modal-overlay"><div className="modal" role="dialog" aria-modal="true">
+      <div className="modal-header">Add Task
+        <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button>
+      </div>
+      <div className="modal-body" ref={bodyRef}>
+        {summary && <div className="form-error-summary" role="alert">{summary}</div>}
+        {parents.length === 0 && <div className="form-error-summary" role="alert">
+          There are no systems or data flows yet. A task is attached to one of
+          them, so add a system or a data flow first.
+        </div>}
+        <ReqField id="task-name" entity="task" col="name" label="Name *"
+                  value={form.name} onChange={v=>set('name',v)}
+                  error={req.errorFor(form, 'name')} />
+        <div className="form-row">
+          <ReqField id="task-type" entity="task" col="task_type" label="Task type *"
+                    type="select" value={form.task_type}
+                    options={[...(taskTypes || []).map(t => t.type_name),
+                              TASK_TYPE_OTHER]}
+                    onChange={v=>set('task_type',v)}
+                    error={req.errorFor(form, 'task_type')} />
+          {/* Required, and hand-written for the reason given in TaskReadView:
+              it is two columns answered by one choice. `ReqField` would need a
+              single `col`, and the error wiring is simple enough to repeat. */}
+          <div className="form-group">
+            <label htmlFor="task-parent">Attached to *</label>
+            <TaskParentPicker id="task-parent" value={form.parent} options={parents}
+                              onChange={v => set('parent', v)}
+                              invalid={!!req.errorFor(form, 'parent')} />
+          </div>
+        </div>
+        {form.task_type === TASK_TYPE_OTHER && (
+          <ReqField id="task-type-other" entity="task" col="task_type_other"
+                    label="Type (other) *" value={form.task_type_other}
+                    onChange={v=>set('task_type_other',v)}
+                    placeholder="What kind of work is it?"
+                    error={req.errorFor(form, 'task_type_other')} />
+        )}
+        <ModalField id="task-desc" entity="task" col="description" type="textarea"
+                    label="Description" value={form.description}
+                    onChange={v=>set('description',v)} />
+        <div className="form-row">
+          <ModalField id="task-start" entity="task" col="expected_start"
+                      type="date" label="Expected start" value={form.expected_start}
+                      onChange={v=>set('expected_start',v)} />
+          <ModalField id="task-end" entity="task" col="expected_end"
+                      type="date" label="Expected end" value={form.expected_end}
+                      onChange={v=>set('expected_end',v)} />
+        </div>
+        {/* Directly under the dates, with no heading and no panel: one
+            contributor row did not justify either, and it belongs beside the
+            dates it is answerable for. */}
+        <TaskPeople value={form.contributor_ids} contributors={contributors}
+                    variant="modal"
+                    onChange={v=>set('contributor_ids',v)} />
+        <div style={{marginTop:12}}>
+          <strong>Subtasks</strong> <span className="optional-note">(Optional)</span>
+          <TaskSubtasks steps={form.steps} contributors={contributors}
+                        onChange={v=>set('steps',v)} />
+        </div>
+        {/* Spaced off the Add Subtask button above it, which is otherwise close
+            enough to read as part of this field. */}
+        <div style={{marginTop:16}}>
+          <ModalField id="task-notes" entity="task" col="notes" type="textarea"
+                      label="Notes" value={form.notes} onChange={v=>set('notes',v)} />
+        </div>
+      </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary"
+                disabled={parents.length === 0}
+                onClick={() => req.attempt(form, () => {
+                  const { parent, ...rest } = form;
+                  onSave({ ...rest, ...splitParent(parent) });
+                })}>Add Task</button>
+      </div>
+    </div></div>
+  );
+}
+
 // ===== Confirm dialog =====
 // The details panel's own type names versus the catalogue's. The catalogue is
 // keyed on database tables, so "flow" and "element" need translating; schema
 // tables and columns map to nothing, which is how they end up with no markers.
 const PANEL_ENTITY = { system: 'system', flow: 'data_flow',
-                       element: 'data_element', contributor: 'contributor' };
+                       element: 'data_element', contributor: 'contributor',
+                       task: 'task' };
 
 // ===== Field definitions =====
 // A SuperAdmin can write a definition for any field; it then appears as a
@@ -5455,7 +6700,7 @@ function AddContributorModal({ onClose, onSave, pickableUsers }) {
 }
 
 // ===== Preferences (SuperAdmin) =====
-function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onDefinitionsChanged }) {
+function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onTaskTypesChanged, onDefinitionsChanged }) {
   const [prefs, setPrefs] = useState([]);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
@@ -5575,11 +6820,15 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onDefinitio
         {/* System types sit after the password rules, before the not-yet-available toggles. */}
         {cat === 'Password policy' &&
           <SystemTypesEditor notify={notify} onChanged={onTypesChanged} />}
+        {cat === 'Password policy' &&
+          <TaskTypesEditor notify={notify} onChanged={onTaskTypesChanged} />}
       </React.Fragment>
     ))}
     {/* Fallback: if the password category is ever renamed, still show the editor. */}
-    {!categories.includes('Password policy') &&
-      <SystemTypesEditor notify={notify} onChanged={onTypesChanged} />}
+    {!categories.includes('Password policy') && <>
+      <SystemTypesEditor notify={notify} onChanged={onTypesChanged} />
+      <TaskTypesEditor notify={notify} onChanged={onTaskTypesChanged} />
+    </>}
   </div></div>);
 }
 
@@ -5700,10 +6949,8 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
         <div className="pref-label" style={{ width: 'auto', marginBottom: 8 }}>
           <b>Explain what a field means</b>
           <span>
-            A definition appears as an information marker beside that field in
-            the details panel, for everyone. Useful where the name alone does
-            not carry the meaning — "Disclosure Avoidance" or "Regulatory
-            Driver" rather than "Name".
+            A field definition appears as an information marker beside that
+            field in the details panel.
           </span>
         </div>
 
@@ -6139,6 +7386,146 @@ function SystemTypesEditor({ notify, onChanged }) {
         message={confirmDelete.in_use > 0
           ? `"${confirmDelete.type_name}" is used by ${confirmDelete.in_use} system(s) and cannot be removed yet.`
           : `"${confirmDelete.type_name}" will be removed from the list of choices.`}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => remove(confirmDelete)} />}
+    </div>
+  );
+}
+
+// ===== Task types (SuperAdmin, shown on the Preferences screen) =====
+// The same shape as SystemTypesEditor, and deliberately simpler: a task type
+// has a name and a description but no colour, because a task's circle is
+// coloured by its *status* rather than by its type. Two colour schemes on the
+// same shape would be unreadable, and status is the thing anybody is scanning
+// the diagram for.
+function TaskTypesEditor({ notify, onChanged }) {
+  const [types, setTypes] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ type_name: '', description: '' });
+  const [confirmRename, setConfirmRename] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
+  const load = useCallback(() => {
+    api.get('/api/task-types').then(d => setTypes(d.types || []))
+      .catch(e => notify(e.message, true));
+  }, [notify]);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    try {
+      if (adding) {
+        const d = await api.post('/api/task-types', form);
+        setTypes(d.types); setAdding(false); notify('Task type added.');
+      } else {
+        const d = await api.put(
+          `/api/task-types/${encodeURIComponent(editing.type_name)}`, form);
+        setTypes(d.types); setEditing(null);
+        notify(d.renamed_tasks
+          ? `Saved. ${d.renamed_tasks} task(s) moved to the new name.`
+          : 'Saved.');
+      }
+      onChanged && onChanged();
+    } catch (e) { notify(e.message, true); }
+    finally { setConfirmRename(null); }
+  };
+
+  const attemptSave = () => {
+    if (editing && form.type_name !== editing.type_name && editing.in_use > 0) {
+      setConfirmRename({ from: editing.type_name, to: form.type_name,
+                         count: editing.in_use });
+      return;
+    }
+    save();
+  };
+
+  const remove = async (t) => {
+    try {
+      const d = await api.del(`/api/task-types/${encodeURIComponent(t.type_name)}`);
+      setTypes(d.types); notify('Task type removed.'); onChanged && onChanged();
+    } catch (e) { notify(e.message, true); }
+    finally { setConfirmDelete(null); }
+  };
+
+  return (
+    <div className="pref-group">
+      <h3>Task Types</h3>
+      <div style={{ padding: '10px 16px', fontSize: 12, color: '#6b6b6b' }}>
+        What kinds of work a task can be: validation steps, a stored procedure,
+        a file somebody moves by hand. The four shipped with the app are a
+        starting point, not a fixed list.
+        <button className="btn" style={{ marginLeft: 10 }}
+                onClick={() => { setForm({ type_name: '', description: '' });
+                                 setAdding(true); setEditing(null); }}>+ Add Type</button>
+      </div>
+      {types.map(t => (
+        <div className="pref-row" key={t.type_name}>
+          <div className="pref-label">
+            <b>{t.type_name}</b>
+            <span>{t.in_use} task{t.in_use === 1 ? '' : 's'}</span>
+          </div>
+          <div className="pref-control">
+            <div style={{ fontSize: 12, color: '#6b7684' }}>
+              {t.description || 'No description yet.'}</div>
+            <div className="res-actions">
+              <button className="btn btn-edit" onClick={() => {
+                setForm({ type_name: t.type_name, description: t.description || '' });
+                setEditing(t); setAdding(false);
+              }}>Edit</button>
+              <button className="btn" onClick={() => setConfirmDelete(t)}>Remove</button>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {(adding || editing) && <div className="modal-overlay">
+        <div className="modal" role="dialog" aria-modal="true">
+          <div className="modal-header">
+            {adding ? 'Add Task Type' : `Edit ${editing.type_name}`}
+            <button className="panel-close" aria-label="Close"
+                    onClick={() => { setAdding(false); setEditing(null); }}>&times;</button>
+          </div>
+          <div className="modal-body">
+            <div className="form-group"><label htmlFor="tt-name">Name *</label>
+              <input id="tt-name" value={form.type_name}
+                     onChange={e => setForm(f => ({ ...f, type_name: e.target.value }))} />
+              {editing && editing.in_use > 0 &&
+                <div style={{ fontSize: 11, color: '#b08900', marginTop: 4 }}>
+                  Renaming this will update {editing.in_use} task(s) that use it.
+                </div>}
+            </div>
+            <div className="form-group"><label htmlFor="tt-desc">Description</label>
+              <textarea id="tt-desc" value={form.description}
+                        onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                        placeholder="Explain when someone should choose this type" />
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn"
+                    onClick={() => { setAdding(false); setEditing(null); }}>Cancel</button>
+            <button className="btn btn-primary" onClick={attemptSave}>Save</button>
+          </div>
+        </div></div>}
+
+      {confirmRename && <ConfirmDialog
+        title="Rename this task type?" confirmLabel="Rename and update tasks"
+        message={`Renaming "${confirmRename.from}" to "${confirmRename.to}" will change the type on ${confirmRename.count} task(s).`}
+        detail={<div className="confirm-warn">
+          Every task currently using this type is updated, so nothing is left
+          pointing at a type that no longer exists. This is recorded in the
+          audit log.
+        </div>}
+        onCancel={() => setConfirmRename(null)} onConfirm={save} />}
+
+      {confirmDelete && <ConfirmDialog
+        title="Remove this task type?" danger confirmLabel="Remove"
+        message={confirmDelete.in_use > 0
+          ? `"${confirmDelete.type_name}" is used by ${confirmDelete.in_use} task(s) and cannot be removed yet.`
+          : `"${confirmDelete.type_name}" will be removed from the list of choices.`}
+        detail={<div className="gov-hint" style={{ marginTop: 8 }}>
+          Removing a type is a decision, so it stays removed — it is not put
+          back when the app restarts.
+        </div>}
         onCancel={() => setConfirmDelete(null)}
         onConfirm={() => remove(confirmDelete)} />}
     </div>
@@ -7294,6 +8681,9 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const [showAddSystem, setShowAddSystem] = useState(false);
   const [showAddFlow, setShowAddFlow] = useState(false);
   const [showAddContributor, setShowAddContributor] = useState(false);
+  const [tasks, setTasks] = useState([]);
+  const [taskTypes, setTaskTypes] = useState([]);
+  const [showAddTask, setShowAddTask] = useState(false);
   // Held here rather than inside each canvas so the toolbar buttons and the
   // trackpad change the same number. Separate values because the two canvases
   // have different sensible ranges and you switch between them.
@@ -7337,6 +8727,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     api.get('/api/flows').then(setFlows).catch(() => {});
     api.get('/api/elements').then(setElements).catch(() => {});
     api.get('/api/contributors').then(setContributors).catch(() => {});
+    api.get('/api/tasks').then(setTasks).catch(() => {});
   }, []);
 
   useEffect(() => { loadScenarios(); }, [loadScenarios]);
@@ -7356,6 +8747,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     setSchemaSystemId(null);
     setView(v => v === 'schema' ? 'diagram' : v);
     setSystems([]); setFlows([]); setElements([]); setContributors([]);
+    setTasks([]);
     refresh();
   }, [refresh]);
 
@@ -7418,7 +8810,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   // Re-read the data whenever a data view is opened, so edits made by someone
   // else (including node positions, which are shared) show up without a reload.
   useEffect(() => {
-    if (['diagram', 'systems', 'flows', 'elements', 'contributors'].includes(view)) {
+    if (['diagram', 'systems', 'flows', 'elements', 'contributors', 'tasks'].includes(view)) {
       refresh();
     }
   }, [view, refresh]);
@@ -7443,6 +8835,11 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     api.get(`/api/contributors/${id}`).then(d => { setDetailData(d); setDetailType('contributor'); });
   }, []);
 
+  const selectTask = useCallback((id) => {
+    setSelected({ type: 'task', id });
+    api.get(`/api/tasks/${id}`).then(d => { setDetailData(d); setDetailType('task'); });
+  }, []);
+
   useEffect(() => {
     api.get('/api/auth/me')
       .then(me => setAssignableRoles(me.assignable_roles || []))
@@ -7453,6 +8850,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     // Alerts, e.g. a change of theirs that someone reverted.
     api.get('/api/notifications').then(d => setAlerts(d.unseen || [])).catch(() => {});
     loadSystemTypes();
+    loadTaskTypes();
     loadFieldDefs();
   }, []);
 
@@ -7469,6 +8867,12 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   }, []);
 
   // System types drive both the dropdowns and the diagram colours.
+  // Task types are configuration rather than data, so they are fetched once
+  // and not re-read per view: the same list applies in every scenario.
+  const loadTaskTypes = useCallback(() => {
+    api.get('/api/task-types').then(d => setTaskTypes(d.types || [])).catch(() => {});
+  }, []);
+
   const loadSystemTypes = useCallback(() => {
     api.get('/api/system-types').then(d => {
       setSystemTypes(d.types || []);
@@ -7562,6 +8966,9 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
     } else if (type === 'contributor') {
       refresh();
       setDetailData(result);
+    } else if (type === 'task') {
+      refresh();
+      setDetailData(result);
     } else if (type === 'schema_table' || type === 'schema_column') {
       setDetailData(result);
       if (schemaSystemId) loadSchema(schemaSystemId);
@@ -7588,8 +8995,9 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const retireRecord = useCallback(async (kind, record, retired) => {
     const base = kind === 'system'
       ? `/api/systems/${record.system_id}`
+      : kind === 'task' ? `/api/tasks/${record.task_id}`
       : `/api/flows/${record.flow_id}`;
-    const label = record.name || record.system_id || record.flow_id;
+    const label = record.name || record.system_id || record.flow_id || record.task_id;
     try {
       await api.del(`${base}?mode=${retired ? 'remove' : 'restore'}`);
       closeDetail();
@@ -7605,8 +9013,9 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const deleteRecord = useCallback(async (kind, record) => {
     const url = kind === 'system'
       ? `/api/systems/${record.system_id}`
+      : kind === 'task' ? `/api/tasks/${record.task_id}`
       : `/api/flows/${record.flow_id}`;
-    const label = record.name || record.system_id || record.flow_id;
+    const label = record.name || record.system_id || record.flow_id || record.task_id;
     try {
       await api.del(url);
       closeDetail();
@@ -7616,6 +9025,63 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
       notify(err.message, true);
     }
   }, [refresh, notify]);
+
+  // Layout, so it is sent to the position endpoint rather than the task's own
+  // PUT: dragging a circle is not audited and does not mark a scenario record
+  // as Modified, exactly like rerouting an arrow. The local list is patched
+  // rather than refetched, or the circle would snap back for one frame.
+  const updateTaskPosition = useCallback((taskId, pos) => {
+    setTasks(list => list.map(t => t.task_id === taskId ? { ...t, ...pos } : t));
+    return api.put(`/api/tasks/${taskId}/position`, pos)
+      .catch(e => { notify(e.message, true); refresh(); });
+  }, [notify, refresh]);
+
+  // Placing a new circle is a second request, and it must not be able to make
+  // a successful creation look like a failure. It did: a 405 from an older
+  // server left the task created, the window open, nothing refreshed and an
+  // error on screen. The record is what matters; the position has a default.
+  const placeTask = async (made) => {
+    try {
+      const slot = defaultTaskSlot(made, tasks, flows, systems);
+      if (slot) await api.put(`/api/tasks/${made.task_id}/position`, slot);
+    } catch (err) {
+      notify(`Saved, but its position on the diagram could not be set: ${err.message}`,
+             true);
+    }
+  };
+
+  const addTask = async (data) => {
+    let made;
+    try {
+      made = await api.post('/api/tasks', data);
+    } catch (err) { notify(err.message, true); return; }
+    // A new task has no position, so it is placed now rather than drawn at
+    // whatever the default happens to be: on a flow, near the midpoint but
+    // clear of the flow's label and of any task already there; in a system,
+    // the first free slot from the top-left. Done here because only the
+    // browser knows where the arrows currently run.
+    await placeTask(made);
+    refresh();
+    setShowAddTask(false);
+    notify('Task added.');
+    selectTask(made.task_id);
+  };
+
+  // Copy opens the new task straight away, because the first thing anybody
+  // wants after copying is to set the dates — which is the one thing the copy
+  // deliberately leaves blank.
+  const copyTask = async (record) => {
+    let made;
+    try {
+      made = await api.post(`/api/tasks/${record.task_id}/copy`, {});
+    } catch (err) { notify(err.message, true); return; }
+    // The copy deliberately arrives with no position, so it lands in the next
+    // free slot rather than exactly under the original.
+    await placeTask(made);
+    refresh();
+    notify('Task copied. Set its dates — they are left blank on purpose.');
+    selectTask(made.task_id);
+  };
 
   const openAddContributor = () => {
     setShowAddContributor(true);
@@ -7678,6 +9144,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           <div className={`nav-item ${view==='flows'?'active':''}`} onClick={()=>setView('flows')}><span className="nav-icon">&#8594;</span> Data Flows ({flows.length})</div>
           <div className={`nav-item ${view==='elements'?'active':''}`} onClick={()=>setView('elements')}><span className="nav-icon">&#9830;</span> Data Elements ({elements.length})</div>
           <div className={`nav-item ${view==='contributors'?'active':''}`} onClick={()=>setView('contributors')}><span className="nav-icon">&#9787;</span> Contributors ({contributors.length})</div>
+          <div className={`nav-item ${view==='tasks'?'active':''}`} onClick={()=>setView('tasks')}><span className="nav-icon">&#10003;</span> Tasks ({tasks.length})</div>
           <div className="nav-section">About</div>
           <div className={`nav-item ${view==='releases'?'active':''}`} onClick={()=>setView('releases')}><span className="nav-icon">&#9873;</span> Release Notes</div>
           {(isAdmin || isSuper) && <div className="nav-section">Administration</div>}
@@ -7734,7 +9201,6 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
                 Manage scenario
               </button>
             )}
-            <span>Changes here do not affect {LIVE_LABEL}.</span>
           </div>
         )}
         {notice && <div className={`banner ${notice.isError ? 'banner-error' : 'banner-ok'}`}
@@ -7742,7 +9208,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           <span style={{flex:1}}>{notice.message}</span>
           <button className="panel-close" onClick={()=>setNotice(null)} aria-label="Close">&times;</button>
         </div>}
-        {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
+        {STATS_BAR_VIEWS.includes(view) &&
         <div className="stats-bar">
           {view==='schema' ? <>
             <div className="stat"><div className="stat-value">{schemaTables.length}</div><div className="stat-label">Tables</div></div>
@@ -7759,9 +9225,10 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
               the zoom controls. One cluster rather than two, because two
               `margin-left: auto` siblings would push each other apart.
 
-              Every view with an Add button also has a stats bar — the Add
-              buttons are a strict subset of the six views this bar appears
-              on — so nothing is left without a home. */}
+              The Add buttons live INSIDE this bar, so a view missing from
+              `STATS_BAR_VIEWS` loses its Add button as well as its counts.
+              That is exactly what happened to Tasks in 0.7.0: the button was
+              written correctly and never rendered. Add a view there first. */}
           <div className="stats-actions">
           {canEditHere && (view==='diagram'||view==='systems') &&
             <button className="btn btn-primary" onClick={()=>setShowAddSystem(true)}>+ Add System</button>}
@@ -7769,6 +9236,8 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             <button className="btn btn-primary" onClick={()=>setShowAddFlow(true)}>+ Add Flow</button>}
           {canEditHere && view==='contributors' &&
             <button className="btn btn-primary" onClick={openAddContributor}>+ Add Contributor</button>}
+          {canEditHere && (view==='diagram'||view==='tasks') &&
+            <button className="btn btn-primary" onClick={()=>setShowAddTask(true)}>+ Add Task</button>}
           {view === 'diagram' && (
             <Tooltip text="Download or print this diagram. The whole diagram is included, not just the part on screen.">
               <button className="btn" onClick={() => setShowExport(true)}>
@@ -7818,6 +9287,8 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             onSelectSystem={selectSystem} onSelectFlow={selectFlow} onUpdatePosition={updatePosition}
             onDrill={drillIntoSchema} canEdit={canEditHere} systemTypes={systemTypes}
             onUpdateRoute={updateRoute}
+            tasks={tasks} onSelectTask={selectTask}
+            onUpdateTaskPosition={updateTaskPosition}
             inScenario={inScenario} zoom={diagramZoom} setZoom={setDiagramZoom}
             exportTitle={appTitle}
             exportScenario={scenarioLabel(scenario)} exportRef={diagramExport}
@@ -7828,18 +9299,22 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
           {view==='flows' && <FlowsTable flows={flows} inScenario={inScenario} canEdit={canEditHere} onSetHidden={setRecordsHidden} onSelect={selectFlow} />}
           {view==='elements' && <ElementsTable elements={elements} onSelect={selectElement} />}
           {view==='contributors' && <ContributorsTable contributors={contributors} onSelect={selectContributor} />}
+          {view==='tasks' && <TasksTable tasks={tasks} onSelect={selectTask} />}
           {view==='users' && isAdmin && <UsersScreen currentUser={user} assignableRoles={assignableRoles} notify={notify} />}
           {view==='preferences' && isSuper && <PreferencesScreen notify={notify} roles={ROLE_ORDER}
               onSaved={onSettingsChanged} onTypesChanged={loadSystemTypes}
+              onTaskTypesChanged={loadTaskTypes}
               onDefinitionsChanged={loadFieldDefs} />}
           {view==='audit' && isSuper && <AuditScreen notify={notify} />}
           {view==='releases' && <ReleasesScreen canEdit={isSuper} notify={notify}
                                                 currentVersion={version} />}
-          {['diagram','schema','systems','flows','elements','contributors'].includes(view) &&
+          {['diagram','schema','systems','flows','elements','contributors','tasks'].includes(view) &&
             <DetailPanel data={detailData} type={detailType} onClose={closeDetail} onSave={handleSave}
                          onDelete={deleteRecord} onRetire={retireRecord}
                          fieldMeta={fieldMeta}
-                         systems={systems} onDrill={drillIntoSchema} canEdit={canEditHere}
+                         systems={systems} flows={flows} taskTypes={taskTypes}
+                         onCopyTask={copyTask}
+                         onDrill={drillIntoSchema} canEdit={canEditHere}
                          inScenario={inScenario} onSetHidden={setRecordsHidden}
                          onResetRoute={resetRoute}
                          notify={notify} contributors={contributors} isAdmin={isAdmin}
@@ -7869,6 +9344,9 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
       {showAddContributor && <AddContributorModal onClose={()=>setShowAddContributor(false)}
                                                  onSave={addContributor}
                                                  pickableUsers={pickableUsers} />}
+      {showAddTask && <AddTaskModal onClose={()=>setShowAddTask(false)} onSave={addTask}
+                                   systems={systems} flows={flows}
+                                   contributors={contributors} taskTypes={taskTypes} />}
       {whatsNew.length > 0 && <WhatsNewModal releases={whatsNew}
         onLater={() => setWhatsNew([])} onAcknowledge={acknowledgeReleases} />}
       {whatsNew.length === 0 && alerts.length > 0 && <NotificationsModal items={alerts}

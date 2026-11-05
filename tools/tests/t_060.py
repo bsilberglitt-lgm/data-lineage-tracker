@@ -19,37 +19,15 @@ audited against the person who made it; and the existing password endpoint
 still revokes other sessions, which the profile window now relies on.
 """
 import json
+import os
 import sys
-import urllib.error
-import urllib.request
-import http.cookiejar
-
-B = "http://localhost:" + sys.argv[1]
 
 
-def S():
-    cj = http.cookiejar.CookieJar()
-    return {"op": urllib.request.build_opener(
-        urllib.request.HTTPCookieProcessor(cj)), "t": None}
-
-
-def rq(s, method, path, body=None):
-    data = json.dumps(body).encode() if body is not None else None
-    headers = {"Content-Type": "application/json"}
-    if s["t"]:
-        headers["X-CSRF-Token"] = s["t"]
-    req = urllib.request.Request(B + path, data=data, method=method,
-                                 headers=headers)
-    try:
-        raw = s["op"].open(req).read().decode()
-        return 200, (json.loads(raw) if raw else {})
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode()
-        try:
-            return e.code, json.loads(raw)
-        except ValueError:
-            return e.code, raw[:200]
-
+# Credentials, the connection and signing in all come from _client.py, so no
+# suite carries a hardcoded password and none of them changes one. See the
+# comment at the top of that file for why that matters.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _client import sign_in, session as S, request as rq, BASE as B  # noqa: E402
 
 P, F = [], []
 
@@ -59,19 +37,15 @@ def ck(l, c, d=""):
     print(f"  {'PASS' if c else 'FAIL'}  {l}" + (f"   [{d}]" if not c and d else ""))
 
 
-boss = S()
-st, b = rq(boss, "POST", "/api/auth/login",
-           {"email": "ben.silberglitt@maine.gov", "password": "Bootstrap-Temp-7xQ!"})
-boss["t"] = b["csrf_token"]
-rq(boss, "POST", "/api/auth/change-password",
-   {"current_password": "Bootstrap-Temp-7xQ!", "new_password": "Quartz-Vault-88#z"})
+boss = sign_in()
 
 # ------------------------------------------------------- a Viewer to act as
 TEMP, REAL = "Thistle-Quay-52#k", "Bramble-Harbor-71#v"
 st, _ = rq(boss, "POST", "/api/users",
            {"email": "p.lowell@maine.gov", "first_name": "Pat",
             "last_name": "Lowell", "role": "Viewer", "password": TEMP})
-ck("a Viewer account was created", st == 200, str(st))
+# 201 on creation: the shared client reports real status codes.
+ck("a Viewer account was created", st in (200, 201), str(st))
 
 viewer = S()
 st, vb = rq(viewer, "POST", "/api/auth/login",

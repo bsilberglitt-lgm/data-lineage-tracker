@@ -89,6 +89,51 @@ blindness, and both are stated in text for screen readers.
 
 ---
 
+## 1b. A task's circle on the diagram (v0.7.0)
+
+A task is drawn as a small circle, and one attached to a system sits **inside**
+that system's box — so the ring has to read against every fill in
+`TYPE_PALETTE`, not just against the canvas.
+
+| Ring colour | Worst palette fill | Ratio | On white |
+|---|---|---|---|
+| **`#1B3A5C` (chosen)** | purple `#e8daef` | **8.69:1** | 11.63:1 |
+| `#D4772C` (the app's selected orange) | purple `#e8daef` | **2.43:1 — fails** | 3.24:1 |
+
+The second row is why **selection is an outer halo rather than a recolour**.
+Recolouring the ring to the selected orange was the first attempt and it is
+worse than useless: at 2.43:1 it is under the 3:1 WCAG 1.4.11 requires for a
+non-text indicator, so a selected task inside a purple box would have been
+*less* visible than an unselected one. The dark ring stays and the orange is
+drawn as a concentric ring outside it, where its neighbours are the dark ring
+(3.58:1) and the fill.
+
+Checked against all eight palette fills, not a chosen one: purple 8.69, green
+8.71, blue 9.46, orange 9.54, teal 9.61, plus white 11.63 and the scenario
+tint 10.82. The worst case is what matters, and it is not the lightest fill —
+an earlier note in CLAUDE.md said 9.4:1 on the basis of that wrong assumption.
+
+The circle's **fill** is `#dfe3e8`, a soft grey. The ring reads 9.02:1 against
+it, so the outline stays crisp. The fill is decorative: against some box fills
+it is nearly the same luminance (1.01:1 on magenta), and it is the **ring**
+that delineates the shape, which is what 1.4.11 asks of a non-text indicator.
+The circle carried a letter "T" in the first version and does not now — a
+single letter inside an 11px circle was illegible at the zoom levels people
+actually use, and it is not a label in any language.
+
+**Colour is not the only cue.** Selection also opens the details flyout. A
+proposed task is drawn with a **dashed** ring and a retired one is struck
+through, matching systems and flows — patterns, not colours. The status is in
+the circle's tooltip as words, and the whole task list is available as a table
+in the Tasks catalog, which is what a screen reader user will use.
+
+**Known gap:** the circle is a drag target with no keyboard equivalent, the
+same gap the system boxes and arrow handles already have. Positions are
+layout-only, so nothing is unreachable — a task is fully readable and editable
+from the Tasks catalog and its flyout — but repositioning one needs a mouse.
+
+---
+
 ## 2. Colour blindness
 
 Source-blue and Destination-green were checked under simulated deuteranopia
@@ -134,9 +179,13 @@ Added in this release:
 Reported honestly rather than left for someone to discover:
 
 - **The diagram itself is not navigable by screen reader.** It is an image with
-  a summary. The equivalent information is fully available in the Systems and
-  Data Flows tables, which is the standard approach for a complex visualisation,
-  but it is not the same experience.
+  a summary. The equivalent information is fully available in the Systems, Data
+  Flows and Tasks tables, which is the standard approach for a complex
+  visualisation, but it is not the same experience.
+- **A task's circle cannot be repositioned from the keyboard**, the same gap
+  the system boxes and the arrow handles already have. Nothing is unreachable
+  — position is layout only, and a task is fully readable and editable from the
+  Tasks catalog — but moving one needs a mouse.
 - **Focus is not trapped inside modals.** Tabbing can move behind an open
   dialog. Closing with Escape is also not yet wired up.
 - **Focus is not moved to a dialog when it opens**, nor returned to the button

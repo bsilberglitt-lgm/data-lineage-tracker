@@ -12,7 +12,7 @@ window, in the edit control and in the read view — every test that asked "can
 the server store an owner?" passed, because the test sent `owner_id` itself. The
 browser never did. So the test has to send what the browser sends.
 """
-import json
+import json,os
 import re
 import sys
 import urllib.error
@@ -20,7 +20,6 @@ import urllib.request
 import http.cookiejar
 from pathlib import Path
 
-B = "http://localhost:" + sys.argv[1]
 
 # The repository, whether this is run from the project or from /tmp/h2.
 HERE = Path(__file__).resolve().parent.parent.parent
@@ -29,29 +28,11 @@ if not HTML.exists():
     HTML = Path("/tmp/h2/static/index.html")
 
 
-def S():
-    cj = http.cookiejar.CookieJar()
-    return {"op": urllib.request.build_opener(
-        urllib.request.HTTPCookieProcessor(cj)), "t": None}
-
-
-def rq(s, method, path, body=None):
-    data = json.dumps(body).encode() if body is not None else None
-    headers = {"Content-Type": "application/json"}
-    if s["t"]:
-        headers["X-CSRF-Token"] = s["t"]
-    req = urllib.request.Request(B + path, data=data, method=method,
-                                 headers=headers)
-    try:
-        raw = s["op"].open(req).read().decode()
-        return 200, (json.loads(raw) if raw else {})
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode()
-        try:
-            return e.code, json.loads(raw)
-        except ValueError:
-            return e.code, raw[:200]
-
+# Credentials, the connection and signing in all come from _client.py, so no
+# suite carries a hardcoded password and none of them changes one. See the
+# comment at the top of that file for why that matters.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _client import sign_in, session as S, request as rq, BASE as B  # noqa: E402
 
 P, F = [], []
 
@@ -72,18 +53,16 @@ def payload_keys(kind):
     return set(re.findall(r"(\w+):\s*form\.", m.group(1)))
 
 
-boss = S()
-st, b = rq(boss, "POST", "/api/auth/login",
-           {"email": "ben.silberglitt@maine.gov", "password": "Bootstrap-Temp-7xQ!"})
-boss["t"] = b["csrf_token"]
-rq(boss, "POST", "/api/auth/change-password",
-   {"current_password": "Bootstrap-Temp-7xQ!", "new_password": "Quartz-Vault-88#z"})
+boss = sign_in()
 
 st, person = rq(boss, "POST", "/api/contributors",
                 {"name": "Dana Rowe", "title": "Data Governance Lead",
                  "email": "dana.rowe@maine.gov"})
 cid = person.get("contributor_id")
-ck("a contributor to assign", st == 200 and bool(cid), f"{st} {person}")
+# `in (200, 201)` because the shared client reports the real status code and
+# a creation answers 201. The suite-local helper this replaced flattened
+# every success to 200, which is why these read as 200 originally.
+ck("a contributor to assign", st in (200, 201) and bool(cid), f"{st} {person}")
 
 # ------------------------------------------------- data flow Owner, as sent
 print("-- data flow Owner, using the payload the browser builds --")
@@ -228,7 +207,7 @@ st, _ = rq(boss, "POST", "/api/users",
            {"email": "w.abbott@maine.gov", "first_name": "Wren",
             "last_name": "Abbott", "role": "Editor", "password": TEMP,
             "contributor_id": cid2})
-ck("a linked user account was created", st == 200, str(st))
+ck("a linked user account was created", st in (200, 201), str(st))
 
 st, refs = rq(boss, "GET", f"/api/contributors/{cid2}/references")
 ck("the references endpoint answers", st == 200, str(st))

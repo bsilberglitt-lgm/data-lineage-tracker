@@ -346,8 +346,22 @@ assistant's sandbox, so geometry that reaches into the DOM is geometry nobody
 can check until Ben clicks on it.
 
 ```bash
-node tools/tests/t_align.js
+./tools/run_geometry_tests.sh    # all of them, in Docker — no local Node
+node tools/tests/t_align.js      # one of them, if Node is installed
 ```
+
+**The Docker wrapper exists because Node is not a reasonable thing to require.**
+Ben hit `node: command not found` at checklist step 1b-iii, and installing a
+runtime on his Mac to run four dependency-free test files is the wrong trade
+when Docker is already required for local development and for
+`tools/check_jsx.sh`. `run_geometry_tests.sh` mounts the project read-only into
+`node:20-alpine` and throws the container away; unlike `check_jsx.sh` there is
+no npm install, so there is no registry to fail.
+
+Its `SUITES` list is written out rather than globbed, deliberately: a new suite
+has to be added there on purpose, because a suite that silently stops being run
+is worse than one that does not exist — the checklist would claim it passed.
+Add new geometry suites to that list.
 
 Two properties the suite exists to protect:
 
@@ -667,6 +681,498 @@ deliberate order: anchor dots first, then grab handles on top, because the two
 share coordinates at the arrow's current end and the handle must be the one
 that receives the drag. Keep it there. A bug of this shape looks exactly like a
 dead event handler, so check the render order before debugging the handler.
+
+### The Add buttons live inside the stats bar
+
+`STATS_BAR_VIEWS` decides which views get the counts bar across the top, and
+the Add buttons are rendered **inside** that bar — one cluster, because two
+`margin-left: auto` siblings push each other apart. So a view missing from that
+list loses its Add button as well as its counts, with no error anywhere.
+
+That is what happened to Tasks in 0.7.0. `+ Add Task` was written with the
+right condition and appeared on the diagram, which shares the bar with Add
+System and Add Flow, and never appeared on the Tasks catalog at all. Ben found
+it in a minute; nothing automated could, because the JSX is valid, the button
+exists, and every suite passes. The list used to be written inline at the gate,
+which is why the relationship was invisible — it is a named constant now, with
+the invariant stated at both ends.
+
+**When adding a record type, add its view to `STATS_BAR_VIEWS` first.** The
+general lesson is the same one as the reused CSS classes: a control that is
+correct in isolation can still never render, and only looking at the page finds
+it.
+
+### Tasks: one parent, one set of dates, and a status it does not own
+
+A task (0.7.0, migration 0016) is the work a flow or a store depends on — the
+validation steps before a load is accepted, the stored procedure somebody runs,
+the file a person moves by hand. Five decisions are load-bearing.
+
+**Exactly one parent, and it must be in the view being written.** `anchor_kind`
++ `anchor_id` rather than two nullable foreign keys, which would have allowed a
+task attached to both or to neither. `check_task_anchor` also refuses a parent
+belonging to a *different* view: a scenario task pointing at a live system is
+the cross-view reference the leak tests exist for, and it would draw a circle
+on a diagram where its parent does not exist.
+
+**No recurrence.** The first sketch had several date pairs per task with a flag
+marking the active one; that flag goes stale and the status light then quietly
+lies, which is worse than no light. A quarterly job is four tasks, made with
+the copy action, so March's outcome stays visible in June. That removed an
+occurrences table and all the active-pair arithmetic with it.
+
+**The copy carries everything except the dates and the progress.** Type,
+parent, description, notes, the people and the whole checklist come across;
+dates come up blank and every step resets to Not started. The dates are the one
+thing that differs between occurrences, and a copy pre-filled with March's
+would be wrong in a way nobody notices until it is overdue. The position is
+dropped too — two circles at identical coordinates look like one, and the copy
+would be undraggable under the original.
+
+**A task with subtasks does not own its status.** `derived_task_status`
+computes it, and `task_rows` resolves it on *read* as well as on write, so a
+row edited directly in the database still reports something true. Only a task
+with no subtasks carries a status set by hand, and the edit view shows it as a
+value with a line saying why rather than as a disabled control — a missing
+control looks like a bug.
+
+**A status nobody has set is NULL, not "Not started"** (migration 0019). Those
+are different facts, and a diagram where nothing has been assessed should not
+look like one where everything has been assessed and found not to have begun.
+Three consequences, each with a test: an unset subtask is ignored when
+deriving; the circle's tooltip leaves the parentheses out rather than printing
+"Name ()"; and the catalog shows a dash.
+
+Two rules in the derivation are easy to get wrong, and I got both wrong once:
+
+* **Once a task has subtasks, the answer is theirs — including "nothing".**
+  Leaving the hand-set value showing through when the subtasks say nothing put
+  a stale "Completed" under a field captioned *Determined based on subtasks*,
+  which contradicts its own caption. `apply_task_status` therefore writes NULL
+  in that case, and `status_from_steps` means "has subtasks", not "produced a
+  value".
+* **"All completed" is asked of EVERY subtask, not only the ones with a
+  status.** Filtering the unset ones out of that question made one finished
+  subtask out of three report the whole task Completed. An unset subtask is not
+  a finished one. The "any started" test *is* over the ones that said
+  something, which is the asymmetry to preserve.
+
+**Subtasks are replaced wholesale, not diffed.** They are an ordered list a
+person edits as a list — reordering, inserting in the middle, deleting — and
+matching that up row by row produces either a diff algorithm or a pile of edge
+cases. Their statuses and dates travel in the payload, so nothing is lost.
+
+**"Subtask" in the UI, `task_step` in the database.** Ben renamed them after
+0.7.0 was built, by which point 0016 had run. Renaming the table would have
+meant editing a migration that has already run, which is the one thing this
+file says never to do, so the schema keeps `task_step`, the API payload keeps
+the `steps` key, and every word a user sees says subtask. The frontend
+component is `TaskSubtasks`. If the schema is ever renamed it needs a new
+migration and a sweep of both names — do not fix it by editing 0016.
+
+**A subtask has its own expected start and end** (migration 0017), independent
+of the task's. The task's pair is the outer window; a validation whose first
+check happens the day a file lands and whose sign-off is a week later has two
+dates that matter, and one range over the whole task hides which part is late.
+Either end may be blank, so `dateRangeLabel` reads "from X", "due Y" or
+"X to Y" rather than printing a dangling half-range. The copy action drops a
+subtask's dates for the same reason it drops the task's.
+
+`pos_main` / `pos_cross` are named for their role, not an axis, because the
+meaning depends on the parent: a fraction along the path plus a perpendicular
+offset on a flow, two offsets from the box origin on a system. Changing a
+task's parent therefore clears both, server-side and in the panel, so the
+default placement runs again.
+
+**A task's documents go through the same Resources machinery.**
+`RESOURCE_PARENTS` is the whole switch — adding `"task": ("task", "task_id")`
+and widening one route pattern was the entire change, because
+`require_parent_in_view` already works for any scoped table with an id. A
+task's documents are the procedure somebody follows to do it: the checklist,
+the spreadsheet template, the memo saying who signed off. They are deleted with
+the task, and with the task's parent.
+
+**Tasks have no `is_hidden`, deliberately.** Scenario focus hides systems and
+flows to declutter the diagram; a task is drawn on its parent, so it disappears
+and returns with it. The tasks GET is the one scoped read that does not pass
+`respect_hidden` — a second flag would be another thing to keep in step, and a
+task hidden while its system shows would be a circle nobody could find.
+
+**A subtask's rows in the flyout are hand-written, not `ReadField`s.**
+`ReadField` resolves field hiding by **label**, so a task field hidden in
+Preferences called "Status" would blank every subtask's status as well — two
+unrelated things that happen to share a word. The subtask block therefore draws
+its own `field-row`s: a number, then each value labelled, with a rule between
+subtasks. The first version crammed status, person and both dates into one grey
+line under the description, which read as a jumble and made a value nobody had
+entered indistinguishable from one that was not being displayed.
+
+**Steps, assignments and the parent are not catalogued fields.** The parent is
+two columns answered by one choice; the people and the steps are lists. None
+has a single column for a definition or for hiding to resolve against, so all
+three are hand-written, like the four blocks on a data flow. `t_tasks.py`
+asserts their *absence* from the catalogue, so the next person to add a field
+component there finds out on purpose.
+
+### Feature suites sign in through `tools/tests/_client.py`
+
+Eleven suites each opened with the same copied block: log in as
+`ben.silberglitt@maine.gov` with the sandbox bootstrap password, then
+`change-password` to a literal out of the test file. Two faults, and the second
+is the serious one.
+
+**It only worked on a database nobody had used.** On a real local database the
+login fails and the next line dies with `KeyError: 'csrf_token'`, which names
+nothing. Ben hit exactly that at checklist step 3b.
+
+**And had the login succeeded it would have rewritten his password.** A test
+that changes the credentials of the account it borrows is a footgun; it stayed
+harmless only because it could not get in.
+
+So credentials come from `--email` plus a prompt (`--password` and
+`TEST_PASSWORD` exist for the harness, which has no terminal), the sign-in is
+**checked** rather than indexed into, and **nothing changes a password** — an
+account whose password is still temporary is refused with the same message
+`selftest.py` gives. The one-time bootstrap change is the harness's job, not a
+suite's.
+
+**And no suite may demand a pristine database.** `t_fieldhide` asserted
+"nothing is hidden to begin with", which is true only of a database nobody has
+used — so on Ben's own local app, where he had hidden a field in Preferences
+while testing that very feature, his correct setting was reported as a test
+failure. It now records what was already hidden, asserts the *invariant* the
+original check was reaching for (the catalogue and `/api/field-definitions`
+agree about the hidden set, despite being keyed differently), picks a victim
+field that is **not** already hidden, and **restores every field it touched to
+the state it found** rather than to visible. A closing check proves it.
+
+The general rule, the same one as the password: **a suite borrows the database,
+it does not own it.** Leave settings as they were, and assert relationships
+rather than a starting state you do not control.
+
+Three more things to know when touching these:
+
+* **`request` returns the real status code.** The old per-suite helper
+  flattened every success to 200, so `ck(..., st == 200)` on a creation passed
+  by accident. Those are `in (200, 201)` now. A new assertion should expect the
+  real code.
+* **Some suites keep their own `rq`** — `t_041` and `t_044` take an extra
+  `sc=` scenario argument, `t_branding` returns three values. Those call
+  `sign_in_with(S(), rq)` and borrow only the sign-in. Importing `request` over
+  the top of one of those shadows it and breaks the suite at its first scoped
+  call, which is how I broke `t_044` mid-conversion.
+* **No suite may hardcode a path, or depend on the working directory.**
+  `t_041` read `/tmp/h2/static/index.html`, so it could only ever run in the
+  sandbox. `t_fieldhide` and `t_fielddefs` did `sys.path.insert(0, ".")` to
+  find `field_catalog`, which works only when run from the project root. All
+  three now search relative to the test file first, then the working
+  directory, then the harness's flat copy.
+* **No suite may import `app`.** `t_fielddefs` did, for one list —
+  `SEED_FIELD_DEFINITIONS` — and importing `app` drags in `db`, which needs
+  `psycopg_pool`. That package lives in the Docker image, not on a Mac, so the
+  suite died with `ModuleNotFoundError` four checks in. It parses the list out
+  of `app.py` with `ast.literal_eval` instead: no import, no dependencies,
+  nothing executed. **A test that reads one constant should not need the whole
+  application, its database driver and a connection pool.**
+
+  `t_publish` is the one exception and is harness-only by design — it imports
+  `app` and reads the SQLite file directly. Its docstring says so, and it is
+  deliberately absent from the checklist.
+
+### Proposed was accepted by the server and had no control
+
+A task has carried `change_state` since 0016 and the update handler has always
+honoured `proposed` — the **checkbox was simply never drawn** in the task edit
+view, so the state could be set when creating a task inside a scenario and
+never changed afterwards.
+
+That is the silently-unsaveable-field problem from the opposite direction, and
+worth naming because `check_payloads.py` cannot see it: that check asks whether
+the browser sends every field the server accepts, and the browser *was* sending
+`proposed` — `saveEdit` adds it for every scenario edit. What was missing was a
+way for a person to change the value it sends. **A payload check proves the
+wiring, not that a control exists.**
+
+The checkbox is first in the section and only inside a scenario, matching
+`SystemEditView` and `FlowEditView`, and unticking it writes `unchanged`
+without touching `removed` — retiring has its own action. `t_tasks.py` toggles
+it both ways, because "it can be turned on" says nothing about whether it can
+be turned off.
+
+### A "do something" line in a dropdown is styled on the SELECT
+
+"Add Status" and "Add Contributor" are the empty option in their dropdowns,
+phrased as invitations rather than as values, and they are drawn grey and
+italic by a class on the **`<select>`** — `.select-hint` — not on the
+`<option>`.
+
+Styling the option is the obvious thing and it fails on macOS: the system draws
+native select popups itself and ignores `option { color; font-style }`
+entirely. So it looked right on one platform and did nothing on Ben's. The
+option keeps the class too, for the browsers that do honour it, but nothing
+depends on that.
+
+The class is applied when the current value matches an option marked
+`hint: true` (`selectHintClass`), so the italics disappear by themselves the
+moment a real value is chosen rather than needing to be cleared.
+
+### A status that cannot be recognised was dropped, not cleared
+
+Before migration 0019 the task update handler read:
+
+```python
+if key == "status" and value not in TASK_STATUSES: continue
+```
+
+So choosing the empty option and saving sent `status: null`, the handler
+**skipped the key entirely**, and the old status stayed — the control moved,
+the save reported success, nothing changed. Precisely the
+silently-unsaveable-field shape this project keeps finding, from a `continue`
+that looked like input validation.
+
+It now clears on `None`, `""` or `"none"` and ignores only genuinely
+unrecognised words. `t_tasks.py` drives **the whole payload
+`DetailPanel.saveEdit` builds**, not just the one field, because a partial
+request proves the handler works and says nothing about what the browser
+actually sends.
+
+### "Other" is a constant, not a row in `task_type`
+
+A task type is a controlled list a SuperAdmin owns, but somebody creating a
+task should not be blocked because nothing fits and they cannot edit the list.
+So **"Other" is always offered**, with `task.task_type_other` (migration 0018)
+holding what they typed, and `task_type_label` reading the two as
+"Other — Annual certification".
+
+Two things it deliberately is not:
+
+* **Not a row in `task_type`.** `ensure_task_types` seeds only an empty table,
+  so a seeded row would appear on new installations and never on an existing
+  one — a split nobody notices until a user asks why they cannot see it.
+  `TASK_TYPE_OTHER` is a constant, `/api/task-types` reports it so the browser
+  is not the second place that decides the word, and adding a type literally
+  called "Other" is refused with a 409 saying why.
+* **Not a value that lands in `task_type`.** Writing the typed wording there
+  would make every Editor a type author by the back door, which is exactly the
+  boundary `TaskTypesHandler` draws, and fifty one-off spellings would make the
+  catalog's Type column useless.
+
+`check_task_type` is one function because create, edit and copy all ask the
+same question; a type accepted on create and refused on edit is the sort of
+asymmetry that only surfaces when somebody tries to fix a typo. Changing the
+type away from "Other" **clears** the wording, so it cannot linger and
+reappear looking like something they typed.
+
+### A 405 means a route that does not exist
+
+`AppStaticFileHandler` is mounted at `r"/(.*)"` and, being a
+`StaticFileHandler`, supports only GET and HEAD. So **any request that matches
+no API route falls through to it, and a PUT or POST there returns 405 Method
+Not Allowed** — not 404. That is what an un-restarted server looks like from
+the browser.
+
+It happened the moment tasks reached the diagram. `index.html` is deliberately
+never cached (see `set_extra_headers`), so Ben's browser picked up the new
+frontend immediately while the running Python process still had the old route
+table: `PUT /api/tasks/<id>/position` did not exist, hit the static handler,
+and returned 405. Three separate symptoms, one cause — and a fourth, because
+the failed position call aborted `addTask` before its `refresh()`, so a second
+task appeared not to be created at all.
+
+**When a 405 appears on an endpoint that plainly exists in `app.py`, restart
+before debugging.** Python route tables are read once at startup.
+
+The lasting fix is that creating a task no longer depends on placing it:
+`placeTask` catches its own failure and says so, and the refresh and the
+notification happen either way. A second request must never be able to make a
+successful first one look like a failure.
+
+### Tasks on the diagram: a circle, and where it goes
+
+`pos_main` / `pos_cross` mean different things depending on the parent, so the
+placement geometry is a set of **pure functions** — `pointAlong`, `taskPoint`,
+`taskFlowSlot`, `taskSystemSlot`, `defaultTaskSlot`, `taskDropPosition` — and
+`tools/tests/t_taskpos.js` exercises all of them in Node. The same reason as
+the alignment geometry: there is no browser in the assistant's sandbox, so
+placement that reached into the DOM would be placement nobody could check until
+Ben clicked on it.
+
+```bash
+node tools/tests/t_taskpos.js
+```
+
+**`taskPoint` reads `x_pos` / `y_pos`.** This is the second time that mistake
+was available to make — `alignSnap` read `o.x` / `o.y` and no guide ever
+appeared, while the Node suite passed because its fixtures shared the code's
+wrong assumption. So the suite asserts an `x`/`y`-shaped system places
+**nothing**, and greps the production call site for `x_pos`.
+
+**The circles are painted after the systems.** A task on a system sits *inside*
+its box, so drawn earlier it is covered by exactly the box it belongs to — the
+same trap as the anchor dots in 0.4.1, and it looks like a dead click handler
+rather than a paint-order mistake. SVG has no z-index; keep them last.
+
+**One gesture.** Pressing a circle starts a drag; releasing without having
+moved opens the record. The `moved` flag is what makes that work — without it
+every attempt to open a task would also save the position it already had, which
+would be a pointless write on every click.
+
+**Position goes to `/api/tasks/<id>/position`, not the task's PUT.** Same
+reasoning as `FlowRouteHandler`: dragging a circle to tidy a diagram is layout,
+so it is **not audited** and does not mark a scenario record as Modified.
+Tidying a picture should not make a plan look like it changed. `t_tasks.py`
+asserts the audit total does not move — counted, not searched for a field name,
+because a task's *creation* records `pos_main` among its values and searching
+finds that instead.
+
+**The default slot is computed in the browser**, by `defaultTaskSlot`, because
+only the browser knows where the arrows currently run: a flow's path depends on
+resolved anchors and waypoints that the server never computes. On a flow the
+first circle sits at the midpoint and a *label height* off the line — the
+label box occupies about 23px above its anchor at the same midpoint, so the
+circle goes clear of it — and a second task slides **along** the path rather
+than further out, alternating either side of the middle. Drifting outward would
+stop it looking attached to its line. In a system it is the first free slot
+filling from the top-left, and once the box is full it stacks rather than
+spilling outside, because a circle outside its own system is worse than two
+overlapping.
+
+**Colour coding is still to come.** Every circle currently reads the same, with
+the status in its tooltip, and the legend says only "Task". One neutral circle
+now is better than a palette that has to be explained before it is finished.
+
+The circle carried a letter "T" in the first version and does not now: a single
+letter inside an 11px circle is illegible at the zoom levels people actually
+use, and it is not a label in any language. The fill is `#dfe3e8` — the ring
+reads 9.02:1 against it — so the circle looks like an object rather than a hole
+in the diagram. The legend reuses `.task-ring`, sized to match `.legend-color`
+at 14px, so the key cannot drift from the thing it explains, and
+`.legend-divider` rules separate System Types from the task entry and from the
+scenario entries. Without the rules, a circle in a list of coloured squares
+read as a ninth system type.
+
+**Selection is an outer halo, not a recolour — and that is a contrast fix, not
+a style choice.** The ring is `#1B3A5C`: 8.69:1 against the worst of the eight
+`TYPE_PALETTE` fills (purple) and 11.63:1 on white, because a task attached to
+a system is drawn *inside* its box. Recolouring the ring to the app's selected
+orange was the obvious thing and it fails — `#D4772C` is **2.43:1** on that
+purple, under the 3:1 WCAG 1.4.11 wants for a non-text indicator, so a selected
+task inside a purple box would have been *less* visible than an unselected one.
+The dark ring stays and the orange is drawn outside it. **I claimed 9.4:1 for
+this before measuring it properly**: "the lightest fill" is not the worst
+contrast, and this is the third time a contrast claim in this project has been
+wrong on the first pass. Compute it, over every palette entry, before writing
+the number down.
+
+**The legend swatch had to be pinned to a size.** `.canvas-container svg`
+sets `width: 100%; height: 100%` for the diagram, and the legend lives inside
+that container — so a 14px swatch SVG was stretched to the size of the whole
+canvas, and `width`/`height` attributes on the element do not win against a
+stylesheet rule. `.legend svg` pins it to match `.legend-color`. The reused-CSS
+lesson again, from a direction nobody would predict: the rule being inherited
+was written for a completely different element.
+
+**The circle has an invisible hit disc wider than itself.** Hovering and
+grabbing should target the thing you are pointing at, not the thing that is
+drawn: without it the tooltip appeared over only a few pixels and the circle
+was hard to grab at low zoom. It is the first child so nothing drawn later
+steals its events.
+
+**On a flow, a circle sits ON the line — `pos_cross` is forced to zero.** This
+took three goes. A free perpendicular offset let a circle be dragged anywhere
+on the canvas, including inside an unrelated system box. Clamping it to a
+distance fixed that and was still wrong: where two flows run close together, a
+circle a little off one of them is ambiguous between the two, and which flow it
+belongs to is the one thing the circle has to communicate. Centred on the path
+there is nothing to misread, and the gesture is one-dimensional — up and down
+the line, which is all anybody wanted. A non-zero value stored by an earlier
+build is **ignored rather than migrated**, so those circles simply snap onto
+their lines.
+
+That is also why `taskFlowSlot` skips the midpoint: the flow's label is drawn
+there, and sideways is no longer available, so the first circle starts one step
+along the path instead. A system task is still clamped to its box.
+
+**A dragged circle lands at the nearest point on its line, not under the
+cursor.** Worth knowing when reading `t_taskpos.js`: the round-trip check is
+that the stored fraction redraws to the nearest place on the path, which is not
+the same assertion as "back under the pointer".
+
+**The hover card is HTML, not a `<title>` and not `Tooltip`.** All three were
+tried. A `<title>` is what every other thing on this canvas uses, and on
+something as small as a circle it is unusable: the browser waits about a second
+and restarts that timer on every pixel of movement — exactly the complaint
+recorded under "Tooltips: not the `title` attribute", which the rest of the app
+learned years earlier. `Tooltip` cannot be used here either, because it renders
+through a DOM portal and a portal cannot be a child of an SVG node.
+
+So `.task-card` is an absolutely-positioned div beside the `<svg>`, placed from
+the circle's diagram coordinates through the same pan and zoom, appearing on
+`mouseenter` with no delay. `pointer-events: none` matters: without it the card
+comes between the cursor and the circle it describes and the hover flickers.
+The group keeps an `aria-label` with the same text, because a visual card is
+invisible to a screen reader.
+
+### The harness had to learn `op.alter_column`, and read every migration
+
+Two separate faults in `tools/gen_harness_schema.py`, both found by migration
+0019 making `status` nullable, and both of the project's favourite shape — a
+schema change that reaches production and silently misses the test harness.
+
+**SQLite cannot alter a column**, so `op.alter_column(..., nullable=True)` had
+no translation and was dropped in silence: the harness kept the NOT NULL that
+0016's `CREATE TABLE` declared, and inserting a null status failed in the test
+harness and nowhere else. The generator now collects nullability changes in a
+first pass and emits the affected `CREATE TABLE` without that constraint, so
+the harness ends up with the schema the migrations *describe* rather than the
+schema the first one described.
+
+**That first pass has to read the whole `alembic/versions` directory, not
+`sys.argv`.** `harness_setup.py` runs the generator once per migration file, so
+a pass over argv is a pass over one file — and the migration that relaxes a
+column is almost never the one that created it. With argv alone the fix looked
+like it worked and changed nothing.
+
+A guard now exits on an `alter_column` that changes a type or adds a NOT NULL,
+because neither can be translated. A **rename** is accepted only when the new
+name appears in `harness_setup.py`'s preamble, which is where 0002's
+`stakeholder -> contributor` is written out by hand — so a future rename that
+nobody adds there fails here rather than six suites later. The first attempt
+failed on every rename including that one, which is the same mistake as the
+first `op.execute` guard: a blanket rule that does not know which cases are
+already handled.
+
+### The harness ignores raw DDL in `op.execute`
+
+`tools/gen_harness_schema.py` translates `op.create_table` and `op.add_column`
+and nothing else, so a migration that writes its DDL as
+`op.execute("ALTER TABLE …")` is **silently absent from the harness schema**
+and every suite touching the new column fails with *no such column* — which
+reads as a bug in the feature. That is the same failure shape as 0012's missing
+table and 0012's dropped default, so the generator now **exits** on an
+`op.execute` carrying `ALTER TABLE` or `CREATE TABLE`.
+
+One exception, and it is principled rather than a special case: a statement
+with `IF NOT EXISTS` / `IF EXISTS` is a catch-up repairing a column onto a
+database whose earlier `create_table` ran without it. A harness built from the
+migrations in order already has the column, so skipping the statement is
+correct. Migration 0006 is exactly that, and it is why a blanket failure was
+wrong on the first attempt.
+
+So: use `op.add_column` when you can. The idempotent form is for repairing a
+migration that already ran, not a default to reach for — migration 0017 adds
+two genuinely new columns and uses plain `add_column` for this reason.
+
+### `_columns` had a dead branch, and tasks reached it
+
+`scenarios._columns` falls back to the cursor's `description` for an empty
+table. Nothing had ever run it: `system`, `data_flow` and `flow_element` are
+never empty in a database worth cloning. A new installation with no tasks hit
+it and every scenario creation 500'd with *'_Col' object is not subscriptable*.
+**A description entry is not reliably a tuple** — psycopg exposes `.name`,
+sqlite3's are plain tuples — so it reads the attribute first and indexes only
+as a fallback. Worth remembering because the harness is SQLite and production
+is PostgreSQL: a branch exercised by neither is a branch that is wrong.
 
 ## Accessibility
 
