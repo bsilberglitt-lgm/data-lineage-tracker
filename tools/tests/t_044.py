@@ -26,14 +26,7 @@ What this pins down:
      the version history.
 """
 import io, json, sys, urllib.request, urllib.error, http.cookiejar, uuid
-
-B = "http://localhost:" + sys.argv[1]
-
-
-def S():
-    j = http.cookiejar.CookieJar()
-    return {"op": urllib.request.build_opener(urllib.request.HTTPCookieProcessor(j)),
-            "t": None}
+import os
 
 
 def rq(s, m, p, b=None, sc=None):
@@ -86,6 +79,12 @@ def members_of(s, sid):
     return one.get("members", []) if one else []
 
 
+# Credentials and signing in come from _client.py — no hardcoded password, and
+# nothing here changes one. This suite keeps its own `rq`, which takes an extra
+# `sc=` scenario argument, so it borrows just the sign-in.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _client import sign_in_with, session as S, BASE as B  # noqa: E402
+
 P, F = [], []
 
 
@@ -94,12 +93,7 @@ def ck(l, c, d=""):
     print(f"  {'PASS' if c else 'FAIL'}  {l}" + (f"   [{d}]" if not c and d else ""))
 
 
-boss = S()
-st, b = rq(boss, "POST", "/api/auth/login",
-           {"email": "ben.silberglitt@maine.gov", "password": "Bootstrap-Temp-7xQ!"})
-boss["t"] = b["csrf_token"]
-rq(boss, "POST", "/api/auth/change-password",
-   {"current_password": "Bootstrap-Temp-7xQ!", "new_password": "Quartz-Vault-88#z"})
+boss = sign_in_with(S(), rq)
 
 # Two colleagues, so membership can actually be carried.
 people = []

@@ -445,12 +445,21 @@ _RESET = {"scenario_id", "origin_id", "change_state"}
 
 
 def _columns(conn, table):
+    """This table's column names, whether or not it has any rows.
+
+    The empty-table branch was dead code until tasks arrived: `system`,
+    `data_flow` and `flow_element` are never empty in any database that gets
+    cloned, so nothing had ever asked the cursor. A new installation with no
+    tasks reached it and it failed — **a description entry is not reliably a
+    tuple.** psycopg exposes `.name`; sqlite3's are plain tuples. Reading the
+    attribute first and indexing only as a fallback covers both, which matters
+    because the harness is SQLite and production is PostgreSQL.
+    """
     row = conn.execute(f"SELECT * FROM {table} LIMIT 1").fetchone()
     if row is not None:
         return list(dict(row).keys())
-    # Empty table: fall back to asking the database itself.
     cur = conn.execute(f"SELECT * FROM {table} WHERE 1=0")
-    return [d[0] for d in cur.description]
+    return [getattr(d, "name", None) or d[0] for d in cur.description]
 
 
 def clone_into(conn, scenario_id, source_scenario_id=None):
@@ -530,6 +539,71 @@ def clone_into(conn, scenario_id, source_scenario_id=None):
             tuple(link[c] for c in link_cols) + (scenario_id,))
         links += 1
     counts["flow_element"] = links
+
+    # ---- Tasks ----------------------------------------------------------
+    # **Last, and for a reason.** A task is the first record whose parent is
+    # another record, so `anchor_id` can only be remapped once both systems
+    # and flows have been copied and `id_map` is complete. Copy tasks any
+    # earlier and every one of them points at a *live* parent — the
+    # cross-view reference the leak tests exist to catch, and a circle drawn
+    # on a diagram where its system does not exist.
+    #
+    # A task whose parent was not copied (a system removed from the plan, or
+    # a flow dropped just above for having an uncopied endpoint) is dropped
+    # with it, exactly as the flow was.
+    task_cols = _columns(conn, "task")
+    tasks, dropped = 0, 0
+    for row in conn.execute(
+            f"SELECT * FROM task WHERE {src_where}", src_params).fetchall():
+        row = dict(row)
+        new_anchor = id_map.get(row["anchor_id"])
+        if not new_anchor:
+            dropped += 1
+            continue
+        old_id = row["task_id"]
+        new_id = scoped_id(scenario_id, base_id(old_id))
+        id_map[old_id] = new_id
+        row["task_id"] = new_id
+        row["anchor_id"] = new_anchor
+        row["scenario_id"] = scenario_id
+        row["origin_id"] = old_id
+        row["change_state"] = (row.get("change_state") or UNCHANGED) \
+            if source_scenario_id else UNCHANGED
+        names = [c for c in task_cols if c in row]
+        conn.execute(
+            f"INSERT INTO task ({','.join(names)}) "
+            f"VALUES ({','.join('?' for _ in names)})",
+            tuple(row[c] for c in names))
+
+        # Steps and assignments are parts of the task rather than records in
+        # their own right: they carry no scenario_id and are keyed only on
+        # task_id, so copying the task means copying them. Statuses come
+        # across unchanged — a scenario describes the same work as it stands,
+        # not a fresh occurrence of it, which is what the copy action is for.
+        step_cols = [c for c in _columns(conn, "task_step") if c != "step_id"]
+        for st in conn.execute(
+                "SELECT * FROM task_step WHERE task_id=? ORDER BY sort_order, step_id",
+                (old_id,)).fetchall():
+            st = dict(st)
+            st["task_id"] = new_id
+            conn.execute(
+                f"INSERT INTO task_step ({','.join(step_cols)}) "
+                f"VALUES ({','.join('?' for _ in step_cols)})",
+                tuple(st[c] for c in step_cols))
+        for tc in conn.execute(
+                "SELECT * FROM task_contributor WHERE task_id=?",
+                (old_id,)).fetchall():
+            tc = dict(tc)
+            tc["task_id"] = new_id
+            cols = list(tc.keys())
+            conn.execute(
+                f"INSERT INTO task_contributor ({','.join(cols)}) "
+                f"VALUES ({','.join('?' for _ in cols)})",
+                tuple(tc[c] for c in cols))
+        tasks += 1
+    counts["task"] = tasks
+    if dropped:
+        counts["task_dropped"] = dropped
     return counts
 
 

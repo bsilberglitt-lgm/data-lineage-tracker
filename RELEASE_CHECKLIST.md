@@ -137,9 +137,18 @@ startup, and migrations only run at startup.
 
 ## Part 3 — Pre-release verification
 
-Run all of these. They are ordered cheapest-first.
+Run all of these, in order. They are grouped by what each one needs, which is
+also cheapest-first:
 
-- [ ] **1. JSX structural check**
+- **1a–1c** need nothing running. Seconds each.
+- **2** needs Docker.
+- **3a–3b** need the app running: `docker compose up` in another terminal.
+- **4** needs your eyes, and catches what none of the above can.
+
+A new step belongs in the group whose prerequisites it shares — numbering it
+into the wrong group is how one ended up running after step 2.
+
+- [ ] **1a. JSX structural check**
 
   ```bash
   python3 tools/check_jsx.py
@@ -165,14 +174,22 @@ Run all of these. They are ordered cheapest-first.
   python3 tools/check_identifiers.py --check
   ```
 
-- [ ] **1b-iii. Diagram geometry** — alignment snapping, angle snapping and
-  the export extent are pure functions, so they can be checked without a
-  browser. Nothing here proves the dragging *feels* right; that is the
-  click-through:
+- [ ] **1b-iii. Diagram geometry** — alignment snapping, angle snapping, the
+  export extent and where a task's circle sits are pure functions, so they can
+  be checked without a browser. Nothing here proves the dragging *feels*
+  right; that is the click-through:
 
   ```bash
-  node tools/tests/t_align.js
+  ./tools/run_geometry_tests.sh
   ```
+
+  Runs all four geometry suites in Docker, which you already have for local
+  development, so **Node does not need to be installed on your Mac**. Expect
+  four `== tools/tests/...` blocks and `All geometry suites passed.`
+
+  If you do happen to have Node, `node tools/tests/t_align.js` and friends run
+  the same files directly and are quicker. `node: command not found` just means
+  you do not — use the script.
 
 - [ ] **1c. Every field the server accepts is actually sent** — the details
   panel builds its save payloads by hand, and the update handlers write only
@@ -197,7 +214,7 @@ Run all of these. They are ordered cheapest-first.
   First run pulls a Node image and takes a minute. Expect
   `OK — JSX compiles cleanly`.
 
-- [ ] **3. Automated end-to-end test** against local
+- [ ] **3a. Automated end-to-end test** against local
 
   ```bash
   python3 selftest.py --email <your email>
@@ -205,6 +222,32 @@ Run all of these. They are ordered cheapest-first.
 
   It prompts for your password (typing is hidden — no shell-quoting
   problems). Expect **all checks passed**. Any failure blocks the release.
+
+- [ ] **3b. Feature suites** — each release's own checks, against the same
+  running app. They are kept rather than thrown away so a later release cannot
+  quietly undo an earlier one:
+
+  ```bash
+  python3 tools/tests/t_tasks.py --email <your email>      # 0.7.0 — tasks
+  python3 tools/tests/t_060.py --email <your email>        # 0.6.0 — self-service profile
+  python3 tools/tests/t_052.py --email <your email>        # 0.5.2 — payloads, contacts, deactivation
+  python3 tools/tests/t_fieldhide.py --email <your email>  # 0.5.1 — field hiding
+  python3 tools/tests/t_fielddefs.py --email <your email>  # 0.5.0 — field definitions
+  ```
+
+  Each prompts for your password, like `selftest.py`. Add a port only if the
+  app is not on 8765: `t_tasks.py 8765 --email …`.
+
+  Expect **0 failed** from each. They create records as they go — contributors,
+  scenarios, tasks, test user accounts — and clean up very little, so run them
+  against a **local** database you do not mind filling with debris, never
+  against production. They do leave your *settings* alone: field definitions
+  and hidden fields are put back exactly as they were found.
+
+  > These used to carry hardcoded sandbox credentials, which failed on any real
+  > database with `KeyError: 'csrf_token'` and would have **changed the
+  > password** of the account they borrowed if the login had succeeded. They
+  > now prompt, and never change a password.
 
 - [ ] **4. Manual click-through.** *This is the step that catches what the
   others cannot.* Every bug that has reached production so far was invisible
@@ -220,6 +263,14 @@ Run all of these. They are ordered cheapest-first.
 ---
 
 ## Smoke test (run every release)
+
+> **If a PUT or POST returns `405 Method Not Allowed` on an endpoint that is
+> plainly in `app.py`, the server was not restarted.** Unmatched requests fall
+> through to the static file handler, which serves only GET and HEAD. The page
+> itself is never cached, so a browser can be running new frontend code against
+> an old route table. Restart `docker compose up` before debugging anything
+> else.
+
 
 Sign in as a **SuperAdmin** and confirm each:
 
@@ -240,6 +291,60 @@ Sign in as a **SuperAdmin** and confirm each:
 - [ ] **Users**, **Preferences**, and **Release Notes** screens all load
 - [ ] **System types**: the diagram key is alphabetical, its information button
   explains each type, and a SuperAdmin can edit them in Preferences
+- [ ] **Tasks** (0.7.0):
+  - The sidebar shows a **Tasks** count; the catalog lists them with what each
+    is attached to and, where there are steps, how many are done
+  - **+ Add Task is visible on BOTH the lineage diagram and the Tasks
+    catalog**, including when there are no tasks yet. The Add buttons render
+    inside the counts bar, so a view left out of `STATS_BAR_VIEWS` has no Add
+    button at all — check every Add button is where it should be after adding
+    a record type
+  - **+ Add Task**: it refuses to submit without a name, a type and a parent,
+    and the parent dropdown offers systems *and* data flows in one list
+  - Choose **Other** as the type: a box appears, is required, and the record
+    then reads "Other — <what you typed>" in the catalog and the flyout
+  - **Attached to** filters as you type, and the dates open the browser's
+    calendar rather than taking free text
+  - A new task has **no status** until one is chosen, and the dropdown's first
+    line reads "Add Status" rather than a value
+  - Add two subtasks, assign one to somebody, give one a date range, and save;
+    the flyout shows the status as **determined based on subtasks**, not as a
+    control, and each subtask's fields are labelled under its number
+  - Tick one of two subtasks: the task reads **In progress**, not Completed
+  - Tick every subtask; the task reads **Completed**. Untick one; it reads
+    **In progress**
+  - **Copy task**: everything comes across except the dates and the progress,
+    and the copy opens so the dates can be set
+  - Delete the copy; the confirmation says its subtasks go with it
+  - Delete a data flow that has a task; the confirmation **counts the task**
+  - **Preferences → Task Types**: add one, rename one that is in use (it says
+    how many tasks move), and confirm one in use refuses to be removed
+  - **Attach a document and a link** to a task, as you would to a data flow
+  - The flyout names what the task is **attached to**, under its title
+  - On the **lineage diagram**: a circle appears on the flow or inside the
+    system box; hovering names the task and its status; clicking opens the
+    flyout; dragging moves it and it stays put after a refresh
+  - A second task on the same flow does **not** land on the first, and neither
+    sits on top of the flow's label
+  - Dragging a circle does **not** appear in the Audit Log, and does not mark a
+    scenario record as Modified
+  - Move a system box and reroute its arrow — the circles follow
+  - The key shows a **Task** entry at the same size as the system swatches,
+    below a dividing rule, and only once a task exists
+  - Hovering a circle names the task with its status in parentheses — and with
+    no parentheses at all when it has no status
+  - A circle **cannot** be dragged off its flow line or out of its box — on a
+    flow it only slides along the line
+  - The hover card appears **immediately**, not after a pause
+  - Clear a status back to "Add Status" and save: it stays cleared after a
+    refresh
+  - "Add Status" and "Add Contributor" show grey and italic in the closed
+    dropdown
+  - **Export** the diagram and confirm the circles are in the file
+  - Inside a scenario: the tasks are the scenario's own copies, editing one
+    marks it **Modified**, and Current Architecture is untouched
+  - A task's **Proposed** checkbox appears in a scenario, ticks and unticks,
+    and draws the circle with a dashed ring when ticked
 - [ ] With a details panel open, clicking the diagram closes it (and the first
   click does nothing else)
 - [ ] **Required fields**, in all three places a record can be edited — the Add

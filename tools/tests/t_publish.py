@@ -15,6 +15,12 @@ correct behaviour the moment the next release landed:
 
 A test that cries wolf during the normal workflow is worse than no test, so
 this one asserts "matches the code" rather than any particular state.
+
+**Harness-only.** Unlike the other suites this one imports `app` and reads the
+SQLite file named by `FAKE_SQLITE` directly, so it runs in the assistant's
+sandbox and nowhere else — the app's dependencies are not installed on a normal
+machine. It is deliberately absent from the release checklist for that reason;
+do not add it.
 """
 import os, sqlite3
 os.environ.setdefault("DATABASE_URL", "postgresql://fake/fake")

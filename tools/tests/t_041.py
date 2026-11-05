@@ -1,5 +1,17 @@
 import json,re,sys,urllib.request,urllib.error,http.cookiejar,io,uuid
-HTML=open("/tmp/h2/static/index.html").read()
+import os
+# index.html, found relative to this file when the suite sits in the project
+# (tools/tests/) and relative to the working directory when it has been copied
+# somewhere flat, as the assistant's harness does. Hardcoding /tmp/h2 meant
+# this suite could only ever run in the sandbox.
+def _find_index():
+    here=os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(here,"..","..","static","index.html"),
+                 os.path.join(here,"static","index.html"),
+                 os.path.join(os.getcwd(),"static","index.html")):
+        if os.path.exists(cand): return cand
+    raise SystemExit("could not find static/index.html — run this from the project root")
+HTML=open(_find_index()).read()
 m=re.search(r"const UNSCOPED_ENDPOINTS = \[(.*?)\];", HTML, re.S)
 UNSCOPED=re.findall(r"'([^']+)'", m.group(1))
 def scoped(url, sc):
@@ -8,7 +20,11 @@ def scoped(url, sc):
     if not path.startswith("/api/"): return url
     if any(path==p or path.startswith(p+"/") for p in UNSCOPED): return url
     return url + ("&" if "?" in url else "?") + f"scenario={sc}"
-B="http://localhost:"+sys.argv[1]
+# Credentials and signing in come from _client.py — no hardcoded password, and
+# nothing here changes one. This suite keeps its own `rq`, so it borrows just
+# the sign-in; see the comment at the top of _client.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _client import sign_in_with, BASE as B  # noqa: E402
 def S():
     j=http.cookiejar.CookieJar()
     return {"op":urllib.request.build_opener(urllib.request.HTTPCookieProcessor(j)),"t":None}
@@ -45,11 +61,7 @@ P=[];F=[]
 def ck(l,c,d=""):
     (P if c else F).append(l); print(f"  {'PASS' if c else 'FAIL'}  {l}"+(f"   [{d}]" if not c and d else ""))
 
-boss=S(); st,b=rq(boss,"POST","/api/auth/login",
-  {"email":"ben.silberglitt@maine.gov","password":"Bootstrap-Temp-7xQ!"})
-boss["t"]=b["csrf_token"]
-rq(boss,"POST","/api/auth/change-password",
-  {"current_password":"Bootstrap-Temp-7xQ!","new_password":"Quartz-Vault-88#z"})
+boss = sign_in_with(S(), rq)
 st,sc=rq(boss,"POST","/api/scenarios",{"name":"041","start_from":"live"})
 sid=sc["scenario_id"]
 st,sy=rq(boss,"GET","/api/systems",sc=sid)

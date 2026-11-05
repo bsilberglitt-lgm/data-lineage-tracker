@@ -1,5 +1,10 @@
 import json,sys,urllib.request,urllib.error,http.cookiejar
-B="http://localhost:"+sys.argv[1]
+import os
+# Credentials and signing in come from _client.py — no hardcoded password, and
+# nothing here changes one. This suite keeps its own `rq`, so it borrows just
+# the sign-in; see the comment at the top of _client.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _client import sign_in_with, BASE as B  # noqa: E402
 def S():
     j=http.cookiejar.CookieJar()
     return {"op":urllib.request.build_opener(urllib.request.HTTPCookieProcessor(j)),"t":None}
@@ -19,11 +24,7 @@ P=[];F=[]
 def ck(l,c,d=""):
     (P if c else F).append(l); print(f"  {'PASS' if c else 'FAIL'}  {l}"+(f"   [{d}]" if not c and d else ""))
 
-boss=S(); st,b=rq(boss,"POST","/api/auth/login",
-  {"email":"ben.silberglitt@maine.gov","password":"Bootstrap-Temp-7xQ!"})
-boss["t"]=b["csrf_token"]
-rq(boss,"POST","/api/auth/change-password",
-  {"current_password":"Bootstrap-Temp-7xQ!","new_password":"Quartz-Vault-88#z"})
+boss = sign_in_with(S(), rq)
 st,fl=rq(boss,"GET","/api/flows"); fid=fl[0]["flow_id"]
 
 print("-- anchors --")

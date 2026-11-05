@@ -20,10 +20,15 @@ Run against the sandbox harness (no PostgreSQL needed):
     python3 tools/tests/t_branding.py 8900
 """
 import io, json, struct, sys, urllib.request, urllib.error, http.cookiejar, uuid, zlib
+import os
 
-B = "http://localhost:" + sys.argv[1]
 
 
+# Credentials and signing in come from _client.py — no hardcoded password, and
+# nothing here changes one. This suite keeps its own `rq`, so it borrows just
+# the sign-in; see the comment at the top of _client.py.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _client import sign_in_with, BASE as B  # noqa: E402
 def S():
     j = http.cookiejar.CookieJar()
     return {"op": urllib.request.build_opener(urllib.request.HTTPCookieProcessor(j)),
@@ -96,13 +101,7 @@ def ck(l, c, d=""):
     print(f"  {'PASS' if c else 'FAIL'}  {l}" + (f"   [{d}]" if not c and d else ""))
 
 
-boss = S()
-st, b, _ = rq(boss, "POST", "/api/auth/login",
-              {"email": "ben.silberglitt@maine.gov",
-               "password": "Bootstrap-Temp-7xQ!"})
-boss["t"] = b["csrf_token"]
-rq(boss, "POST", "/api/auth/change-password",
-   {"current_password": "Bootstrap-Temp-7xQ!", "new_password": "Quartz-Vault-88#z"})
+boss = sign_in_with(S(), rq)
 
 print("-- nothing uploaded yet --")
 st, r, _ = rq(boss, "GET", "/api/branding")

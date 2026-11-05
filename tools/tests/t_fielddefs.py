@@ -21,20 +21,47 @@ are refused rather than stored, an empty definition deletes rather than storing
 a blank, and the change is audited.
 """
 import json, sys, urllib.request, urllib.error, http.cookiejar
+import os
 
-B = "http://localhost:" + sys.argv[1]
-sys.path.insert(0, ".")
-try:
-    import field_catalog
-except ImportError:                                  # running from /tmp/h2
-    sys.path.insert(0, "/tmp/h2")
-    import field_catalog
+# `field_catalog` is generated into the project root and has no dependencies,
+# so importing it is safe anywhere — but only if it can be found. Looked for
+# relative to THIS FILE first, so the suite does not depend on being run from
+# the project root, then relative to the working directory, then the flat copy
+# the assistant's harness makes.
+for _cand in (os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."),
+              os.getcwd(), os.path.dirname(os.path.abspath(__file__)), "/tmp/h2"):
+    if os.path.exists(os.path.join(_cand, "field_catalog.py")):
+        sys.path.insert(0, _cand)
+        break
+import field_catalog  # noqa: E402
 
 
-def S():
-    j = http.cookiejar.CookieJar()
-    return {"op": urllib.request.build_opener(urllib.request.HTTPCookieProcessor(j)),
-            "t": None}
+def seeded_definitions():
+    """`SEED_FIELD_DEFINITIONS` out of app.py, **without importing app.py.**
+
+    This used to be `import app as _app`, which works only where the app's
+    dependencies are installed. On Ben's Mac they are not — they live in the
+    Docker image — so the import died with `ModuleNotFoundError: psycopg_pool`
+    four checks into the suite. A test that reads one list should not need the
+    whole application, its database driver, or a running connection pool.
+
+    So the list is parsed. `ast.literal_eval` on the assignment's value is safe
+    (no code is executed) and needs nothing installed.
+    """
+    import ast
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(here, "..", "..", "app.py"),
+                 os.path.join(os.getcwd(), "app.py"),
+                 os.path.join(here, "app.py")):
+        if os.path.exists(cand):
+            tree = ast.parse(open(cand).read())
+            for node in tree.body:
+                if (isinstance(node, ast.Assign)
+                        and any(getattr(t, "id", None) == "SEED_FIELD_DEFINITIONS"
+                                for t in node.targets)):
+                    return ast.literal_eval(node.value)
+            raise SystemExit("SEED_FIELD_DEFINITIONS not found in " + cand)
+    raise SystemExit("could not find app.py — run this from the project root")
 
 
 def rq(s, m, p, b=None):
@@ -55,6 +82,12 @@ def rq(s, m, p, b=None):
             return e.code, raw[:200]
 
 
+# Credentials, the connection and signing in all come from _client.py, so no
+# suite carries a hardcoded password and none of them changes one. See the
+# comment at the top of that file for why that matters.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _client import sign_in, session as S, request as rq, BASE as B  # noqa: E402
+
 P, F = [], []
 
 
@@ -63,12 +96,7 @@ def ck(l, c, d=""):
     print(f"  {'PASS' if c else 'FAIL'}  {l}" + (f"   [{d}]" if not c and d else ""))
 
 
-boss = S()
-st, b = rq(boss, "POST", "/api/auth/login",
-           {"email": "ben.silberglitt@maine.gov", "password": "Bootstrap-Temp-7xQ!"})
-boss["t"] = b["csrf_token"]
-rq(boss, "POST", "/api/auth/change-password",
-   {"current_password": "Bootstrap-Temp-7xQ!", "new_password": "Quartz-Vault-88#z"})
+boss = sign_in()
 
 print("-- the catalogue --")
 st, cat = rq(boss, "GET", "/api/field-catalog")
@@ -84,8 +112,7 @@ ck("record types are named for people, not for the database",
 # would otherwise be misread as a different field — see SEED_FIELD_DEFINITIONS
 # in app.py. Everything else must start blank: a definition appearing where
 # nobody wrote one would be indistinguishable from a bug.
-import app as _app  # noqa: E402  (only for the seed list)
-SEEDED = {(e, c) for e, c, _ in _app.SEED_FIELD_DEFINITIONS}
+SEEDED = {(e, c) for e, c, _ in seeded_definitions()}
 unexpected = [f"{f['entity']}.{f['column']}" for f in cat["fields"]
               if f["definition"] and (f["entity"], f["column"]) not in SEEDED]
 ck("nothing is defined except what the app ships with", not unexpected,
