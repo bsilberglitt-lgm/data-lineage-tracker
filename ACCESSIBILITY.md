@@ -113,10 +113,13 @@ Checked against all eight palette fills, not a chosen one: purple 8.69, green
 tint 10.82. The worst case is what matters, and it is not the lightest fill —
 an earlier note in CLAUDE.md said 9.4:1 on the basis of that wrong assumption.
 
-The circle's **fill** is `#dfe3e8`, a soft grey. The ring reads 9.02:1 against
-it, so the outline stays crisp. The fill is decorative: against some box fills
-it is nearly the same luminance (1.01:1 on magenta), and it is the **ring**
-that delineates the shape, which is what 1.4.11 asks of a non-text indicator.
+The circle's **fill** carries the status (see 1c below). The fill is
+decorative as far as the *shape* goes: against some box fills it is nearly the
+same luminance (1.01:1 on magenta), and it is the **ring** that delineates the
+circle, which is what 1.4.11 asks of a non-text indicator. That is also why the
+ring keeps one colour across all five statuses — recolouring it per status
+would put the measurement above back in play five times over.
+
 The circle carried a letter "T" in the first version and does not now — a
 single letter inside an 11px circle was illegible at the zoom levels people
 actually use, and it is not a label in any language.
@@ -124,8 +127,8 @@ actually use, and it is not a label in any language.
 **Colour is not the only cue.** Selection also opens the details flyout. A
 proposed task is drawn with a **dashed** ring and a retired one is struck
 through, matching systems and flows — patterns, not colours. The status is in
-the circle's tooltip as words, and the whole task list is available as a table
-in the Tasks catalog, which is what a screen reader user will use.
+the circle's hover card as words, and the whole task list is available as a
+table in the Tasks catalog, which is what a screen reader user will use.
 
 **Known gap:** the circle is a drag target with no keyboard equivalent, the
 same gap the system boxes and arrow handles already have. Positions are
@@ -133,6 +136,64 @@ layout-only, so nothing is unreachable — a task is fully readable and editable
 from the Tasks catalog and its flyout — but repositioning one needs a mouse.
 
 ---
+
+## 1c. Task status colours (v0.7.1)
+
+The circle's fill says where the work stands. Five states, and the only
+contrast that has to hold is against the ring and the mark drawn inside it —
+both `#1B3A5C`, as above.
+
+| State | Fill | Ring and mark against it |
+|---|---|---|
+| Completed | `#b2dcb6` | 7.64:1 |
+| Past its end date | `#f2b3ab` | **6.54:1 (worst case)** |
+| In progress | `#f6e08f` | 8.85:1 |
+| Not started, past its start date | `#f8c489` | 7.33:1 |
+| Nothing recorded yet | `#dfe3e8` | 9.02:1 |
+
+Every one clears 4.5:1, so the mark passes as text as well as the 3:1 that
+1.4.11 asks of a non-text indicator. Measured over all five fills rather than
+inferred from the lightest — the mistake made twice before in this project and
+recorded in section 1b.
+
+**Each state also draws a mark inside the ring, and that is a requirement
+rather than a flourish.** The five fills cannot be separated by hue: *in
+progress* yellow and *not started, past its start date* orange are 15 degrees
+apart, which is no distinction at all under deuteranopia or protanopia, and
+both sit beside a red at 7 degrees. Hue separation across the set runs from 15
+to 179 degrees, and luminance ratios between pairs from 1.02 to 1.38:1 — so
+anybody relying on lightness alone cannot separate them either. Colour here is
+a fast scan for people who can use it; the mark is the actual distinction, and
+WCAG 1.4.1 is satisfied by the mark, not by the palette.
+
+| State | Mark |
+|---|---|
+| Completed | a tick |
+| Past its end date | an exclamation mark |
+| In progress | a half-filled disc |
+| Not started, past its start date | a hollow inner ring |
+| Nothing recorded yet | **none** |
+
+*Nothing recorded yet* deliberately has no mark: the absence of information is
+shown as an absence, the same way the Tasks catalog shows a dash. And the
+hollow ring is a ring rather than a dash because a horizontal bar is already
+what a retired task draws across itself — two marks that look alike on one
+canvas is worse than one that needs a glance at the key.
+
+The diagram key lists all five with the real circles — the same component the
+diagram draws, so the key cannot drift from what it explains. It appears only
+once something on that diagram is actually colour-coded; with tasks present but
+nothing recorded, the key is a single grey circle labelled "Task", and with no
+tasks at all there is no entry. A key that explains colours appearing nowhere on
+screen is noise, and noise in a key is read past. The hover card
+names the state in words whenever the colour says something the status does
+not, which is the two date-driven states.
+
+**Known gap:** the marks have not been checked at small zoom by anyone but the
+author. They are drawn inside an 11px-radius circle, and the "T" that used to
+sit there was removed for being illegible at the zoom levels people actually
+use. If a mark cannot be read at 0.5x the answer is a larger circle, not a
+cleverer glyph.
 
 ## 2. Colour blindness
 

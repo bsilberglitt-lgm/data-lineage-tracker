@@ -27,7 +27,8 @@ import sys
 # suite carries a hardcoded password and none of them changes one. See the
 # comment at the top of that file for why that matters.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _client import sign_in, session as S, request as rq, BASE as B  # noqa: E402
+from _client import (sign_in, session as S, request as rq,  # noqa: E402
+                     ensure_account, unique_email, BASE as B)
 
 P, F = [], []
 
@@ -40,21 +41,13 @@ def ck(l, c, d=""):
 boss = sign_in()
 
 # ------------------------------------------------------- a Viewer to act as
-TEMP, REAL = "Thistle-Quay-52#k", "Bramble-Harbor-71#v"
-st, _ = rq(boss, "POST", "/api/users",
-           {"email": "p.lowell@maine.gov", "first_name": "Pat",
-            "last_name": "Lowell", "role": "Viewer", "password": TEMP})
-# 201 on creation: the shared client reports real status codes.
-ck("a Viewer account was created", st in (200, 201), str(st))
-
-viewer = S()
-st, vb = rq(viewer, "POST", "/api/auth/login",
-            {"email": "p.lowell@maine.gov", "password": TEMP})
-viewer["t"] = vb.get("csrf_token")
-ck("the Viewer can sign in", st == 200, str(st))
-if vb.get("user", {}).get("must_change_password"):
-    rq(viewer, "POST", "/api/auth/change-password",
-       {"current_password": TEMP, "new_password": REAL})
+TEMP = "Thistle-Quay-52#k"
+# Created, or reset if an earlier run already made it. A plain POST is a 409
+# the second time and the sign-in that follows then fails with 401, which is
+# reported as the profile endpoint being broken. See _client.
+st, viewer, REAL = ensure_account(
+    boss, rq, "p.lowell@maine.gov", "Pat", "Lowell", "Viewer", TEMP)
+ck("the Viewer can sign in", bool(viewer["t"]), f"login {st}")
 
 # --------------------------------------------------------- what they may do
 print("-- a Viewer can change their own name and title --")
@@ -175,15 +168,21 @@ ck("it carries what the window needs and nothing about access",
                                  "linked_contributor_name"},
    str(sorted(listed[0]) if listed else []))
 
+# A brand-new address every run. This block is about an account nobody has
+# touched — a title stored AT CREATION, and an unlinked account being offered
+# in the picker — and the previous run linked `r.hale` to a contributor, so
+# reusing the address makes both checks false. `ensure_account` cannot help:
+# resetting a password does not unlink anything.
+HALE = unique_email("r.hale")
 st, fresh = rq(boss, "POST", "/api/users",
-               {"email": "r.hale@maine.gov", "first_name": "Robin",
+               {"email": HALE, "first_name": "Robin",
                 "last_name": "Hale", "role": "Editor",
                 "password": "Juniper-Vault-37#p", "title": "Systems Architect"})
 ck("a title given at creation is stored", fresh.get("title") == "Systems Architect",
    repr(fresh.get("title")))
 
 st, listed = rq(boss, "GET", "/api/users/pickable")
-robin = next(u for u in listed if u["email"] == "r.hale@maine.gov")
+robin = next(u for u in listed if u["email"] == HALE)
 ck("the new account is offered", robin["linked_contributor_id"] is None,
    repr(robin["linked_contributor_id"]))
 ck("with their title, so the window can show it",
@@ -202,18 +201,18 @@ ck("the email is not copied onto the contributor", not made.get("email"),
 ck("the title is not copied either", not made.get("title"),
    repr(made.get("title")))
 ck("but both resolve from the account",
-   made.get("contact_email") == "r.hale@maine.gov"
+   made.get("contact_email") == HALE
    and made.get("effective_title") == "Systems Architect",
    f"{made.get('contact_email')!r} {made.get('effective_title')!r}")
 
 st, allu = rq(boss, "GET", "/api/users")
-linked = next(u for u in allu if u["email"] == "r.hale@maine.gov")
+linked = next(u for u in allu if u["email"] == HALE)
 ck("the account now points at the contributor",
    linked.get("contributor_id") == made.get("contributor_id"),
    repr(linked.get("contributor_id")))
 
 st, listed = rq(boss, "GET", "/api/users/pickable")
-robin = next(u for u in listed if u["email"] == "r.hale@maine.gov")
+robin = next(u for u in listed if u["email"] == HALE)
 ck("the list now reports them as linked",
    robin["linked_contributor_id"] == made.get("contributor_id"),
    repr(robin["linked_contributor_id"]))
@@ -238,11 +237,17 @@ ck("an unknown account is refused", st == 400, str(st))
 st, _ = rq(boss, "PUT", f"/api/users/{linked['user_id']}", {"is_active": 0})
 st, listed = rq(boss, "GET", "/api/users/pickable")
 ck("a deactivated account drops out of the list",
-   not any(u["email"] == "r.hale@maine.gov" for u in listed))
+   not any(u["email"] == HALE for u in listed))
+# New every run, like HALE above and for the same reason: this proves an
+# account that has never been linked is refused once deactivated, so it has to
+# be an account nobody has linked. A second run against the same database
+# turned the POST into a 409 and the next line into a KeyError.
+VANCE = unique_email("k.vance")
 st, fresh2 = rq(boss, "POST", "/api/users",
-                {"email": "k.vance@maine.gov", "first_name": "Kit",
+                {"email": VANCE, "first_name": "Kit",
                  "last_name": "Vance", "role": "Viewer",
                  "password": "Cobalt-Meadow-84#r"})
+ck("the throwaway account is created", st in (200, 201), str(st))
 rq(boss, "PUT", f"/api/users/{fresh2['user_id']}", {"is_active": 0})
 st, r = rq(boss, "POST", "/api/contributors",
            {"name": "Kit Vance", "link_user_id": fresh2["user_id"]})
@@ -252,7 +257,7 @@ rq(boss, "PUT", f"/api/users/{linked['user_id']}", {"is_active": 1})
 print("-- who may read the list --")
 ed2 = S()
 st, eb2 = rq(ed2, "POST", "/api/auth/login",
-             {"email": "r.hale@maine.gov", "password": "Juniper-Vault-37#p"})
+             {"email": HALE, "password": "Juniper-Vault-37#p"})
 if st == 200:
     ed2["t"] = eb2["csrf_token"]
     if eb2["user"].get("must_change_password"):

@@ -167,6 +167,15 @@ def declared_names(code):
     still catches what it is for.
     """
     names = set()
+    # A single declaration may bind several names: `const NODE_W = 200,
+    # NODE_H = 70, NODE_EDGE = 12`. Matching only the first left NODE_H and
+    # NODE_EDGE looking undeclared, which is a false positive in the safe
+    # direction for the older rules but fatal for rule 5 below.
+    for m in re.finditer(r"\b(?:const|let|var)\s+([^;\n]+)", code):
+        for part in m.group(1).split(","):
+            part = part.split("=")[0].strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", part or ""):
+                names.add(part)
     for pat in (r"\bconst\s+([A-Za-z_$][\w$]*)",
                 r"\blet\s+([A-Za-z_$][\w$]*)",
                 r"\bvar\s+([A-Za-z_$][\w$]*)",
@@ -249,6 +258,52 @@ def main():
             continue
         problems.append((line + offset, name,
                          "called as a function but never declared"))
+
+    # Rule 5 — a prop forwarded from a component that cannot see it.
+    #
+    # `contributors={contributors}` inside a component that never took
+    # `contributors` as a prop throws ReferenceError the instant it renders,
+    # React unmounts the tree, and the page goes blank. That is what
+    # SchemaTableReadView and SchemaColumnReadView did from the first release
+    # with a schema drill-down until Ben clicked a field in 0.7.0.
+    #
+    # Rules 1, 2 and 4 cannot see it — it is not a setter, not an event
+    # handler, not a call — and a whole-file name check cannot either, because
+    # `contributors` IS declared, in `App`. The fault is one of **scope**.
+    #
+    # Being scope-aware in general needs a real JS parser, which is the
+    # 183-false-positive problem. But one case is decidable without one: a
+    # component declared at **column zero** has no enclosing scope except the
+    # module, so a bare name it forwards must be its own prop, its own local,
+    # or module-level. Nested components — declared indented, inside another —
+    # legitimately close over their parent and are skipped.
+    module_level = set()
+    for m in re.finditer(r"^(?:const|let|var)\s+([^;\n]+)", clean, re.M):
+        for part in m.group(1).split(","):
+            part = part.split("=")[0].strip().lstrip("{[").rstrip("}]")
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", part or ""):
+                module_level.add(part)
+    module_level.update(re.findall(r"^function\s+([A-Za-z_$][\w$]*)", clean, re.M))
+    module_level.update(re.findall(r"^class\s+([A-Za-z_$][\w$]*)", clean, re.M))
+
+    tops = [(m.start(), m.group(1))
+            for m in re.finditer(r"^function\s+([A-Z][\w$]*)\s*\(", clean, re.M)]
+    for idx, (pos, cname) in enumerate(tops):
+        end = tops[idx + 1][0] if idx + 1 < len(tops) else len(clean)
+        body = clean[pos:end]
+        own = declared_names(body)
+        for m in re.finditer(r"(?<![\w$.])([a-zA-Z_$][\w$]*)=\{([a-zA-Z_$][\w$]*)\}",
+                             blank_template_text(body)):
+            attr, value = m.group(1), m.group(2)
+            if (value in own or value in module_level or value in GLOBAL_FUNCS
+                    or value in KNOWN_CALLS
+                    or value in ("true", "false", "null", "undefined")):
+                continue
+            line = clean[:pos].count("\n") + body[:m.start()].count("\n") + offset
+            problems.append((line, value,
+                             f"{cname} passes {attr}={{{value}}}, but {value} is "
+                             f"not its prop, not its local, and not module-level "
+                             f"— this throws at render and blanks the page"))
 
     # Rule 3 — a unicode escape outside any string is JSX text, where it is
     # not an escape at all. Checked against a copy with template literals

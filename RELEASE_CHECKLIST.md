@@ -175,17 +175,18 @@ into the wrong group is how one ended up running after step 2.
   ```
 
 - [ ] **1b-iii. Diagram geometry** — alignment snapping, angle snapping, the
-  export extent and where a task's circle sits are pure functions, so they can
-  be checked without a browser. Nothing here proves the dragging *feels*
-  right; that is the click-through:
+  export extent, where a task's circle sits and which colour it takes are pure
+  functions, so they can be checked without a browser. Nothing here proves the
+  dragging *feels* right or that the status marks are legible; those are the
+  click-through:
 
   ```bash
   ./tools/run_geometry_tests.sh
   ```
 
-  Runs all four geometry suites in Docker, which you already have for local
+  Runs all five geometry suites in Docker, which you already have for local
   development, so **Node does not need to be installed on your Mac**. Expect
-  four `== tools/tests/...` blocks and `All geometry suites passed.`
+  five `== tools/tests/...` blocks and `All geometry suites passed.`
 
   If you do happen to have Node, `node tools/tests/t_align.js` and friends run
   the same files directly and are quicker. `node: command not found` just means
@@ -223,6 +224,9 @@ into the wrong group is how one ended up running after step 2.
   It prompts for your password (typing is hidden — no shell-quoting
   problems). Expect **all checks passed**. Any failure blocks the release.
 
+  Add a port only if the app is not on 8765: `python3 selftest.py 8765
+  --email …`. A whole URL works too, which is what Part 6 uses.
+
 - [ ] **3b. Feature suites** — each release's own checks, against the same
   running app. They are kept rather than thrown away so a later release cannot
   quietly undo an earlier one:
@@ -243,6 +247,17 @@ into the wrong group is how one ended up running after step 2.
   against a **local** database you do not mind filling with debris, never
   against production. They do leave your *settings* alone: field definitions
   and hidden fields are put back exactly as they were found.
+
+  Run them in any order, and more than once — the whole set is verified that
+  way, not just one at a time. No suite assumes a database nobody has used, one
+  that an earlier suite has not touched, or one it has not itself run against
+  before.
+
+  > If you ever see a block of failures that are **all permission checks**
+  > (`a Viewer cannot …`, `an Editor can …`), suspect the suite's own test
+  > account rather than the feature. That is what a sign-in returning 401
+  > looks like from the assertions downstream of it, and it is what a second
+  > run against the same database used to cause.
 
   > These used to carry hardcoded sandbox credentials, which failed on any real
   > database with `KeyError: 'csrf_token'` and would have **changed the
@@ -270,6 +285,12 @@ into the wrong group is how one ended up running after step 2.
 > itself is never cached, so a browser can be running new frontend code against
 > an old route table. Restart `docker compose up` before debugging anything
 > else.
+>
+> **And if a new feature simply does nothing — no error, a field that stays
+> blank — suspect the same thing first.** A browser refresh picks up the new
+> frontend immediately; it cannot reload the Python. A value the new server
+> would have sent is just absent, and absent renders as empty. Restart, then
+> look again.
 
 
 Sign in as a **SuperAdmin** and confirm each:
@@ -291,6 +312,67 @@ Sign in as a **SuperAdmin** and confirm each:
 - [ ] **Users**, **Preferences**, and **Release Notes** screens all load
 - [ ] **System types**: the diagram key is alphabetical, its information button
   explains each type, and a SuperAdmin can edit them in Preferences
+- [ ] **Searchable dropdowns** (0.7.1) — every dropdown over a list of records
+  is now a box you can type into. Check a few, in the flyout *and* in an Add
+  window, since they sit in different layouts:
+  - Clicking one shows the **whole list**, even when it already has a value.
+    This is the fix for a task's **Attached to** showing only its current
+    parent, so check that one specifically: open a task, click Attached to, and
+    confirm every system and data flow is listed
+  - Typing a few letters narrows it; Escape closes it; arrow keys and Enter
+    choose without the mouse
+  - The list is **not clipped** at the edge of the details panel, and appears
+    above a modal rather than behind it
+  - A long system name does not run underneath the little caret on the right
+  - In the account picker on a contributor, accounts already linked to somebody
+    are **greyed and unselectable**, naming who has them
+- [ ] **Task colours** (0.7.1) — on the diagram, with the key open:
+  - **The key is not all grey.** Each of the five swatches shows its own
+    colour, matching the circles on the diagram. A stylesheet rule beats a
+    `fill` attribute, so this is the thing to look at first
+  - Each circle's colour matches the key, and each has its **mark** inside it
+    (a tick, an exclamation mark, a half-filled disc, a hollow ring, or nothing
+    for a task with no status recorded)
+  - **Check the marks are legible at 0.5x zoom.** They sit inside an 11px
+    circle, and nothing automated can tell you whether they read — if one
+    cannot be made out, say so; the answer is a bigger circle
+  - A task whose end date has passed is red and its hover card says *Past its
+    end date*, even when its status says In progress
+  - **A task whose only dates are on a subtask still colours.** Set a subtask
+    to In progress with an end date of yesterday, leave the task's own dates
+    empty, and confirm the circle goes red rather than staying yellow
+  - A task with no status and a start date in the past is **orange**
+  - A completed task with an end date in the past is **green**, not red
+- [ ] **The key earns its complexity** (0.7.1) — three states to check, which
+  means looking at a view with no tasks as well as one with them:
+  - A view with **no tasks**: no task entry in the key at all
+  - Tasks present but nothing colour-coded (no statuses, no dates past): a
+    single **grey circle labelled "Task"**, not the five-row key
+  - Set one status or let one date pass: the five-row key appears
+- [ ] **A task's window from its subtasks** (0.7.1) — the confusion this
+  removes is subtask dates entered while the task itself still reads blank:
+  - Create a task with **no dates** and give its subtasks dates. The task's
+    Expected Start and End show the **earliest subtask start** and the
+    **latest subtask end**, in the flyout and in the catalog, each with a line
+    saying where it came from
+  - Change a subtask's dates and confirm the task's window **moves with
+    them** — it is worked out on the spot, not copied once
+  - Type a date into the task's own Expected Start: it **wins**, and the note
+    disappears. The End is still derived — the override is per date, not both
+  - **Save the task again without touching the dates.** The derived End must
+    still be derived afterwards; if saving silently turns it into a fixed date
+    the override is leaking
+  - Clear the task's own date and confirm it goes **back to derived**
+- [ ] **Dates in order** (0.7.1) — on a task and on a subtask:
+  - Having set a start date, the date picker will not offer an **earlier** end
+    date, and vice versa
+  - A reversed pair is refused with a message naming both dates, and for a
+    subtask the message says **which** subtask
+  - After a refused save, the subtasks that were already there are **still
+    there** — they are rewritten wholesale, so the check has to run first
+  - Same-day start and end is accepted
+- [ ] **Add Task window** (0.7.1) — in a scenario, the **Proposed** checkbox is
+  above an **Overview** heading, matching Add System and Add Flow
 - [ ] **Tasks** (0.7.0):
   - The sidebar shows a **Tasks** count; the catalog lists them with what each
     is attached to and, where there are steps, how many are done
@@ -785,6 +867,16 @@ Only needed once per computer.
 ---
 
 ## Appendix B — Troubleshooting
+
+### A dropdown shows only its current value
+
+Fixed in 0.7.1 and recorded here because the symptom is so misleading. The
+pickers were `<input list=…>` with a `<datalist>`, and a browser filters a
+datalist's suggestions against the text already in the box — so a control
+pre-filled with its current value matched only itself and looked read-only.
+Nothing was missing from the list. If this ever reappears, the thing to check
+is that `Combo` still opens with an **empty** query rather than seeding it from
+the selected label.
 
 **Blank page in the browser**
 JSX failed to compile. Run `python3 tools/check_jsx.py`, then
