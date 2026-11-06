@@ -648,6 +648,45 @@ was written for. Before reusing one, read what it does in a flex context, not
 just what it looks like. Nothing automated catches a bug of this shape — the
 JSX is valid, the API is correct, and every suite passes. Look at the page.
 
+**A caption needs a gap below it, not just above.** `.gov-hint` carried
+`margin-top: 2px` and no bottom margin, so a hint written as a *sibling* after a
+field row sat 8px under the field it explains and flush against the next one —
+reading as a caption for the wrong field. Ben reported it on the task dates and
+status. `.field-row + .gov-hint` and `.edit-field-row + .gov-hint` pull it up
+and push the next row away, so the gap above is smaller than the gap below, and
+indent it to the value column: a hint about a value that starts under the
+**label** looks like it belongs to the panel rather than to the field.
+
+Keyed on **adjacency**, so it reaches only the hints that really are siblings. A
+hint nested inside a row — the flow name, the display-name counter, the derived
+status in the task edit view — is already aligned with its value and already
+gets the row's bottom margin, and is untouched. `SchemaGovEditView` had solved
+the same problem by hand years earlier with an inline `marginLeft: 140`; that is
+gone, and the label width is now `--field-label-w`, which was written out three
+times.
+
+**A static value in an edit row needs the label's own padding.**
+`.edit-field-row .field-label` carries `padding-top: 6px` so it sits level with
+the text inside an input. The one place that shows a *value* rather than a
+control — the derived status — had none, so it started 6px higher than its own
+label. Invisible while the value had text in it, and obvious the moment it did
+not: an unset derived status rendered `''`, and the hint below it rose to where
+the value should have been, printing "Determined based on subtasks" above the
+word "Status". `.edit-field-row .field-value` now matches the label's padding
+and is `display: block` so the hint sits under it. And the value falls back to
+an em dash, the way `ReadField` already does — **an absence shown as an
+absence** is the same rule the catalog follows, and an empty string is not it.
+
+**Both of these were verified by looking at them.** The rules were lifted out of
+`index.html` into a throwaway page rendering before and after side by side,
+which is the only way to judge "closer to the field below than the field above"
+— and for the status, the fixture had to include the *empty* case, because that
+is the only one where the bug shows. Two lessons from the exercise itself: the
+first preview was too narrow and clipped the column that mattered, so a
+screenshot is only evidence once it has actually been read; and a fixture that
+only covers the populated case will not reproduce a bug that needs the empty
+one.
+
 ### Tooltips: not the `title` attribute
 
 Explanatory text uses the `Tooltip` component, not `title`. Three reasons, all
@@ -982,6 +1021,17 @@ task appeared not to be created at all.
 **When a 405 appears on an endpoint that plainly exists in `app.py`, restart
 before debugging.** Python route tables are read once at startup.
 
+**The quieter version of this is a missing field, not a 405.** During 0.7.1 Ben
+added dates to a task's subtasks, refreshed, and the task's own dates stayed
+blank. Nothing was wrong: `task_rows` had gained
+`effective_expected_start`, the browser had the new `index.html` within the
+second, and the running Python still had the old `task_rows` — so the key was
+simply absent from the payload, `data.expected_start || data.effective_...`
+resolved to undefined, and the field rendered empty with no error anywhere. A
+405 at least announces itself. **Any change to `app.py` needs a restart**, and
+the symptom of skipping one is a new feature that appears to do nothing at
+all.
+
 The lasting fix is that creating a task no longer depends on placing it:
 `placeTask` catches its own failure and says so, and the refresh and the
 notification happen either way. A second request must never be able to make a
@@ -1173,6 +1223,336 @@ it and every scenario creation 500'd with *'_Col' object is not subscriptable*.
 sqlite3's are plain tuples — so it reads the attribute first and indexes only
 as a fallback. Worth remembering because the harness is SQLite and production
 is PostgreSQL: a branch exercised by neither is a branch that is wrong.
+
+### Dropdowns are `Combo`, and a `<datalist>` is why
+
+Ben: "the lists are starting to get unwieldy and it can be hard to find the
+item you want." Every dropdown over records grows with the department, and a
+native `<select>` can only be scrolled or jumped through letter by letter.
+
+**The bug that forced it was the datalist, not the option lists.** The task
+parent picker was an `<input list=...>` with a `<datalist>`, chosen in 0.7.0
+because the browser supplies the dropdown, the keyboard handling and the
+accessibility for free. It does — and it also **filters the suggestions against
+the text already in the box.** A control pre-filled with its current value
+therefore matches only itself, and the list looks like it holds one item. That
+is exactly Ben's report that a task's "Attached to" dropdown "only shows what
+the task is currently attached to, so if you want to move it to a different
+data flow or system you have to recreate it". Nothing was read-only and no
+option was missing; the value already in the field was hiding all of them. No
+amount of work on the option list fixes it from outside.
+
+So `Combo` is built around one load-bearing property: **opening shows the whole
+list, whatever the current value is.** The typed filter applies only to what
+somebody types after opening. Seeding the query with the selected label would
+reproduce the datalist bug in our own code, which is the one thing to watch for
+when editing it.
+
+Four more things that are not obvious:
+
+* **The listbox renders through a portal**, for the same reason `Tooltip` does:
+  the details flyout scrolls, so a list drawn inside it is clipped at the panel
+  edge, and these controls live in the flyout *and* in modals. It is
+  `position: fixed` at z-index 300 — above the modal overlay (100) and
+  `Tooltip` (200). An `absolute` list inside the wrapper is the obvious thing
+  and it is clipped.
+* **`.combo-wrap input.combo-input`, not `.combo-input`.** Inside an Add window
+  the control sits in a `.form-group`, and `.form-group input` sets
+  `padding: 8px 10px` at higher specificity — it wins, and a long system name
+  runs under the caret. The reused-CSS lesson again, and the rest of
+  `.form-group input` *is* wanted here, which is why one property is overridden
+  rather than the class opted out of.
+* **`disabled` and `group` exist because a native `<select>` gave them for
+  free.** The account picker lists already-linked accounts greyed rather than
+  omitting them, and the 80-field definition picker used `<optgroup>`. Dropping
+  either would have been a regression dressed up as a new feature. The arrow
+  keys step *over* both: landing on a row that Enter ignores is a dead end the
+  user has to diagnose.
+* **Scroll and resize re-measure rather than close.** Closing is what `Tooltip`
+  does, but opening a control near the foot of a panel can make the browser
+  scroll it into view, which would close the list the user had just opened.
+
+`EditField`, `ModalField`, `ReqField`, `SystemSelect`, `ContributorSelect`, the
+task parent and people pickers, the subtask rows, the schema governance person
+override, the flow endpoints, the account and field pickers, the view switcher
+and the scenario owner transfer all go through it.
+
+**What is still a native `<select>`, and why.** Yes/No and `(inherit)` pairs,
+role lists, the preferences controls, the logo position, the audit filters, the
+scenario status. Each is a fixed list of two to five choices, where there is
+nothing to filter and a combobox is strictly worse — it trades the platform's
+own popup and keyboard handling for ours to no benefit. This is a judgement
+rather than a rule, so if the uniformity matters more than the trade, convert
+them; nothing in `Combo` assumes a long list.
+
+`selectHintClass` is gone: every select it styled is a `Combo`, which styles
+its own rows. The `.select-hint` class and the note above it stay for the
+native ones that remain.
+
+### Rule 5 in `check_identifiers.py` is about scope, not spelling
+
+`contributors={contributors}` inside `SchemaTableReadView`, which never took
+`contributors` as a prop. It throws `ReferenceError` the instant the component
+renders, React unmounts the tree, and the page goes blank — which is what Ben
+reported as "flyout brings up blank screen when clicking on fields or tables in
+a schema". It had been there since the schema drill-down shipped; nobody had
+clicked a table while the Governance section existed.
+
+Rules 1, 2 and 4 cannot see it: not a setter, not an event handler, not a call.
+**And neither can a whole-file name check, because `contributors` IS declared —
+in `App`.** The first attempt at this rule compared against the file-wide set
+of declared names, found nothing, and produced three false positives from a
+`const NODE_W = 200, NODE_H = 70, NODE_EDGE = 12` whose second and third names
+`declared_names` was not collecting. Both of those are worth knowing: the fault
+is one of **scope**, and the declaration scanner was only ever reading the first
+name of a multiple declaration.
+
+Being scope-aware in general needs a real JS parser — the 183-false-positive
+problem. But one case is decidable without one: **a component declared at column
+zero has no enclosing scope except the module**, so a bare name it forwards must
+be its own prop, its own local, or module-level. Nested components — declared
+indented, inside another — legitimately close over their parent and are skipped.
+That is the whole rule, and it finds exactly the two real bugs with no false
+positives.
+
+What it does **not** catch, so do not read a pass as more than it is: a name a
+nested component borrows wrongly, a prop forwarded inside a call rather than as
+a bare identifier (`options={taskParentOptions(systems, flows)}` is invisible to
+it), and anything in a component assigned to a `const`. Those still need the
+click-through.
+
+### Task colours: precedence, and what an unset status is not
+
+`taskSignal(task, today)` returns one of five keys and the **order is the whole
+design**, so it is written out in the source rather than left to a conditional
+chain to imply. `TASK_SIGNALS` carries the key, the label and the fill, and both
+the diagram and the legend read it, so the key cannot drift from what it
+explains.
+
+Three rules are easy to get wrong:
+
+* **Completed beats every date.** A task finished after its end date is
+  finished, not late. Colouring it red teaches people to ignore red.
+* **A subtask's dates count, not just the task's own.** This was a bug: Ben set
+  a subtask to In progress with an end date of yesterday and the circle stayed
+  yellow, because both date rules read only `task.expected_end` and
+  `task.expected_start`. A task with subtasks already does not own its
+  *status* — `derived_task_status` computes it — and it was inconsistent for
+  the dates to work the other way, since the subtask dates are exactly where
+  slippage shows up first. Each date is judged against the status that owns it:
+  a subtask past its end only counts if that subtask is not completed, and one
+  past its start only if that subtask has not begun.
+* **An unset status past its start date IS `late_start`.** Ben asked for this,
+  and it reverses the call made when the feature was first built. The original
+  argument was that "nobody has assessed this" and "somebody said it has not
+  started" are different facts — the point of migration 0019 — and only the
+  second can be late. That distinction is real and still drawn everywhere a
+  status is *reported*: the catalog's dash, the hover card's parentheses, the
+  derivation ignoring unset subtasks. It is the wrong distinction for a **date**
+  rule, because what the start date tells you does not depend on whether
+  anybody filled the field in — the day came and went and nothing says the work
+  began. Treating that as nothing to see hides the slippage precisely where
+  nobody is paying attention. `taskNotBegun` is the shared predicate, so the
+  task and its subtasks cannot disagree about it.
+
+**`active` asks the subtasks as well as the derived status.** `task_rows`
+derives the status on read, so a task with one subtask in progress arrives with
+`status: 'in_progress'` already — but asking the subtasks directly means the
+browser does not depend on the server having got it right, and the two cannot
+disagree about a colour. A test fixture that omitted the derived status is what
+exposed the dependency, which is the useful kind of unrealistic fixture.
+
+**The colour is never the only cue.** The five fills cannot be told apart by hue
+alone — active yellow and `late_start` orange are 15 degrees apart, which is no
+distinction for anyone with a colour deficiency — so every state but `open`
+draws a mark inside the ring, and `open` draws none because the absence of
+information is shown as an absence. `late_start`'s mark is a hollow ring rather
+than a dash, because a horizontal bar is what a retired task already draws
+across itself.
+
+**The ring does not change colour.** It is what delineates the circle against
+the eight system fills it may sit on (8.69:1 against the worst), and
+recolouring it per status would put that measurement back in play five times
+over. The status goes in the **fill**, where the only contrast that has to hold
+is against the ring and the mark — at worst 6.54:1. Measured over every fill,
+not inferred from the lightest, which is the mistake recorded above for the
+selection halo.
+
+**Today is computed locally, not with `toISOString()`.** That is UTC, so west of
+Greenwich it reports tomorrow's date for part of every evening, which would turn
+a task due today red several hours early. `todayISO()` is the one to use, and it
+is recomputed per render because the app is left open overnight.
+`exportFilename` still uses `toISOString()` for a filename — the same wart,
+one day off in the evening, left alone only because `t_align.js` evals a slice
+that `todayISO` is not in.
+
+**No JSX in the geometry region.** `TaskMark` was first written beside
+`taskSignal`, where it belongs by subject, and took down all three Node suites
+that `eval` slices of that region with `SyntaxError: Unexpected token '<'`. It
+lives with the other components now, with a note saying why.
+
+**The legend grows in three steps, and the middle one is the point.** No tasks
+in the view: no entry at all. Tasks but nothing colour-coded: one grey circle
+labelled "Task", which is the 0.7.0 legend. Something colour-coded: the
+five-state key. Ben's reasoning is that the complexity of five rows should only
+arrive once somebody is using statuses or dates — until then the grey circle is
+the whole truth about the diagram, and five rows explaining colours that appear
+nowhere are noise to read past. `tasksUseSignals` decides it, and asks "is any
+circle not grey" rather than "has anyone set a status", because the two
+date-driven states colour a circle without anyone having touched a status
+field and a key that omitted them would leave an orange circle unexplained.
+
+**The legend swatches were all grey, and the cause is already in this file.**
+`.legend .task-ring` set `fill: #dfe3e8`, and a stylesheet rule beats a `fill`
+attribute on the element — so every status swatch came out grey however it was
+drawn. That is the same trap recorded two paragraphs below for the swatch's
+*size*, where `width`/`height` attributes lose to `.canvas-container svg`. The
+comment was in the file and I walked into it with the colour. When a swatch is
+meant to vary, the varying property cannot be in the stylesheet.
+
+`tools/tests/t_tasksignal.js` drives every combination the precedence
+distinguishes, and reads the fills out of the source rather than hardcoding
+them, so it cannot keep passing after somebody changes a colour. The two
+assertions that encoded the old unset-status rule are left pointing at the new
+one, so the reversal reads as deliberate rather than as drift.
+
+### An end date cannot precede its start date
+
+`check_task_dates` is one function because a task and each of its subtasks ask
+the same question, and a rule enforced on create but not on edit is the
+asymmetry that only surfaces when somebody tries to fix a typo — the same
+reasoning as `check_task_type`. Equal dates are fine: a task that starts and
+finishes in a day is ordinary.
+
+Two things about it are load-bearing:
+
+* **The update path merges with the stored row.** An update writes only the keys
+  it is sent, so a payload carrying just one of the pair has to be checked
+  against the date already on the record — otherwise moving the end date alone
+  is never refused. Both directions are tested, including the case that must
+  still be *allowed*: moving the start alone when no end date is stored crosses
+  nothing, and a check that refused it would be over-eager.
+* **The subtask sweep runs before `write_task_children`.** Subtasks are replaced
+  wholesale, so a bad pair caught after the `DELETE` would mean a refused save
+  had already destroyed the list. `t_tasks.py` asserts the existing subtasks
+  survive a refusal.
+
+The date inputs also carry `min`/`max`, which stops the native picker offering
+an impossible date. That is a convenience and explicitly not the boundary: it
+can be typed past, and it says nothing about a row that predates the rule.
+`EditField` and `ModalField` both take the pair now.
+
+### A task's window comes from its subtasks, and is not stored
+
+Ben: entering dates on subtasks and then finding the task itself blank is
+confusing. The task's pair **is** the outer window, so where nobody has said
+otherwise the subtasks are the best statement of it —
+`derived_task_dates(step_rows)` returns the earliest subtask start and the
+latest subtask end.
+
+**Nothing is written to the task's columns.** This is resolved on read, exactly
+as a derived status is, and the reasoning is the same one that made that
+choice right: a value copied into `task.expected_start` is correct at the
+moment of the copy and silently wrong the moment a subtask moves. A stored span
+would also have to be kept in step by every path that touches a subtask — the
+update handler, the copy action, a scenario clone — and whichever one got missed
+would leave a task claiming a window that does not contain its own subtasks. The
+derived form cannot go stale and needed no migration. `t_tasks.py` replaces a
+task's subtasks and asserts the window moves with them, which is the assertion a
+stored span would fail.
+
+**Carried as `effective_expected_start` / `effective_expected_end` alongside the
+raw columns**, the way `effective_definition` and `effective_title` already work
+here. That distinction is what makes the override possible, and it is load-
+bearing in a way that is easy to undo:
+
+* The **edit form binds to the raw columns.** `DetailPanel.saveEdit` sends
+  `expected_start` on every save whether or not anybody touched it, so a box
+  pre-filled with the derived date would be sent straight back and become a
+  stored override — a task would stop tracking its subtasks the first time it
+  was saved for an unrelated reason. Blank means derived; typing a date
+  overrides; clearing it returns to derived. A hint under each box names the
+  date it is using and says how to override it, because an empty box with
+  invisible behaviour is worse than no behaviour.
+* The **read view, the catalog and its sort keys use the effective value.**
+  Sorting on the raw column while displaying the effective one would file a task
+  whose dates come from its subtasks among the blanks.
+* **Per end, not per pair.** A task may name its own start and leave the finish
+  to its subtasks, so `start_from_steps` and `end_from_steps` are separate.
+* **A subtask with no date takes no part.** A subtask with no start says nothing
+  about when the work begins, and treating a missing date as "now" or "forever"
+  are both inventions.
+
+`taskSignal` does not read the effective dates and does not need to: it already
+asks the subtasks directly, so the colour was right before this existed.
+
+### A suite borrows the database — including from the suite before it
+
+`t_fielddefs` asserted "nothing is defined except what the app ships with",
+which is the same mistake `t_fieldhide` was fixed for one release earlier, with
+one extra turn: it broke not because a person had written a definition, but
+because **`t_fieldhide`, run first, leaves one behind on purpose** — it writes a
+definition to prove hiding and defining are independent. So the two suites
+passed alone and one of them failed whenever both ran.
+
+It now asserts that what the app ships with is present, prints anything else as
+a note, and leaves the invariant the original check was reaching for to the rest
+of the suite, which writes a definition, reads it back, overrides it, clears it
+and checks the field is blank again — a relationship rather than a starting
+state.
+
+The rule, stated once more because it has now been broken three ways: **assert
+relationships, not a starting state you do not control** — and "you do not
+control it" includes the suite that ran before yours.
+
+**And a fourth way: a test account created with a fixed address.** Ben ran
+`t_tasks` twice on his local database and got nine failures, every one of them
+a permission check. None of them was the fault. The suite did
+`POST /api/users` with a fixed email and then signed in with the temporary
+password — which works exactly once. On the second run the POST is a 409, the
+stored password is whatever the first run changed it to, the login returns 401,
+and every later request as that person fails. **A sign-in that never happened
+is reported as the feature being broken**, which is the expensive part: the
+failures point everywhere except at the cause.
+
+`_client.ensure_account` creates the account **or resets it** — a fresh
+temporary password from the SuperAdmin, active, with the right role — and
+returns the password the account ends up holding, because a later re-login in
+the same suite needs it. `t_tasks`, `t_052` and `t_060` all had this bug and
+all three now share the one helper.
+
+**Resetting a password here is not the footgun `_client` exists to prevent.**
+That rule is about the account a suite *borrows* to sign in as — a real
+person's. These are the suite's own: it creates them, names them for itself,
+and nobody else uses them. Ownership is the whole distinction, and it is worth
+stating because the two look identical in a diff.
+
+**Some checks cannot be made repeatable by resetting, and need a new address
+each run.** "A title given at creation is stored" and "an unlinked account is
+offered in the picker" are both about an account nobody has touched, and the
+previous run linked it — resetting a password unlinks nothing.
+`_client.unique_email` stamps the local part with the clock. The cost is one
+spare account per run on a database already full of test debris, which is the
+right trade against a check that silently stops meaning anything.
+
+Two things this cost that are worth remembering:
+
+* **The branch only runs on the second run**, so a mistake inside it passes
+  every fresh-database test. The first version called `.get` on `/api/users`,
+  which returns a bare list — green on run one, `AttributeError` on run two.
+* **Verify the claim, not the fix.** The checklist already said "run them in
+  any order, and more than once". Fixing `t_tasks` and stopping there would
+  have left that sentence false: running the whole set twice found `t_052` and
+  `t_060` failing the same way. Run every suite twice before believing it.
+
+### `selftest.py` accepts a bare port
+
+`python3 selftest.py 8900` used to die inside urllib with
+`ValueError: unknown url type: '8900/api/systems'`, which names neither the
+argument nor the fix. The feature suites in `tools/tests` take a port
+positionally and always have, so a bare port is the obvious thing to type.
+A numeric positional is now expanded to `http://localhost:<port>`. The
+checklist passes a whole URL and did not hit this.
 
 ## Accessibility
 

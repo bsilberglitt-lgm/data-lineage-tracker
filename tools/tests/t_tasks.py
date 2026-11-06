@@ -33,7 +33,8 @@ import sys
 # suite carries a hardcoded password and none of them changes one. See the
 # comment at the top of that file for why that matters.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _client import sign_in, session as S, request as rq, BASE as B  # noqa: E402
+from _client import (sign_in, session as S, request as rq,  # noqa: E402
+                     ensure_account, BASE as B)
 
 P, F = [], []
 
@@ -50,6 +51,32 @@ SYS = systems[0]["system_id"]
 OTHER_SYS = systems[1]["system_id"]
 st, flows = rq(boss, "GET", "/api/flows")
 FLOW = flows[0]["flow_id"]
+
+
+def borrow_account(email, first, last, role, temp):
+    """A signed-in session for one of this suite's own test accounts.
+
+    The work is in `_client.ensure_account`, which three suites needed; this
+    only adds the assertion, so a sign-in that did not happen is reported as
+    itself rather than as a run of mysterious permission failures.
+    """
+    st, s, _ = ensure_account(boss, rq, email, first, last, role, temp)
+    ck(f"the {role} test account is signed in", bool(s["t"]), f"login {st}")
+    return s
+
+
+# The delete confirmation counts what is attached NOW, which on a database the
+# suite has run against before includes tasks it left behind. Baselines taken
+# before anything is created, so the assertions can be about the DELTA — the
+# invariant the exact numbers were only standing in for.
+def task_count_for(kind, ident):
+    st, imp = rq(boss, "GET", f"/api/{kind}/{ident}/delete-impact")
+    return {c["label"]: c["count"] for c in imp.get("counts", [])}.get("task", 0)
+
+
+# Read BEFORE this suite creates anything, which is the whole point.
+FLOW_TASKS_BEFORE = task_count_for("flows", FLOW)
+SYS_TASKS_BEFORE = task_count_for("systems", SYS)
 
 st, people = rq(boss, "GET", "/api/contributors")
 PEOPLE = [p["contributor_id"] for p in people][:2]
@@ -319,12 +346,15 @@ ck("moving onto a parent that does not exist is refused", st == 400, str(st))
 print("-- deleting a parent takes its tasks, and says so first --")
 st, imp = rq(boss, "GET", f"/api/flows/{FLOW}/delete-impact")
 counts = {c["label"]: c["count"] for c in imp["counts"]}
-ck("the flow's confirmation counts its tasks", counts.get("task") == 2,
-   json.dumps(counts))
+ck("the flow's confirmation counts the two tasks this suite put on it",
+   counts.get("task") == FLOW_TASKS_BEFORE + 2,
+   f"{json.dumps(counts)} against a baseline of {FLOW_TASKS_BEFORE}")
 
 st, imp = rq(boss, "GET", f"/api/systems/{SYS}/delete-impact")
 counts = {c["label"]: c["count"] for c in imp["counts"]}
-ck("and the system's does too", counts.get("task") == 1, json.dumps(counts))
+ck("and the system's counts the one on it",
+   counts.get("task") == SYS_TASKS_BEFORE + 1,
+   f"{json.dumps(counts)} against a baseline of {SYS_TASKS_BEFORE}")
 
 st, _ = rq(boss, "DELETE", f"/api/tasks/{CP}")
 ck("a task can be deleted", st == 200, str(st))
@@ -354,17 +384,8 @@ ck("and the catalog does not list it",
 
 # ------------------------------------------------------------- permissions
 print("-- who may do what --")
-VTEMP, VREAL = "Thistle-Quay-52#k", "Bramble-Harbor-71#v"
-rq(boss, "POST", "/api/users",
-   {"email": "v.task@maine.gov", "first_name": "Val", "last_name": "Reed",
-    "role": "Viewer", "password": VTEMP})
-viewer = S()
-st, vb = rq(viewer, "POST", "/api/auth/login",
-            {"email": "v.task@maine.gov", "password": VTEMP})
-viewer["t"] = vb.get("csrf_token")
-if vb.get("user", {}).get("must_change_password"):
-    rq(viewer, "POST", "/api/auth/change-password",
-       {"current_password": VTEMP, "new_password": VREAL})
+viewer = borrow_account("v.task@maine.gov", "Val", "Reed", "Viewer",
+                        "Thistle-Quay-52#k")
 
 st, _ = rq(viewer, "GET", "/api/tasks")
 ck("a Viewer can read the catalog", st == 200, str(st))
@@ -377,17 +398,8 @@ ck("a Viewer cannot edit one", st == 403, str(st))
 st, _ = rq(viewer, "DELETE", f"/api/tasks/{T1}")
 ck("a Viewer cannot delete one", st == 403, str(st))
 
-ETEMP, EREAL = "Fathom-Lantern-30#r", "Copper-Meadow-64#j"
-rq(boss, "POST", "/api/users",
-   {"email": "e.task@maine.gov", "first_name": "Eli", "last_name": "Crane",
-    "role": "Editor", "password": ETEMP})
-editor = S()
-st, eb = rq(editor, "POST", "/api/auth/login",
-            {"email": "e.task@maine.gov", "password": ETEMP})
-editor["t"] = eb.get("csrf_token")
-if eb.get("user", {}).get("must_change_password"):
-    rq(editor, "POST", "/api/auth/change-password",
-       {"current_password": ETEMP, "new_password": EREAL})
+editor = borrow_account("e.task@maine.gov", "Eli", "Crane", "Editor",
+                        "Fathom-Lantern-30#r")
 
 st, et = rq(editor, "POST", "/api/tasks",
             {"name": "Editor's task", "task_type": "Manual Transfer",
@@ -745,6 +757,200 @@ ck("and the hidden set names it", "task|notes" in look.get("hidden", []),
 st, r = rq(boss, "PUT", "/api/field-visibility",
            {"entity": "task", "column": "name", "hidden": True})
 ck("a required task field cannot be hidden", st == 400, str(st))
+
+# ------------------------------------------- a task's window from its subtasks
+print("-- a task with no dates takes the window its subtasks occupy --")
+st, win = rq(boss, "POST", "/api/tasks",
+             {"name": "Window", "task_type": "Validation",
+              "anchor_kind": "data_flow", "anchor_id": FLOW,
+              "steps": [{"description": "middle", "expected_start": "2027-03-10",
+                         "expected_end": "2027-03-12"},
+                        {"description": "earliest", "expected_start": "2027-03-01",
+                         "expected_end": "2027-03-04"},
+                        {"description": "latest", "expected_start": "2027-03-20",
+                         "expected_end": "2027-03-31"}]})
+ck("a task created with dated subtasks and no dates of its own",
+   st in (200, 201), str(st))
+WIN = win.get("task_id", "")
+ck("its own start is still empty", not win.get("expected_start"),
+   repr(win.get("expected_start")))
+ck("the effective start is the earliest subtask start",
+   win.get("effective_expected_start") == "2027-03-01",
+   repr(win.get("effective_expected_start")))
+ck("the effective end is the latest subtask end",
+   win.get("effective_expected_end") == "2027-03-31",
+   repr(win.get("effective_expected_end")))
+ck("and it says both came from the subtasks",
+   win.get("start_from_steps") and win.get("end_from_steps"),
+   f"{win.get('start_from_steps')} / {win.get('end_from_steps')}")
+
+# The derived window must follow the subtasks, which is the whole reason it is
+# resolved on read rather than copied into the task's columns. A stored span
+# would be correct here and wrong after this edit.
+st, _ = rq(boss, "PUT", f"/api/tasks/{WIN}",
+           {"steps": [{"description": "now the only one",
+                       "expected_start": "2027-02-01",
+                       "expected_end": "2027-02-02"}]})
+ck("replacing the subtasks succeeds", st == 200, str(st))
+st, win = rq(boss, "GET", f"/api/tasks/{WIN}")
+ck("the window moved with them, rather than going stale",
+   win.get("effective_expected_start") == "2027-02-01"
+   and win.get("effective_expected_end") == "2027-02-02",
+   f"{win.get('effective_expected_start')} / {win.get('effective_expected_end')}")
+
+print("-- a date of the task's own overrides, per end --")
+st, _ = rq(boss, "PUT", f"/api/tasks/{WIN}", {"expected_start": "2027-01-15"})
+ck("setting only the start is accepted", st == 200, str(st))
+st, win = rq(boss, "GET", f"/api/tasks/{WIN}")
+ck("the stored start wins", win.get("effective_expected_start") == "2027-01-15",
+   repr(win.get("effective_expected_start")))
+ck("and is no longer reported as derived", not win.get("start_from_steps"),
+   str(win.get("start_from_steps")))
+ck("while the end is still derived",
+   win.get("effective_expected_end") == "2027-02-02"
+   and win.get("end_from_steps"),
+   repr(win.get("effective_expected_end")))
+
+# Clearing it returns to derived: that is what makes the override reversible,
+# and it is the reason the raw column is what the edit form binds to.
+st, _ = rq(boss, "PUT", f"/api/tasks/{WIN}", {"expected_start": None})
+ck("clearing the override is accepted", st == 200, str(st))
+st, win = rq(boss, "GET", f"/api/tasks/{WIN}")
+ck("and the derived start comes back",
+   win.get("effective_expected_start") == "2027-02-01"
+   and win.get("start_from_steps"),
+   repr(win.get("effective_expected_start")))
+
+print("-- subtasks with no dates derive nothing --")
+st, nd = rq(boss, "POST", "/api/tasks",
+            {"name": "No dates anywhere", "task_type": "Validation",
+             "anchor_kind": "data_flow", "anchor_id": FLOW,
+             "steps": [{"description": "a"}, {"description": "b"}]})
+ck("a task whose subtasks carry no dates", st in (200, 201), str(st))
+ck("has no effective window", not nd.get("effective_expected_start")
+   and not nd.get("effective_expected_end"),
+   f"{nd.get('effective_expected_start')} / {nd.get('effective_expected_end')}")
+ck("and does not claim to have derived one",
+   not nd.get("start_from_steps") and not nd.get("end_from_steps"),
+   f"{nd.get('start_from_steps')} / {nd.get('end_from_steps')}")
+
+# A subtask with only one end carries only that end — a missing date says
+# nothing about when the work begins, and inventing one would be worse.
+st, half = rq(boss, "POST", "/api/tasks",
+              {"name": "Half dated", "task_type": "Validation",
+               "anchor_kind": "data_flow", "anchor_id": FLOW,
+               "steps": [{"description": "due only", "expected_end": "2027-05-05"}]})
+ck("a subtask with only an end date", st in (200, 201), str(st))
+ck("derives the end and leaves the start empty",
+   half.get("effective_expected_end") == "2027-05-05"
+   and not half.get("effective_expected_start"),
+   f"{half.get('effective_expected_start')} / {half.get('effective_expected_end')}")
+
+# The catalog reads the same assembled shape as the flyout — that is what
+# task_rows is for — so the derived window has to be there too, or the table
+# would show a dash for a task whose flyout shows dates.
+st, catalog = rq(boss, "GET", "/api/tasks")
+by_id = {t["task_id"]: t for t in catalog}
+ck("the catalog lists it", WIN in by_id, str(len(catalog)))
+ck("and carries the derived window too",
+   by_id.get(WIN, {}).get("effective_expected_start") == "2027-02-01",
+   repr(by_id.get(WIN, {}).get("effective_expected_start")))
+
+# -------------------------------------------------- dates must be in order
+print("-- an end date cannot precede its start date --")
+# The browser puts `min`/`max` on the date inputs so the picker will not offer
+# an impossible date, but that is a convenience: it can be typed past, and it
+# says nothing about a row that predates the rule. The server is the boundary,
+# so the boundary is what is tested here.
+st, bad = rq(boss, "POST", "/api/tasks",
+             {"name": "Backwards", "task_type": "Validation",
+              "anchor_kind": "data_flow", "anchor_id": FLOW,
+              "expected_start": "2026-11-10", "expected_end": "2026-11-01"})
+ck("creating one with the dates reversed is refused", st == 400, str(st))
+ck("and the message names both dates",
+   "2026-11-10" in str(bad) and "2026-11-01" in str(bad), str(bad)[:140])
+
+st, ok = rq(boss, "POST", "/api/tasks",
+            {"name": "Same day", "task_type": "Validation",
+             "anchor_kind": "data_flow", "anchor_id": FLOW,
+             "expected_start": "2026-11-10", "expected_end": "2026-11-10"})
+ck("one day start to finish is fine", st in (200, 201), str(st))
+SAME = ok.get("task_id", "")
+
+st, ok = rq(boss, "POST", "/api/tasks",
+            {"name": "Open ended", "task_type": "Validation",
+             "anchor_kind": "data_flow", "anchor_id": FLOW,
+             "expected_start": "2026-11-10"})
+ck("a start with no end is fine", st in (200, 201), str(st))
+DATED = ok.get("task_id", "")
+
+# The half-payload case is the one a naive check misses: an update writes only
+# the keys it is sent, so a rule that looks at the payload alone never sees the
+# date already on the record. Both directions are checked, because merging only
+# the end date would leave the other half broken.
+st, _ = rq(boss, "PUT", f"/api/tasks/{DATED}",
+           {"expected_end": "2026-11-01"})
+ck("sending ONLY an end date behind the stored start is refused",
+   st == 400, str(st))
+st, row = rq(boss, "GET", f"/api/tasks/{DATED}")
+ck("and the refused edit changed nothing",
+   row.get("expected_start") == "2026-11-10" and not row.get("expected_end"),
+   f"{row.get('expected_start')} / {row.get('expected_end')}")
+
+# With no end date stored there is nothing for a start date to cross, so this
+# one is allowed. Asserted rather than left out: a check that refused it would
+# be over-eager, and the obvious way to write the merge gets this wrong.
+st, _ = rq(boss, "PUT", f"/api/tasks/{DATED}",
+           {"expected_start": "2026-11-20"})
+ck("moving the start alone is fine when no end date is stored",
+   st == 200, str(st))
+
+st, _ = rq(boss, "PUT", f"/api/tasks/{DATED}",
+           {"expected_start": "2026-11-10", "expected_end": "2026-11-25"})
+ck("a valid pair saves", st == 200, str(st))
+
+# Now there IS a stored end, so the other half of the merge can be tested.
+st, _ = rq(boss, "PUT", f"/api/tasks/{DATED}",
+           {"expected_start": "2026-12-01"})
+ck("sending ONLY a start date past the stored end is refused",
+   st == 400, str(st))
+st, row = rq(boss, "GET", f"/api/tasks/{DATED}")
+ck("and that refused edit changed nothing either",
+   row.get("expected_start") == "2026-11-10"
+   and row.get("expected_end") == "2026-11-25",
+   f"{row.get('expected_start')} / {row.get('expected_end')}")
+
+print("-- and the same rule on every subtask --")
+st, bad = rq(boss, "PUT", f"/api/tasks/{DATED}",
+             {"steps": [{"description": "fine", "expected_start": "2026-11-01",
+                         "expected_end": "2026-11-02"},
+                        {"description": "backwards", "expected_start": "2026-11-09",
+                         "expected_end": "2026-11-03"}]})
+ck("a subtask with its dates reversed is refused", st == 400, str(st))
+ck("and the message says which subtask", "subtask 2" in str(bad), str(bad)[:140])
+# Subtasks are replaced wholesale, so the check has to run before the DELETE.
+# If it did not, this refused save would already have destroyed the old list.
+st, row = rq(boss, "GET", f"/api/tasks/{DATED}")
+ck("the refused save did not wipe the existing subtasks",
+   len(row.get("steps") or []) == 0, str(len(row.get("steps") or [])))
+
+st, _ = rq(boss, "PUT", f"/api/tasks/{DATED}",
+           {"steps": [{"description": "one", "expected_start": "2026-11-11",
+                       "expected_end": "2026-11-12"}]})
+ck("valid subtask dates save", st == 200, str(st))
+st, bad = rq(boss, "PUT", f"/api/tasks/{DATED}",
+             {"steps": [{"description": "one", "expected_start": "2026-11-11",
+                         "expected_end": "2026-11-12"},
+                        {"description": "two", "expected_end": "2026-01-01",
+                         "expected_start": "2026-12-01"}]})
+ck("a later bad subtask still refuses the whole save", st == 400, str(st))
+st, row = rq(boss, "GET", f"/api/tasks/{DATED}")
+ck("and the good subtask from before survived",
+   len(row.get("steps") or []) == 1, str(len(row.get("steps") or [])))
+
+st, _ = rq(boss, "POST", f"/api/tasks/{DATED}/copy", {})
+ck("a copy drops the dates, so it cannot inherit a bad pair",
+   st in (200, 201), str(st))
 
 # ----------------------------------------------------------------- audited
 print("-- it is all in the audit log --")

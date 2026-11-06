@@ -108,19 +108,33 @@ ck("every entry carries a section, so the picker can group it",
    all(f["section"] for f in cat["fields"]))
 ck("record types are named for people, not for the database",
    cat["entity_labels"]["data_flow"] == "Data Flow", str(cat.get("entity_labels")))
-# The app ships with a small number of definitions for fields whose name
-# would otherwise be misread as a different field — see SEED_FIELD_DEFINITIONS
-# in app.py. Everything else must start blank: a definition appearing where
-# nobody wrote one would be indistinguishable from a bug.
+# The app ships with a small number of definitions for fields whose name would
+# otherwise be misread as a different field — see SEED_FIELD_DEFINITIONS in
+# app.py. Those must be present.
+#
+# What this does NOT assert is that nothing else is defined. It used to, and
+# that was the same mistake `t_fieldhide` was fixed for: **a suite borrows the
+# database, it does not own it.** Any definition somebody wrote while using the
+# app — or that another suite in the same run left behind, which is how this
+# surfaced — was reported as a failure of this feature. `t_fieldhide` writes a
+# definition to prove hiding and defining are independent, so running the two
+# in either order broke one of them.
+#
+# The invariant the original check was reaching for is that a definition
+# appears only where one was written, and that is what the rest of this suite
+# proves directly: it writes one, reads it back, overrides it, clears it, and
+# checks the field is blank again.
 SEEDED = {(e, c) for e, c, _ in seeded_definitions()}
-unexpected = [f"{f['entity']}.{f['column']}" for f in cat["fields"]
-              if f["definition"] and (f["entity"], f["column"]) not in SEEDED]
-ck("nothing is defined except what the app ships with", not unexpected,
-   ", ".join(unexpected[:5]))
-ck("and what it ships with is present",
+ck("what the app ships with is present",
    all(any(f["entity"] == e and f["column"] == c and f["definition"]
            for f in cat["fields"]) for e, c in SEEDED),
    str(sorted(SEEDED)))
+extra = [f"{f['entity']}.{f['column']}" for f in cat["fields"]
+         if f["definition"] and (f["entity"], f["column"]) not in SEEDED]
+if extra:
+    print(f"   (note: {len(extra)} field(s) already carry a definition on this "
+          f"database: {', '.join(extra[:5])}"
+          f"{' …' if len(extra) > 5 else ''}. Not a failure.)")
 
 print("\n-- one definition, found under every spelling --")
 multi = [f for f in field_catalog.FIELDS

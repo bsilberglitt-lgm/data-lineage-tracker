@@ -32,7 +32,8 @@ if not HTML.exists():
 # suite carries a hardcoded password and none of them changes one. See the
 # comment at the top of that file for why that matters.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _client import sign_in, session as S, request as rq, BASE as B  # noqa: E402
+from _client import (sign_in, session as S, request as rq,  # noqa: E402
+                     ensure_account, BASE as B)
 
 P, F = [], []
 
@@ -202,12 +203,15 @@ rq(boss, "PUT", f"/api/flows/{fid2}", body)
 
 # A linked account. The password must not contain their name — the policy
 # refuses that, which is how this test first failed.
-TEMP, REAL = "Thistle-Quay-52#k", "Bramble-Harbor-71#v"
-st, _ = rq(boss, "POST", "/api/users",
-           {"email": "w.abbott@maine.gov", "first_name": "Wren",
-            "last_name": "Abbott", "role": "Editor", "password": TEMP,
-            "contributor_id": cid2})
-ck("a linked user account was created", st in (200, 201), str(st))
+TEMP = "Thistle-Quay-52#k"
+# Created, or reset if an earlier run against this database already made it.
+# A plain POST is a 409 the second time, and every later check about this
+# person then fails on a sign-in that never happened. See _client.
+st_in, abbott, REAL = ensure_account(
+    boss, rq, "w.abbott@maine.gov", "Wren", "Abbott", "Editor", TEMP,
+    extra={"contributor_id": cid2})
+ck("a linked user account is available and signed in", bool(abbott["t"]),
+   f"login {st_in}")
 
 st, refs = rq(boss, "GET", f"/api/contributors/{cid2}/references")
 ck("the references endpoint answers", st == 200, str(st))
@@ -235,14 +239,11 @@ st, cons = rq(boss, "GET", "/api/contributors")
 ck("a SuperAdmin still sees them",
    any(c["contributor_id"] == cid2 for c in cons))
 
-ed = S()
-st, eb = rq(ed, "POST", "/api/auth/login",
-            {"email": "w.abbott@maine.gov", "password": TEMP})
-if st == 200:
-    ed["t"] = eb["csrf_token"]
-    if eb["user"].get("must_change_password"):
-        rq(ed, "POST", "/api/auth/change-password",
-           {"current_password": TEMP, "new_password": REAL})
+# The session `ensure_account` already signed in, rather than a second login
+# with TEMP — which is no longer the password by this point, and was how this
+# block came to fail on a second run against the same database.
+ed = abbott
+if ed["t"]:
     st, cons = rq(ed, "GET", "/api/contributors")
     ck("an Editor does not see a deactivated contributor",
        isinstance(cons, list)

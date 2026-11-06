@@ -658,7 +658,55 @@ def task_rows(conn, where, params, include_children=True):
         r["status_label"] = TASK_STATUS_LABELS.get(r["status"]) if r["status"] else None
         r["type_label"] = task_type_label(r)
         r["status_from_steps"] = has_steps
+
+        # The task's own dates win; where it has none, the subtasks supply the
+        # window. Ben's point was that entering dates on subtasks and then
+        # finding the task itself blank is confusing — the task's pair IS the
+        # outer window, so when nobody has said otherwise the subtasks are the
+        # best statement of it.
+        #
+        # Carried as `effective_*` alongside the raw columns rather than
+        # replacing them, the same way `effective_definition` and
+        # `effective_title` already work here. That distinction is what makes
+        # the override possible: the edit form shows and sends the **raw**
+        # value, so saving a task without touching its dates leaves them unset
+        # and still derived, while typing one stores it and it wins from then
+        # on. Overwriting the raw key would make every save a silent override.
+        d_start, d_end = derived_task_dates(r["steps"])
+        r["derived_start"], r["derived_end"] = d_start, d_end
+        r["effective_expected_start"] = r["expected_start"] or d_start
+        r["effective_expected_end"] = r["expected_end"] or d_end
+        # Per end, because a task may name its own start and leave the finish
+        # to its subtasks.
+        r["start_from_steps"] = not r["expected_start"] and bool(d_start)
+        r["end_from_steps"] = not r["expected_end"] and bool(d_end)
     return rows
+
+
+def derived_task_dates(step_rows):
+    """The window a task's subtasks occupy: (earliest start, latest end).
+
+    Either half is None when no subtask carries that end. Only the subtasks
+    that HAVE a date take part — a subtask with no start date says nothing
+    about when the work begins, and treating a missing date as "now" or as
+    "forever" would both be inventions.
+
+    **Nothing is stored.** This is resolved on read, exactly as a derived
+    status is, and for the same reason: a value copied into the task's own
+    columns is correct at the moment of the copy and silently wrong the moment
+    a subtask moves. A stored span would also have to be kept in step by every
+    path that touches a subtask — the update handler, the copy, a scenario
+    clone — and the one that got missed would leave a task claiming a window
+    that does not contain its own subtasks. Deriving it means it cannot be
+    stale and no migration was needed.
+    """
+    starts = [r.get("expected_start") for r in (step_rows or [])
+              if r.get("expected_start")]
+    ends = [r.get("expected_end") for r in (step_rows or [])
+            if r.get("expected_end")]
+    # Dates are 'YYYY-MM-DD', so min/max on the strings is min/max on the
+    # dates, with nothing to parse.
+    return (min(starts) if starts else None, max(ends) if ends else None)
 
 
 def apply_task_status(conn, task_id):
@@ -1755,7 +1803,11 @@ SEED_RELEASES = [
     # Published 4 November 2026, after Ben reviewed and rewrote the wording.
     # Published notes are never overwritten by `ensure_releases`, so from here
     # on an administrator's edits in the app survive restarts and deploys.
-    (VERSION, "Tasks", None, 1, 1600, """\
+    # Pinned to the literal version rather than VERSION: the entry is
+    # published, and leaving it keyed on VERSION would make the next bump
+    # insert these same notes under the new number, published, and show the
+    # Tasks announcement to everyone a second time.
+    ("0.7.0", "Tasks", None, 1, 1600, """\
 ## What's new in this release
 
 **Tasks**
@@ -1776,6 +1828,39 @@ SEED_RELEASES = [
 * Documents and links can be attached to a task, as they can to a system or a
   data flow.
 * Tasks can be copied into or added in scenarios, as well.
+"""),
+    # Published 6 November 2026, in Ben's own wording. Published notes are
+    # never overwritten by `ensure_releases`, so from here on an
+    # administrator's edits in the app survive restarts and deploys.
+    (VERSION, "Searchable lists and task colors", None, 1, 1700, """\
+## What's new in this release
+
+**Fixes**
+
+* Clicking a table or a field inside a schema no longer shows a blank screen.
+* A task's Attached to list shows every system and data flow, so a task can be
+  moved without recreating it.
+* An expected end date can no longer be set before its start date on a task or
+  a subtask.
+* A task with no dates of its own shows the span its subtasks cover. Entering
+  a date on the task overrides it.
+
+**Searchable lists**
+
+* Every dropdown listing people, systems, data flows, fields or task types can
+  be typed into to narrow it, making it easier to find an entry in a long list.
+
+**Tasks on the diagram**
+
+* Task circles are color-coded by status and expected dates: completed, past
+  its end date, in progress, not started past its start date, or nothing
+  recorded yet.
+* Color-coding looks at both the task and any subtask's dates and status.
+* Each color also carries a mark inside the circle to support black and white
+  viewing & printing.
+* The legend at the bottom left will only show the task circle when a task has
+  been included in the diagram, and it will only show the color-coding when
+  dates and/or statuses have been added to tasks.
 """),
 ]
 
@@ -3232,6 +3317,48 @@ if HAS_TORNADO:
             return f"Unknown task type '{ttype}'."
         return None
 
+    def check_task_dates(start, end, what="task"):
+        """Complain if an end date precedes its start date, else None.
+
+        One function because a task and each of its subtasks ask the same
+        question, and a rule enforced on create but not on edit is the sort of
+        asymmetry that only surfaces when somebody tries to fix a typo — the
+        same reasoning as `check_task_type`.
+
+        Dates are stored as 'YYYY-MM-DD' strings, so the comparison is a string
+        comparison; there is nothing to parse and no timezone to get wrong.
+        Equal dates are fine: a task that starts and finishes on one day is
+        ordinary.
+
+        Both the browser and this agree, and both are needed. The date inputs
+        carry `min`/`max` so the picker will not offer an impossible date, but
+        that is a convenience — it can be typed past, it does nothing about a
+        row that predates this rule, and it is not a boundary. This is.
+        """
+        if start and end and end < start:
+            return (f"A {what}'s expected end date cannot be before its "
+                    f"expected start date ({start} to {end}).")
+        return None
+
+    def check_task_steps_dates(data):
+        """The same check over every subtask in a payload, named by number.
+
+        Subtasks arrive as a list and are written wholesale, so one bad pair
+        has to be caught before anything is deleted — otherwise a refused save
+        would already have removed the old rows.
+        """
+        if "steps" not in data:
+            return None
+        for i, step in enumerate(data.get("steps") or []):
+            if not isinstance(step, dict):
+                continue
+            complaint = check_task_dates(step.get("expected_start"),
+                                         step.get("expected_end"),
+                                         what=f"subtask {i + 1}")
+            if complaint:
+                return complaint
+        return None
+
     def check_task_anchor(conn, handler, kind, anchor_id):
         """Is this a real parent, visible in the view being written to?
 
@@ -3344,6 +3471,14 @@ if HAS_TORNADO:
                 if problem:
                     return self.fail(400, problem)
 
+                complaint = check_task_dates(data.get("expected_start"),
+                                             data.get("expected_end"))
+                if complaint:
+                    return self.fail(400, complaint)
+                complaint = check_task_steps_dates(data)
+                if complaint:
+                    return self.fail(400, complaint)
+
                 ttype = (data.get("task_type") or "").strip()
                 other = (data.get("task_type_other") or "").strip()
                 complaint = check_task_type(conn, ttype, other)
@@ -3432,6 +3567,22 @@ if HAS_TORNADO:
                 if not before:
                     return self.fail(404, "Not found")
                 before = dict(before)
+                # Merged with the stored row, because an update writes only the
+                # keys it is sent: a payload carrying just one of the pair has
+                # to be checked against the date already on the record, or
+                # moving the end date alone would never be refused.
+                complaint = check_task_dates(
+                    data["expected_start"] if "expected_start" in data
+                    else before.get("expected_start"),
+                    data["expected_end"] if "expected_end" in data
+                    else before.get("expected_end"))
+                if complaint:
+                    return self.fail(400, complaint)
+                # Subtasks are replaced wholesale, so a bad pair has to be
+                # caught before the DELETE in write_task_children runs.
+                complaint = check_task_steps_dates(data)
+                if complaint:
+                    return self.fail(400, complaint)
                 gaps = missing_required("task", data, before)
                 if gaps:
                     return self.fail(

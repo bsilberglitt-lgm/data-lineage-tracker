@@ -6,6 +6,11 @@
 <title>Data Lineage Tracker</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* The label column in the details panel. A variable because a hint that
+   explains the field above it has to line up with that field's VALUE, so the
+   width is needed in two places that are nowhere near each other — and it was
+   written out three times before, including as an inline `marginLeft: 140`. */
+:root { --field-label-w: 140px; }
 body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #1a2332; height: 100vh; overflow: hidden; }
 /* --- Scenario view ------------------------------------------------------
    A scenario is not the live diagram, and that must be obvious at a glance
@@ -29,6 +34,13 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .row-hidden { opacity: 0.5; }
 .scenario-picker select { font-size: 12px; padding: 3px 6px; border: 1px solid #c7d0da;
   border-radius: 4px; background: #fff; max-width: 260px; }
+/* The view switcher is a Combo now, so the compact header sizing has to be
+   restated for an input — a dropdown converted without this grows to the
+   13px/8px of a form field and shoves the header apart. The `.combo-wrap`
+   needs the max-width too: the input is 100% of it. */
+.scenario-picker .combo-wrap { max-width: 260px; }
+.scenario-picker .combo-wrap input.combo-input { font-size: 12px;
+  padding: 3px 20px 3px 6px; border-color: #c7d0da; border-radius: 4px; }
 .check-inline { display: flex; align-items: center; gap: 6px; font-size: 13px;
   margin: 6px 0; cursor: pointer; }
 /* A checkbox row inside a .form-group has to beat two rules written for text
@@ -293,7 +305,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .panel-section { margin-bottom: 20px; }
 .panel-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #6b6b6b; margin-bottom: 8px; font-weight: 600; }
 .field-row { display: flex; margin-bottom: 6px; font-size: 13px; line-height: 1.5; }
-.field-label { width: 140px; flex-shrink: 0; color: #666; font-weight: 500; }
+.field-label { width: var(--field-label-w); flex-shrink: 0; color: #666; font-weight: 500; }
 .field-value { flex: 1; color: #1a2332; word-break: break-word; }
 .field-value.multiline { white-space: pre-line; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
@@ -379,10 +391,62 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
    flex shrink it the rest of the way. */
 .edit-select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px;
   font-size: 13px; font-family: inherit; width: 100%; max-width: 100%; min-width: 0; }
+/* Combo — the dropdown you can type into. See the component for why it is not
+   a <datalist>. The list is portalled to <body>, so it is positioned fixed and
+   sits above the modal overlay (100) and Tooltip (200).
+
+   The wrapper is `position: relative` only to hold the caret; the list itself
+   is NOT inside it, because a `position: absolute` list would be clipped by
+   the flyout's own scrolling exactly as a native one was. */
+.combo-wrap { position: relative; width: 100%; min-width: 0; }
+/* Room for the caret, so a long label does not run underneath it.
+
+   `.combo-wrap input.combo-input` rather than `.combo-input`, because inside an
+   Add window the control sits in a `.form-group`, and `.form-group input` sets
+   `padding: 8px 10px` at a higher specificity — it would win, and a long system
+   name would run under the caret. The same hazard CLAUDE.md records for
+   `.check-inline` and `.res-title-link`: a class carries the layout assumptions
+   of the place it was written for. The rest of `.form-group input` is wanted
+   here, which is why this overrides one property rather than opting out. */
+.combo-wrap input.combo-input { padding-right: 24px; cursor: default; }
+/* Dropped straight into a flex row — `.edit-field-row` — the wrapper has to
+   take the slack, or it shrinks to nothing beside its label. */
+.edit-field-row > .combo-wrap { flex: 1; }
+.combo-caret { position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+  font-size: 10px; color: #6b6b6b; pointer-events: none; }
+.combo-list { position: fixed; z-index: 300; margin: 0; padding: 4px 0;
+  list-style: none; background: #fff; border: 1px solid #b7bfc7; border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18); max-height: 260px; overflow-y: auto;
+  font-size: 13px; font-family: inherit; }
+.combo-opt { padding: 5px 10px; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+/* One highlight, driven by the keyboard AND the mouse (mouseenter sets the
+   same index), so there is never a second row that looks equally chosen.
+   #1B3A5C on #e8eef5 measures 7.6:1. */
+.combo-opt.active { background: #e8eef5; }
+.combo-opt.sel { font-weight: 600; }
+.combo-opt-hint { color: #6b6b6b; font-style: italic; }
+/* Shown but not choosable. #767676 on white is 4.54:1, so it still passes AA
+   for text — a greyed option has to stay readable, because the reason it is
+   greyed is written in it. */
+.combo-opt-off { color: #767676; cursor: default; }
+.combo-group { padding: 6px 10px 2px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; color: #4a5764;
+  border-top: 1px solid #e4e7ea; margin-top: 2px; }
+.combo-list > .combo-group:first-child { border-top: 0; margin-top: 0; }
+.combo-empty { padding: 6px 10px; color: #6b6b6b; font-style: italic; }
 .edit-field-row { display: flex; margin-bottom: 10px; font-size: 13px; align-items: flex-start; }
 /* Selects placed directly in the row, rather than inside a flex:1 wrapper. */
 .edit-field-row > .edit-select { flex: 1; }
 .edit-field-row .field-label { padding-top: 6px; }
+/* A value shown as text rather than as a control still has to line up with its
+   label. The label carries `padding-top: 6px` so it sits level with an input's
+   text, and a bare `.field-value` beside it starts at the top of the row
+   instead — 6px high. That only became visible when the value was EMPTY: the
+   derived status with nothing set rendered '' and the hint below it rose to
+   the top of the cell, above its own label. `display: block` so the hint sits
+   underneath it rather than beside it. */
+.edit-field-row .field-value { display: block; padding-top: 6px; }
 .panel-actions { display: flex; gap: 8px; padding: 12px 20px; border-bottom: 1px solid #eee; background: #fafbfc; }
 .stats-bar { display: flex; align-items: center; gap: 24px; padding: 10px 20px;
   background: #fff; border-bottom: 1px solid #eee; }
@@ -416,14 +480,43 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
    visible than an unselected one. The dark ring therefore stays put and the
    orange is drawn outside it, where its neighbours are the dark ring (3.58:1)
    and the fill. Selection is also never colour alone: the flyout opens. */
-.task-node .task-ring { fill: #dfe3e8; stroke: #1B3A5C; stroke-width: 2; }
+/* No `fill` here any more. The status supplies it as an attribute, and a
+   stylesheet rule beats a presentation attribute — the same trap as the legend
+   swatch being stretched by `.canvas-container svg`. The `open` grey that used
+   to live here is now `TASK_SIGNALS`' last entry, which is also what the
+   legend draws, so the two cannot disagree. */
+.task-node .task-ring { stroke: #1B3A5C; stroke-width: 2; }
 .task-node .task-hit { fill: transparent; stroke: none; }
+/* The status marks, in the ring's own colour. #1B3A5C measures at worst 6.54:1
+   against the five status fills (the red), so it clears AA as text as well as
+   the 3:1 WCAG 1.4.11 asks of a non-text indicator. Measured over every fill,
+   not guessed from the lightest — the mistake made and recorded for the
+   selection halo.
+
+   `pointer-events: none` so the mark never intercepts a drag: the circle is
+   one gesture, and a press that lands on the tick rather than the ring has to
+   behave identically. */
+.task-mark { fill: none; stroke: #1B3A5C; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.task-mark-dot, .task-mark-fill { fill: #1B3A5C; stroke: none;
+  pointer-events: none; }
+/* The legend swatches are drawn at r=6.5, so their strokes have to come down
+   with them or the mark fills the ring. */
+.legend svg .task-mark { stroke-width: 1.4; }
 .task-node .task-halo { fill: none; stroke: #D4772C; stroke-width: 2.5;
   display: none; }
 .task-node.selected .task-halo { display: inline; }
 /* The legend swatch reuses the same class, so it cannot drift from the circle
-   it is explaining. */
-.legend .task-ring { fill: #dfe3e8; stroke: #1B3A5C; stroke-width: 2; }
+   it is explaining.
+
+   **No `fill` here.** It used to set `fill: #dfe3e8`, and a stylesheet rule
+   beats a `fill` attribute on the element — so every swatch in the status key
+   came out grey however it was drawn. Exactly the trap recorded two rules down
+   for the swatch's *size*, where `width`/`height` attributes lose to
+   `.canvas-container svg`; the comment was already in the file and I walked
+   into the same thing with the colour. The status supplies the fill, as it
+   does on the diagram. */
+.legend .task-ring { stroke: #1B3A5C; stroke-width: 2; }
 /* A rule across the key, so System Types reads as one group and what follows
    as another. Without it the task entry looked like a ninth system type. */
 .legend-divider { border-top: 1px solid #d7dde5; margin: 8px 0 7px; }
@@ -511,7 +604,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .schema-empty { padding: 40px; text-align: center; color: #6b6b6b; font-size: 14px; }
 /* governance inheritance display */
 .gov-field { display: flex; margin-bottom: 7px; font-size: 13px; line-height: 1.5; }
-.gov-field .field-label { width: 140px; flex-shrink: 0; color: #666; font-weight: 500; }
+.gov-field .field-label { width: var(--field-label-w); flex-shrink: 0; color: #666; font-weight: 500; }
 .gov-field .gov-val { flex: 1; color: #1a2332; word-break: break-word; }
 .gov-val.inherited { color: #8a96a3; font-style: italic; }
 .src-tag { display: inline-block; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 6px; text-transform: uppercase; letter-spacing: 0.3px; vertical-align: middle; }
@@ -520,6 +613,26 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .src-tag-column { background: #fdebd0; color: #b9770e; }
 .src-tag-none { background: #f5f5f5; color: #bbb; }
 .gov-hint { font-size: 10px; color: #6b6b6b; margin-top: 2px; }
+/* A hint that is a SIBLING of the field row above it, rather than nested
+   inside it, explains that field — so it has to read as belonging to it.
+   `.gov-hint` alone gives it 2px of its own margin on top of the row's
+   margin-bottom and **nothing underneath**, so it sat further from the field
+   it describes than from the next one down, reading as a caption for the wrong
+   field. Ben reported it on the task dates and the status.
+
+   Two things at once: pull it up so the gap above is smaller than the gap
+   below, and indent it to the value column, because a hint about a value that
+   starts under the LABEL looks like it belongs to the panel rather than to the
+   field.
+
+   Keyed on adjacency, so it only applies where the hint really is a sibling. A
+   hint nested inside a row — the flow name, the display-name counter, the
+   derived status in the task edit view — is already aligned with its value and
+   already gets the row's bottom margin, and is left alone. */
+.field-row + .gov-hint {
+  margin-top: -2px; margin-bottom: 8px; margin-left: var(--field-label-w); }
+.edit-field-row + .gov-hint {
+  margin-top: -6px; margin-bottom: 12px; margin-left: var(--field-label-w); }
 /* A task's checklist. Each step is a row of its own rather than a line in a
    textarea, because a step carries an assignee and a status as well as text.
 
@@ -554,6 +667,11 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .task-step-grid .edit-input,
 .task-step-grid .edit-select { width: 100%; min-width: 0; box-sizing: border-box; }
 /* A dropdown sitting on its "do something" line rather than on a value.
+   Kept for the selects that are still native. The dropdowns over records are
+   `Combo`s now and style their own rows, which sidesteps this entirely —
+   `.combo-opt-hint` is ordinary markup and does what it says on every
+   platform.
+
    **The style goes on the SELECT, not the OPTION.** macOS draws native select
    popups itself and ignores `option { color; font-style }` entirely, so
    styling the option looked right on one platform and did nothing on Ben's.
@@ -1023,11 +1141,13 @@ function SystemSelect({ label, value, onChange, systems }) {
   if (useFieldHidden(label)) return null;
   return (
     <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
-      <select className="edit-select" value={value || ''} onChange={e => onChange(e.target.value || null)}>
-        <option value="">— none —</option>
-        {byName(systems).map(x =>
-          <option key={x.system_id} value={x.system_id}>{systemOption(x)}</option>)}
-      </select>
+      <div style={{flex:1, minWidth:0}}>
+        <Combo value={value || ''} ariaLabel={label}
+               onChange={v => onChange(v || null)}
+               options={[{ value: '', label: '— none —' },
+                         ...byName(systems).map(x =>
+                           ({ value: x.system_id, label: systemOption(x) }))]} />
+      </div>
     </div>
   );
 }
@@ -1036,12 +1156,14 @@ function ContributorSelect({ label, value, onChange, contributors }) {
   if (useFieldHidden(label)) return null;
   return (
     <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
-      <select className="edit-select" value={value || ''} onChange={e => onChange(e.target.value || null)}>
-        <option value="">— none —</option>
-        {assignable(contributors, value).map(c =>
-          <option key={c.contributor_id} value={c.contributor_id}>
-            {contributorLabel(c.contributor_id, contributors)}</option>)}
-      </select>
+      <div style={{flex:1, minWidth:0}}>
+        <Combo value={value || ''} ariaLabel={label}
+               onChange={v => onChange(v || null)}
+               options={[{ value: '', label: '— none —' },
+                         ...assignable(contributors, value).map(c =>
+                           ({ value: c.contributor_id,
+                              label: contributorLabel(c.contributor_id, contributors) }))]} />
+      </div>
     </div>
   );
 }
@@ -1716,6 +1838,142 @@ function labelPointOf(points) {
   return pointBackFromEnd(points, Math.max(total / 2, LABEL_CLEARANCE));
 }
 
+// ===== What a task's circle says about where it stands =====
+// Status colour coding. Five states, in strict precedence. The order is the
+// whole design, so it is written out rather than left to a chain of
+// conditionals to imply:
+//
+//   1. **complete** — the status says completed. It wins over every date: a
+//      task finished after its end date is finished, not late. Colouring it
+//      red teaches people to ignore red.
+//   2. **overdue** — an expected end has passed with nothing saying the work
+//      is done. A fact about the record, not a guess.
+//   3. **active** — the status says in progress. Ahead of the start-date rule
+//      below, because a task that has begun cannot also be failing to begin.
+//   4. **late_start** — an expected start has passed and the thing has not
+//      begun. "Not begun" includes a status nobody has set: see below.
+//   5. **open** — everything else. The plain grey circle, and the only state
+//      with no mark inside it, so an absence of information is shown as an
+//      absence — the same way the catalog shows a dash.
+//
+// **A subtask's dates count, not just the task's own.** This is the bug Ben
+// found: a subtask set to In progress with an end date of yesterday left the
+// circle yellow, because rules 2 and 4 read only `task.expected_end` and
+// `task.expected_start`. A task with subtasks already does not own its
+// *status* — `derived_task_status` computes it from them — and it was
+// inconsistent for the dates to work the other way, since the subtask dates
+// are exactly where the slippage shows up first. So both date rules ask the
+// task **and** its subtasks, and each date is judged against the status that
+// owns it: a subtask past its end date only counts if that subtask is not
+// completed, and a subtask past its start date only counts if that subtask
+// has not begun.
+//
+// **An unset status past its start date reads as late.** Ben asked for this
+// explicitly, and it reverses the call made when the feature was first built.
+// The argument then was that "nobody has assessed this" and "somebody said it
+// has not started" are different facts — the point of migration 0019 — and
+// only the second can be late. That distinction is real and it is still drawn
+// everywhere it is about *reporting* a status: the catalog shows a dash, the
+// hover card leaves the parentheses out, and the derivation ignores unset
+// subtasks. It is the wrong distinction for a **date** rule, because what the
+// start date tells you does not depend on whether anyone filled the field in:
+// the day came and went and nothing here says the work began. Treating that
+// as "nothing to see" hides the slippage precisely where nobody is paying
+// attention, which is where it matters most.
+//
+// Dates are 'YYYY-MM-DD' throughout, so a string comparison is the date
+// comparison and no parsing is needed — the same reason `type="date"` is used
+// for the inputs.
+//
+// **The colour is never the only cue.** Each state but `open` draws a mark in
+// the ring, because the five fills cannot be told apart by hue: active yellow
+// and late_start orange are 15 degrees apart, which is no distinction for
+// anyone with a colour deficiency, and WCAG 1.4.1 asks that colour not be the
+// sole carrier. The marks are drawn in the same #1B3A5C as the ring, at worst
+// 6.54:1 against these fills, so they clear AA as text as well as the 3:1
+// WCAG 1.4.11 wants of a non-text indicator.
+//
+// **The ring itself does not change colour.** It is what delineates the shape
+// against the eight system fills a circle may sit on (8.69:1 against the worst
+// of them), and recolouring it per status would put that measurement back in
+// play five times over. The status goes in the fill, where the only contrast
+// that has to hold is against the ring and the mark.
+const TASK_SIGNALS = [
+  { key: 'complete',   label: 'Completed',          fill: '#b2dcb6' },
+  { key: 'overdue',    label: 'Past its end date',  fill: '#f2b3ab' },
+  { key: 'active',     label: 'In progress',        fill: '#f6e08f' },
+  { key: 'late_start', label: 'Not started, past its start date', fill: '#f8c489' },
+  { key: 'open',       label: 'Nothing recorded yet', fill: '#dfe3e8' },
+];
+
+const TASK_SIGNAL_BY_KEY = TASK_SIGNALS.reduce(
+  (m, s) => { m[s.key] = s; return m; }, {});
+
+// Declared with `function` rather than as a `const` arrow so the Node suite can
+// reach them: a `const` does not escape an `eval`, which CLAUDE.md records the
+// hard way.
+
+// Has this piece of work not begun? True for a status nobody has set as well
+// as for an explicit "not started" — see the long note above on why a date
+// rule reads an absent status differently from a report of one.
+function taskNotBegun(status) {
+  return status !== 'in_progress' && status !== 'completed';
+}
+
+function taskSignal(task, today) {
+  if (!task) return 'open';
+  const st = task.status || null;
+  const steps = task.steps || [];
+
+  if (st === 'completed') return 'complete';
+
+  // Any end date that has passed with the work not done — the task's own, or
+  // a subtask's.
+  const endPassed = (end, status) =>
+    !!(end && today && end < today && status !== 'completed');
+  if (endPassed(task.expected_end, st)) return 'overdue';
+  if (steps.some(x => endPassed(x.expected_end, x.status))) return 'overdue';
+
+  // The subtask clause is belt and braces. `task_rows` derives the status from
+  // the subtasks on read, so a task with one in progress arrives with
+  // `status: 'in_progress'` already — but asking the subtasks directly means
+  // this function does not depend on the server having got that right, and the
+  // two cannot disagree about the colour. A test fixture that omitted the
+  // derived status is what exposed the dependency.
+  if (st === 'in_progress') return 'active';
+  if (steps.some(x => x.status === 'in_progress')) return 'active';
+
+  const startPassed = (start, status) =>
+    !!(start && today && start < today && taskNotBegun(status));
+  if (startPassed(task.expected_start, st)) return 'late_start';
+  if (steps.some(x => startPassed(x.expected_start, x.status))) return 'late_start';
+
+  return 'open';
+}
+
+// Whether anybody is using statuses or dates on these tasks. Drives how much
+// of the key the legend shows: the five-state colour key is only worth its
+// complexity once something is actually colour-coded, and until then a single
+// grey circle labelled "Task" says everything true about the diagram.
+//
+// Asked as "is any circle not grey" rather than "has anyone set a status",
+// because the two date-driven states colour a circle without anyone having
+// touched a status field, and a legend that omitted them would leave an
+// orange circle unexplained.
+function tasksUseSignals(tasks, today) {
+  return (tasks || []).some(t => taskSignal(t, today) !== 'open');
+}
+
+// Today as the same 'YYYY-MM-DD' the dates are stored in, in the **viewer's**
+// own timezone rather than UTC. `toISOString()` is UTC, so for anyone west of
+// Greenwich it reports tomorrow's date for part of every evening — which would
+// turn a task due today red several hours early.
+function todayISO() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 // ===== Where a task's circle sits =====
 // Pure functions: numbers in, numbers out, no DOM and no React. That is the
 // only reason `tools/tests/t_taskpos.js` can exercise them — there is no
@@ -1940,6 +2198,9 @@ function closestOnPath(points, px, py) {
 function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSelectFlow, onSelectTask, onUpdatePosition, onUpdateRoute, onUpdateTaskPosition, onDrill, canEdit, panelOpen, onDismissPanel, systemTypes, inScenario, zoom, setZoom, exportTitle, exportScenario, exportRef }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
+  // Per render rather than module level: the app is left open overnight and a
+  // date fixed at load time would colour tasks against yesterday.
+  const today = todayISO();
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   // Guides for the box currently being dragged. Cleared on mouse up, so they
   // never linger over a diagram nobody is rearranging.
@@ -2075,6 +2336,10 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
   // portal cannot be a child of an SVG node.
   const [taskHover, setTaskHover] = useState(null);
   const taskList = tasks || [];
+  // Whether the key shows the five-state colour legend or the single grey
+  // "Task" row. Computed here, beside the list it is about, so the legend
+  // itself stays a straight render of a decision made in one place.
+  const taskSignalsShown = tasksUseSignals(taskList, today);
   const taskParentOf = (t) => t.anchor_kind === 'data_flow'
     ? pointsById[t.anchor_id]
     : sysMap[t.anchor_id];
@@ -2567,7 +2832,7 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
             return (
               <g key={task.task_id}
                  className={`task-node${isSel ? ' selected' : ''}`}
-                 role="img" aria-label={taskTooltip(task).replace(/\n/g, '. ')}
+                 role="img" aria-label={taskTooltip(task, today).replace(/\n/g, '. ')}
                  opacity={task.change_state === 'removed' ? 0.45 : 1}
                  transform={`translate(${at.x},${at.y})`}
                  style={{ cursor: canEdit ? (dragging ? 'grabbing' : 'grab') : 'pointer' }}
@@ -2597,8 +2862,11 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
                 <circle className="task-hit" r={TASK_R + 6} />
                 <circle className="task-halo" r={TASK_R + 3} />
                 <circle className="task-ring" r={TASK_R}
+                        fill={(TASK_SIGNAL_BY_KEY[taskSignal(task, today)]
+                               || TASK_SIGNAL_BY_KEY.open).fill}
                         strokeDasharray={task.change_state === 'proposed'
                           ? '4,3' : undefined} />
+                <TaskMark signal={taskSignal(task, today)} />
                 {task.change_state === 'removed' && (
                   <line x1={-TASK_R} y1={0} x2={TASK_R} y2={0}
                         stroke="#1B3A5C" strokeWidth={1.5} />
@@ -2690,7 +2958,7 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
         const task = taskList.find(t => t.task_id === taskHover);
         const at = taskPositions[taskHover];
         if (!task || !at) return null;
-        const lines = taskTooltip(task).split('\n');
+        const lines = taskTooltip(task, today).split('\n');
         return (
           <div className="task-card" style={{
             left: at.x * zoom + panOffset.x,
@@ -2719,20 +2987,46 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
             rather than one list in which a circle looks like a ninth system
             type. Drawn whenever anything follows it. */}
         {(taskList.length > 0 || inScenario) && <div className="legend-divider" />}
-        {/* One entry, and only once there is a task on the diagram. What each
-            status looks like is deliberately not here: the status is on the
-            circle's own tooltip, where you are already pointing when you want
-            it. The swatch is sized to match the system-type swatches beside
-            it — 14px, the same as `.legend-color`. */}
-        {taskList.length > 0 && (
+        {/* The key grows with what the diagram is actually doing, in three
+            steps, because a key is only worth its space when it explains
+            something present:
+
+              * no tasks in this view — nothing at all, not even "Task"
+              * tasks, but nothing colour-coded — one grey circle, "Task"
+              * something colour-coded — the five-state key
+
+            The middle step is the 0.7.0 legend, and keeping it is Ben's point:
+            the complexity of five rows should only arrive once somebody is
+            using statuses or dates. Until then the grey circle is the whole
+            truth about the diagram, and five rows explaining colours that
+            appear nowhere on screen is just noise to read past.
+
+            Every swatch is the real thing — `<circle className="task-ring">`
+            with the same fill and the same `TaskMark` the diagram draws — so
+            the key cannot drift from what it explains. Sized to match the
+            system-type swatches beside it at 14px, the same as
+            `.legend-color`. */}
+        {taskList.length > 0 && !taskSignalsShown && (
           <div className="legend-item">
             <svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"
                  style={{flex:'0 0 auto'}}>
-              <circle className="task-ring" r={6.5} />
+              <circle className="task-ring" r={6.5}
+                      fill={TASK_SIGNAL_BY_KEY.open.fill} />
             </svg>
             Task
           </div>
         )}
+        {taskSignalsShown && <div className="legend-title">Tasks</div>}
+        {taskSignalsShown && TASK_SIGNALS.map(sig => (
+          <div className="legend-item" key={sig.key}>
+            <svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"
+                 style={{flex:'0 0 auto'}}>
+              <circle className="task-ring" r={6.5} fill={sig.fill} />
+              <TaskMark signal={sig.key} r={6.5} />
+            </svg>
+            {sig.label}
+          </div>
+        ))}
         {/* Only shown in a scenario: on Current Architecture nothing is
             proposed or being retired, so the entries would be noise. */}
         {inScenario && (
@@ -2741,7 +3035,7 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
             <div className="legend-title">In this scenario</div>
             <div className="legend-item">
               <div className="legend-color" style={{background:'#fff',
-                   border:'2px dashed #4a5764'}}></div>Proposed &mdash; new here
+                   border:'2px dashed #4a5764'}}></div>Proposed
             </div>
             <div className="legend-item">
               <div className="legend-color" style={{background:'#e2e6ea',
@@ -2945,16 +3239,278 @@ function useFieldHidden(label, col) {
   return isHidden(ctx, ctx.entity, { col, label });
 }
 
-// ' select-hint' when the current value is an option marked as a hint, '' when
-// it is a real value. Returned as a class fragment so the call site stays one
-// expression.
-function selectHintClass(value, options) {
-  const hit = (options || []).find(
-    o => typeof o !== 'string' && o.value === (value || ''));
-  return hit && hit.hint ? ' select-hint' : '';
+// NOTE ON PLACEMENT: this lives here, with the other components, and not
+// beside `taskSignal` and `TASK_SIGNALS` where it belongs by subject. Three
+// Node suites — t_labelpos, t_taskpos, t_tasksignal — `eval` slices of the
+// geometry region, and JSX is not evaluable: a component written in there
+// takes every one of them down with `SyntaxError: Unexpected token '<'`.
+// Keep JSX out of that region.
+// The mark inside a task's circle, drawn in the ring's own colour. Its own
+// component because the legend draws the identical thing: a key that can drift
+// from what it explains is worse than no key, which is the same reason the
+// legend swatch reuses `.task-ring`.
+//
+// Each mark is sized against TASK_R rather than in absolute units, so a change
+// to the circle's radius carries through instead of leaving the marks the
+// wrong size inside it.
+//
+// `open` draws nothing. See the precedence note below.
+function TaskMark({ signal, r = TASK_R }) {
+  const u = r / 11;   // the marks were drawn at r = 11
+  if (signal === 'complete') {
+    return <path className="task-mark" d={`M ${-4.4 * u} ${0.2 * u}
+      L ${-1.2 * u} ${3.6 * u} L ${4.6 * u} ${-3.8 * u}`} />;
+  }
+  if (signal === 'overdue') {
+    return (<>
+      <path className="task-mark" d={`M 0 ${-5.2 * u} L 0 ${1.2 * u}`} />
+      <circle className="task-mark-dot" cy={4 * u} r={1.25 * u} />
+    </>);
+  }
+  if (signal === 'active') {
+    // A half-filled disc: unmistakable at this size, and it reads as
+    // "part way" without needing a legend to decode it.
+    return <path className="task-mark-fill"
+                 d={`M 0 ${-6 * u} A ${6 * u} ${6 * u} 0 0 1 0 ${6 * u} Z`} />;
+  }
+  if (signal === 'late_start') {
+    // A hollow ring, not a dash: a horizontal bar is what a retired task
+    // already draws across itself, and two marks that look alike on the same
+    // canvas is worse than one that needs a glance at the key.
+    return <circle className="task-mark" cy={0} r={3.2 * u} fill="none" />;
+  }
+  return null;
 }
 
-function EditField({ label, value, onChange, type, options, invalid }) {
+// ===== Combo: a dropdown you can type into =====
+// Ben's words: "the lists are starting to get unwieldy and it can be hard to
+// find the item you want." Every dropdown over records — systems, data flows,
+// people, task parents — grows with the department, and a native <select> can
+// only be scrolled or jumped through letter by letter.
+//
+// **This replaces a `<datalist>`, and that is worth recording, because the
+// datalist was the obvious answer and it is wrong here.** The browser filters
+// a datalist's suggestions against the text already in the box. So a control
+// pre-filled with its current value matches only itself, and the list appears
+// to hold one item — exactly Ben's report that a task's "Attached to" dropdown
+// "only shows what the task is currently attached to, so if you want to move
+// it to a different data flow or system you have to recreate it". The field
+// was never read-only; the browser was hiding every other option behind the
+// value already there. No amount of option-list work fixes that from outside.
+//
+// So the rule this component is built around: **opening shows the whole list,
+// whatever the current value is.** The filter applies only to what somebody
+// types after opening. Seeding the query with the selected label would
+// reproduce the datalist bug in our own code.
+//
+// The listbox renders through a **portal**, for the same reason `Tooltip` does:
+// the details flyout scrolls, so a list drawn inside it is clipped at the
+// panel edge, and these controls live in the flyout and in modals both. It
+// sits at z-index 300 — above the modal overlay at 100 and `Tooltip` at 200.
+//
+// Options may be plain strings or `{value, label, hint}`, the same shapes
+// `EditField` already accepted, so call sites did not have to change. Two more
+// keys exist because the two longest lists in the app needed what a native
+// `<select>` gave them for free, and dropping either would have been a
+// regression dressed up as a new feature:
+//
+// * `disabled` — an option that is shown but cannot be chosen. The account
+//   picker lists already-linked accounts this way rather than omitting them,
+//   so nobody hunts for a colleague who is simply absent. The arrow keys step
+//   **over** these: landing on a row that Enter ignores is a dead end the user
+//   has to diagnose.
+// * `group` — a heading above a run of options, which `<optgroup>` did for the
+//   80-field definition picker. The heading is not selectable and is skipped
+//   the same way.
+const COMBO_MAX_H = 260;
+
+// An option whose label is empty is the "nothing chosen" row that several
+// selects carry as `''`. A blank row has nothing to click and nothing to read
+// aloud, so it is drawn as a dash — the same thing the read views show for an
+// absent value.
+const comboLabel = (o) => (o.label === '' || o.label === undefined ? '—' : o.label);
+
+function Combo({ id, value, options, onChange, invalid, placeholder, disabled,
+                 ariaLabel, describedBy }) {
+  const opts = (options || []).map(
+    o => (typeof o === 'string' ? { value: o, label: o } : o));
+  const current = opts.find(
+    o => !o.disabled && o.value === (value == null ? '' : value));
+  const shown = current ? comboLabel(current) : '';
+
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const [rect, setRect] = useState(null);
+  const inputRef = useRef(null);
+  const listRef = useRef(null);
+  const listId = (id || 'combo') + '-list';
+
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? opts.filter(o => comboLabel(o).toLowerCase().includes(q))
+    : opts;
+
+  const measure = () => {
+    const el = inputRef.current;
+    if (el) setRect(el.getBoundingClientRect());
+  };
+
+  // Whether a row can be chosen. Group headings and disabled options are
+  // drawn but never land under the highlight.
+  const pickable = (o) => !!o && !o.disabled;
+  // The next pickable row in a direction, or the current one if there is none.
+  // Written as a scan rather than index arithmetic because a run of disabled
+  // rows at either end has to be stepped over in one go.
+  const step = (from, dir) => {
+    for (let i = from + dir; i >= 0 && i < matches.length; i += dir) {
+      if (pickable(matches[i])) return i;
+    }
+    return from;
+  };
+  const firstPickable = (list) => {
+    const i = list.findIndex(pickable);
+    return i < 0 ? 0 : i;
+  };
+
+  const openList = () => {
+    if (disabled || open) return;
+    measure();
+    // Deliberately empty: see the note above. The whole list, every time.
+    setQuery('');
+    const at = opts.findIndex(o => o === current);
+    setActive(at >= 0 ? at : firstPickable(opts));
+    setOpen(true);
+  };
+  const close = () => { setOpen(false); setQuery(''); };
+
+  const commit = (opt) => {
+    if (!pickable(opt)) return;
+    onChange(opt.value);
+    close();
+    // Focus stays on the control, so the keyboard user is where they were.
+    if (inputRef.current) inputRef.current.focus();
+  };
+
+  // Re-measured rather than closed on scroll or resize. Closing is what
+  // `Tooltip` does, but opening a control near the bottom of a panel can make
+  // the browser scroll it into view, which would then close the list the user
+  // had just opened.
+  useEffect(() => {
+    if (!open) return;
+    const again = () => measure();
+    window.addEventListener('scroll', again, true);
+    window.addEventListener('resize', again);
+    const away = (e) => {
+      const i = inputRef.current, l = listRef.current;
+      if (i && i.contains(e.target)) return;
+      if (l && l.contains(e.target)) return;
+      close();
+    };
+    document.addEventListener('mousedown', away, true);
+    return () => {
+      window.removeEventListener('scroll', again, true);
+      window.removeEventListener('resize', again);
+      document.removeEventListener('mousedown', away, true);
+    };
+  }, [open]);
+
+  // Keep the highlighted row in view when arrowing through a long list.
+  useEffect(() => {
+    if (!open || !listRef.current) return;
+    const row = listRef.current.querySelector('.combo-opt.active');
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+  }, [open, active]);
+
+  const key = (e) => {
+    if (disabled) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!open) return openList();
+      setActive(a => step(a, 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) return openList();
+      setActive(a => step(a, -1));
+    } else if (e.key === 'Enter') {
+      // Only swallowed when there is a list to choose from, so Enter still
+      // submits elsewhere.
+      if (open) { e.preventDefault(); commit(matches[active]); }
+    } else if (e.key === 'Escape') {
+      if (open) { e.preventDefault(); close(); }
+    } else if (e.key === 'Tab') {
+      // Moving on abandons what was typed rather than guessing at it: a
+      // half-typed filter is not a choice.
+      if (open) close();
+    }
+  };
+
+  const hint = !!(current && current.hint) || (!current && !!placeholder);
+  const style = rect ? {
+    left: rect.left,
+    width: rect.width,
+    // Below unless there is more room above, which is what a control near the
+    // foot of a modal needs.
+    ...(rect.bottom + COMBO_MAX_H > window.innerHeight
+        && rect.top > window.innerHeight - rect.bottom
+      ? { bottom: window.innerHeight - rect.top + 2 }
+      : { top: rect.bottom + 2 }),
+  } : null;
+
+  return (
+    <React.Fragment>
+      <div className="combo-wrap">
+        <input id={id} ref={inputRef} role="combobox" autoComplete="off"
+               className={'edit-input combo-input' + (invalid ? ' field-error' : '')
+                          + (hint && !open ? ' select-hint' : '')}
+               value={open ? query : shown}
+               placeholder={open ? (shown || placeholder || 'Type to filter')
+                                 : (placeholder || '')}
+               disabled={!!disabled}
+               aria-label={ariaLabel}
+               aria-invalid={!!invalid}
+               aria-describedby={describedBy}
+               aria-expanded={open}
+               aria-controls={open ? listId : undefined}
+               aria-autocomplete="list"
+               aria-activedescendant={open && matches[active]
+                 ? listId + '-' + active : undefined}
+               onMouseDown={() => (open ? close() : openList())}
+               onChange={e => { if (!open) openList();
+                                const t = e.target.value;
+                                setQuery(t);
+                                setActive(firstPickable(
+                                  t.trim() ? opts.filter(o => comboLabel(o)
+                                    .toLowerCase().includes(t.trim().toLowerCase()))
+                                           : opts)); }}
+               onKeyDown={key} />
+        <span className="combo-caret" aria-hidden="true">&#9662;</span>
+      </div>
+      {open && style && ReactDOM.createPortal(
+        <ul id={listId} role="listbox" ref={listRef}
+            className="combo-list" style={style}>
+          {matches.length === 0 && <li className="combo-empty">No matches</li>}
+          {matches.map((o, i) => (o.group !== undefined
+            ? <li key={'g' + i} className="combo-group" role="presentation">{o.group}</li>
+            : <li key={o.value + ':' + i} id={listId + '-' + i} role="option"
+                aria-selected={current === o}
+                aria-disabled={o.disabled ? true : undefined}
+                className={'combo-opt' + (i === active ? ' active' : '')
+                           + (current === o ? ' sel' : '')
+                           + (o.disabled ? ' combo-opt-off' : '')
+                           + (o.hint ? ' combo-opt-hint' : '')}
+                onMouseEnter={() => { if (pickable(o)) setActive(i); }}
+                onMouseDown={e => { e.preventDefault(); commit(o); }}>
+              {comboLabel(o)}
+            </li>
+          ))}
+        </ul>,
+        document.body)}
+    </React.Fragment>
+  );
+}
+
+function EditField({ label, value, onChange, type, options, invalid, min, max }) {
   if (useFieldHidden(label)) return null;
   const bad = invalid ? ' field-error' : '';
   const note = invalid ? <div className="field-error-msg">This field is required</div> : null;
@@ -2966,17 +3522,14 @@ function EditField({ label, value, onChange, type, options, invalid }) {
   // An option may be a plain string or a {value,label} pair. It was strings
   // only, so a column storing `not_started` offered the user "not_started" —
   // a database value read aloud in a dropdown.
+  // A Combo rather than a <select>: every one of these lists can grow with the
+  // data, and the hint styling works here because the markup is ours — macOS
+  // draws native select popups itself and ignores `option { font-style }`.
   if (type === 'select') return (
     <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
-      <div style={{flex:1}}><select
-        className={'edit-select' + bad + (selectHintClass(value, options))}
-        value={value||''}
-        aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)}>
-        {options.map(o => typeof o === 'string'
-          ? <option key={o} value={o}>{o}</option>
-          : <option key={o.value} value={o.value}
-                    className={o.hint ? 'opt-hint' : undefined}>{o.label}</option>)}
-        </select>{note}</div></div>
+      <div style={{flex:1, minWidth:0}}>
+        <Combo value={value} options={options} onChange={onChange}
+               invalid={invalid} ariaLabel={label} />{note}</div></div>
   );
   // The box used to be followed by the word "Yes" or "No" reflecting the
   // current value, which read as a choice being offered rather than a state —
@@ -3001,9 +3554,15 @@ function EditField({ label, value, onChange, type, options, invalid }) {
   // exactly the YYYY-MM-DD the database stores, so no parsing is needed on
   // either side. A free-text box invited "Jan 5" and "5/1/27", which sort
   // wrongly and compare wrongly.
+  // `min`/`max` bound the native picker, which is how an end date before its
+  // start becomes hard to enter rather than merely refused afterwards. It is a
+  // convenience and not the boundary — it can be typed past, and it says
+  // nothing about rows that predate the rule — so the server checks too
+  // (`check_task_dates`).
   if (type === 'date') return (
     <div className="edit-field-row"><span className="field-label">{label}<FieldInfo label={label} /></span>
       <div style={{flex:1}}><input type="date" className={'edit-input'+bad} value={value||''}
+        min={min || undefined} max={max || undefined}
         aria-invalid={!!invalid} onChange={e=>onChange(e.target.value)} />{note}</div></div>
   );
   return (
@@ -3477,9 +4036,9 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
           {type === 'element' && editing &&
             <ElementEditView form={form} set={set} missing={missing}
                              systems={systems} contributors={contributors} />}
-          {type === 'schema_table' && !editing && <SchemaTableReadView data={data} />}
+          {type === 'schema_table' && !editing && <SchemaTableReadView data={data} contributors={contributors} />}
           {type === 'schema_table' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="table" contributors={contributors} />}
-          {type === 'schema_column' && !editing && <SchemaColumnReadView data={data} />}
+          {type === 'schema_column' && !editing && <SchemaColumnReadView data={data} contributors={contributors} />}
           {type === 'schema_column' && editing && <SchemaGovEditView form={form} set={set} inherited={data.inherited} level="field" contributors={contributors} />}
           {type === 'contributor' && !editing && <ContributorReadView data={data} />}
           {type === 'contributor' && editing && <ContributorEditView form={form} set={set} missing={missing} />}
@@ -3764,7 +4323,7 @@ function SystemEditView({ form, set, contributors, systems, systemTypes, missing
 // ===== Flow Views =====
 function FlowReadView({ data, contributors, canEdit, notify }) {
   return (<>
-    <CollapsibleSection title="Flow Overview">
+    <CollapsibleSection title="Overview">
       <ReadField label="ID" value={data.flow_id} />
       <ReadField label="Display Name" value={data.display_name} />
       <ReadField label="Source" value={data.source_name} />
@@ -3843,21 +4402,21 @@ function FlowEditView({ form, set, systems, contributors, missing, inScenario })
   const nameIsGenerated = !form.name ||
     form.name === autoFlowName(systems, form.source_system_id, form.destination_system_id);
   return (<>
-    <CollapsibleSection title="Flow Overview">
+    <CollapsibleSection title="Overview">
       {/* Source and Destination sit above the name because the name follows
           from them: while it is still the generated "A to B", changing either
           system rewrites it. Once someone types their own name it is left
           alone, however the systems change afterwards. */}
       <div className="edit-field-row"><span className="field-label">Source</span>
-        <select className="edit-select" value={form.source_system_id || ''}
-                onChange={e=>setEndpoint('source_system_id', e.target.value)}>
-          {byName(systems).map(s => <option key={s.system_id} value={s.system_id}>{systemOption(s)}</option>)}
-        </select></div>
+        <Combo value={form.source_system_id || ''} ariaLabel="Source"
+               onChange={v=>setEndpoint('source_system_id', v)}
+               options={byName(systems).map(s =>
+                 ({ value: s.system_id, label: systemOption(s) }))} /></div>
       <div className="edit-field-row"><span className="field-label">Destination</span>
-        <select className="edit-select" value={form.destination_system_id || ''}
-                onChange={e=>setEndpoint('destination_system_id', e.target.value)}>
-          {byName(systems).map(s => <option key={s.system_id} value={s.system_id}>{systemOption(s)}</option>)}
-        </select></div>
+        <Combo value={form.destination_system_id || ''} ariaLabel="Destination"
+               onChange={v=>setEndpoint('destination_system_id', v)}
+               options={byName(systems).map(s =>
+                 ({ value: s.system_id, label: systemOption(s) }))} /></div>
       <div className="edit-field-row"><span className="field-label">Name</span>
         <div style={{flex:1}}>
           <input className={'edit-input' + (bad('name') ? ' field-error' : '')}
@@ -4021,12 +4580,13 @@ function GovEditField({ field, label, form, set, inherited, type, options, contr
     // A contributor key, not free text. Typed by hand it was unvalidated and
     // displayed as "CON-003"; the blank option is how an override is cleared
     // so the value falls back to the parent.
-    control = <select className="edit-select" value={raw || ''}
-                      onChange={e => set(field, e.target.value || null)}>
-      <option value="">(inherit)</option>
-      {assignable(contributors, raw).map(c =>
-        <option key={c.contributor_id} value={c.contributor_id}>
-          {contributorLabel(c.contributor_id, contributors)}</option>)}</select>;
+    control = (
+      <Combo value={raw || ''} ariaLabel={label}
+             onChange={v => set(field, v || null)}
+             options={[{ value: '', label: '(inherit)', hint: true },
+                       ...assignable(contributors, raw).map(c =>
+                         ({ value: c.contributor_id,
+                            label: contributorLabel(c.contributor_id, contributors) }))]} />);
   } else if (type === 'textarea') {
     control = <textarea className="edit-textarea" value={raw || ''} placeholder="(inherit / none)" onChange={e => set(field, e.target.value)} />;
   } else {
@@ -4035,7 +4595,7 @@ function GovEditField({ field, label, form, set, inherited, type, options, contr
   return (
     <div style={{ marginBottom: 10 }}>
       <div className="edit-field-row" style={{ marginBottom: 2 }}><span className="field-label">{label}</span>{control}</div>
-      <div className="gov-hint" style={{ marginLeft: 140 }}>{hasInh ? `Inherits: ${fmtGov(field, inh.value, contributors)} (${SRC_LABEL[inh.source]})` : 'No inherited value'}</div>
+      <div className="gov-hint">{hasInh ? `Inherits: ${fmtGov(field, inh.value, contributors)} (${SRC_LABEL[inh.source]})` : 'No inherited value'}</div>
     </div>
   );
 }
@@ -4077,7 +4637,7 @@ function SchemaGovEditView({ form, set, inherited, level, contributors }) {
   </>);
 }
 
-function SchemaTableReadView({ data }) {
+function SchemaTableReadView({ data, contributors }) {
   return (<>
     <CollapsibleSection title="Table">
       <ReadField label="Schema" value={data.schema_name} />
@@ -4097,7 +4657,7 @@ function SchemaTableReadView({ data }) {
   </>);
 }
 
-function SchemaColumnReadView({ data }) {
+function SchemaColumnReadView({ data, contributors }) {
   const pt = data.parent_table || {};
   return (<>
     <CollapsibleSection title="Column">
@@ -4163,7 +4723,7 @@ function AddSystemModal({ onClose, onSave, systems, systemTypes, inScenario }) {
           <label className="check-inline">
             <input type="checkbox" checked={!!form.proposed}
                    onChange={e=>set('proposed', e.target.checked)} />
-            Proposed &mdash; something this scenario adds
+            Proposed
           </label>
         )}
         <div className="modal-section-title">Overview</div>
@@ -4338,10 +4898,10 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
           <label className="check-inline">
             <input type="checkbox" checked={!!form.proposed}
                    onChange={e=>set('proposed', e.target.checked)} />
-            Proposed &mdash; something this scenario adds
+            Proposed
           </label>
         )}
-        <div className="modal-section-title">Flow Overview</div>
+        <div className="modal-section-title">Overview</div>
         {/* The two systems come first so the name can be offered ready-made
             once both are chosen. Typing over it keeps whatever you typed. */}
         <div className="form-row">
@@ -4693,14 +5253,11 @@ function ReqField({ label, value, onChange, error, type, options, placeholder, i
     <div className="form-group">
       <label htmlFor={id}>{label}<FieldInfo label={cleanLabel(label)} entity={entity} /></label>
       {type === 'select'
-        ? <select id={id} className={cls} value={value || ''} onChange={e => onChange(e.target.value)}
-                  aria-invalid={!!error} aria-describedby={error ? id + '-err' : undefined}>
-            <option value="">Select…</option>
-            {(options || []).map(o =>
-              <option key={typeof o === 'string' ? o : o.value}
-                      value={typeof o === 'string' ? o : o.value}>
-                {typeof o === 'string' ? o : o.label}</option>)}
-          </select>
+        ? <Combo id={id} value={value} onChange={onChange} invalid={!!error}
+                 placeholder="Select…"
+                 describedBy={error ? id + '-err' : undefined}
+                 options={[{ value: '', label: 'Select…', hint: true },
+                           ...(options || [])]} />
         : type === 'textarea'
         ? <textarea id={id} className={cls} value={value || ''} placeholder={placeholder}
                     onChange={e => onChange(e.target.value)} aria-invalid={!!error}
@@ -4721,7 +5278,8 @@ function ReqField({ label, value, onChange, error, type, options, placeholder, i
 // width, matching what the hand-written blocks did. `hint` is the small grey
 // line some fields carry beneath the input.
 function ModalField({ entity, col, label, value, onChange, type, options,
-                      placeholder, id, maxLength, hint, children, blank }) {
+                      placeholder, id, maxLength, hint, children, blank,
+                      min, max }) {
   const ctx = useContext(FieldDefs);
   if (isHidden(ctx, entity, { col })) return null;
   const marker = <FieldInfo label={cleanLabel(label)} entity={entity} />;
@@ -4734,22 +5292,21 @@ function ModalField({ entity, col, label, value, onChange, type, options,
       <label htmlFor={id}>{label}{marker}</label>
       {children ? children
         : type === 'select'
-        ? <select {...common}>
-            {/* Three of these selects always hold a value and never offered an
-                empty choice — Status, Entry type and Frequency all default to
-                something. Rendering one unconditionally would have let a blank
-                be chosen where it previously could not be. */}
-            {blank !== false &&
-              <option value="">{placeholder || 'Select...'}</option>}
-            {(options || []).map(o =>
-              <option key={typeof o === 'string' ? o : o.value}
-                      value={typeof o === 'string' ? o : o.value}>
-                {typeof o === 'string' ? o : o.label}</option>)}
-          </select>
+        ? <Combo id={id} value={common.value} onChange={onChange}
+                 /* Three of these selects always hold a value and never offered
+                    an empty choice — Status, Entry type and Frequency all
+                    default to something. Offering one unconditionally would
+                    have let a blank be chosen where it previously could not
+                    be. */
+                 options={[...(blank !== false
+                   ? [{ value: '', label: placeholder || 'Select...', hint: true }]
+                   : []), ...(options || [])]} />
         : type === 'textarea'
         ? <textarea {...common} placeholder={placeholder} />
         : <input {...common} type={type === 'date' ? 'date' : undefined}
                  placeholder={type === 'date' ? undefined : placeholder}
+                 min={type === 'date' && min ? min : undefined}
+                 max={type === 'date' && max ? max : undefined}
                  maxLength={maxLength} />}
       {hint && <div className="gov-hint">{hint}</div>}
     </div>
@@ -5202,15 +5759,31 @@ const TASK_STATUS_OPTIONS = [
 // What the circle says on hover. One function because it is the only place a
 // task's identity is read as a sentence, and because the rules about what to
 // leave out are easier to see in one place than spread across JSX.
-const taskTooltip = (task) => {
+const taskTooltip = (task, today) => {
   const lines = [];
   const status = taskStatusLabel(task.status);
-  const n = (task.steps || []).length;
-  const done = (task.steps || []).filter(x => x.status === 'completed').length;
+  const steps = task.steps || [];
+  const n = steps.length;
+  const done = steps.filter(x => x.status === 'completed').length;
+  // Whether anybody has said anything about any subtask, which is not the same
+  // as whether any has started. Until one of them has a status, counting how
+  // many are "done" answers a question nobody has asked and makes an
+  // unassessed task look assessed — the same distinction migration 0019 drew
+  // between NULL and 'not_started'. So the count is bare until then.
+  const assessed = steps.some(x => x.status);
+  const word = `subtask${n === 1 ? '' : 's'}`;
   // No status means no parentheses. A task that nobody has set a status on is
   // a real state, and "Name ()" reads as a fault.
   lines.push(task.name + (status ? ` (${status})` : ''));
-  if (n) lines.push(`${done} of ${n} subtasks done`);
+  if (n) lines.push(assessed ? `${done} of ${n} ${word} done` : `${n} ${word}`);
+  // Why the circle is the colour it is, but only when the colour says
+  // something the status does not. A red circle whose status reads "In
+  // progress" is otherwise unexplained, and the alternative — naming the state
+  // every time — would have the card say "Completed" twice.
+  const sg = taskSignal(task, today);
+  if (sg === 'overdue' || sg === 'late_start') {
+    lines.push(TASK_SIGNAL_BY_KEY[sg].label);
+  }
   const type = task.type_label || task.task_type;
   if (type) lines.push(type);
   return lines.join('\n');
@@ -5262,42 +5835,33 @@ const splitParent = (value) => {
                 : { anchor_kind: value.slice(0, at), anchor_id: value.slice(at + 1) };
 };
 
-// Picking a parent out of a list of every system and every flow. A plain
-// `<select>` means scrolling a list that grows with the department, so this is
-// an input with a `<datalist>`: typing filters it, and the browser supplies
-// the dropdown, the keyboard handling and the accessibility for free. A
-// hand-built combobox would be a few hundred lines of focus management to get
-// the same thing slightly worse.
+// Picking a parent out of a list of every system and every flow.
 //
-// The datalist's option values are the **labels**, because that is what the
-// browser puts in the input when one is chosen — so the label is matched back
-// to its `kind:id` on change. Every label ends in the record's own identifier,
-// which is what makes them unique and the match unambiguous.
+// This was an input with a `<datalist>`, and the datalist is what Ben reported
+// as the dropdown "only shows what the task is currently attached to, so if
+// you want to move it to a different data flow or system you have to recreate
+// it". The browser filters a datalist's suggestions against the text already
+// in the box, so a control showing its current parent matched only that parent
+// and the list looked like it held a single item. The field was never
+// read-only — every other option was hidden behind the value already there,
+// and nothing about the option list could fix that from outside.
 //
-// A half-typed value resolves to nothing, which leaves the field empty and
-// lets the required check say so. That is deliberate: silently keeping the
-// previous parent while the box shows different text would be worse.
+// `Combo` is built around opening on the whole list for exactly this reason;
+// its own comment is where that is explained. The old note here said a
+// hand-built combobox "would be a few hundred lines of focus management to get
+// the same thing slightly worse". The first half was about right and the
+// second was wrong.
+//
+// Still its own component rather than `Combo` at both call sites, because the
+// required-field message and the moving-the-circle hint belong with it, and
+// the flyout and the Add window would otherwise repeat them.
 function TaskParentPicker({ id, value, options, onChange, invalid, hint }) {
-  const label = (options.find(o => o.value === value) || {}).label || '';
-  const [text, setText] = useState(label);
-  // Re-sync when the record changes underneath, e.g. opening another task.
-  useEffect(() => { setText(label); }, [label]);
-  const listId = id + '-list';
-  const commit = (typed) => {
-    setText(typed);
-    const hit = options.find(o => o.label === typed);
-    onChange(hit ? hit.value : '');
-  };
   return (<>
-    <input id={id} list={listId} value={text}
-           className={'edit-input' + (invalid ? ' field-error' : '')}
+    <Combo id={id} value={value} options={options} onChange={onChange}
+           invalid={invalid} ariaLabel="Attached to"
            placeholder="Type to find a system or data flow"
-           aria-invalid={!!invalid}
-           onChange={e => commit(e.target.value)} />
-    <datalist id={listId}>
-      {options.map(o => <option key={o.value} value={o.label} />)}
-    </datalist>
-    {invalid && <div className="field-error-msg">This field is required</div>}
+           describedBy={invalid ? id + '-err' : undefined} />
+    {invalid && <div className="field-error-msg" id={id + '-err'}>This field is required</div>}
     {hint && <div className="gov-hint">{hint}</div>}
   </>);
 }
@@ -5340,7 +5904,7 @@ function TaskReadView({ data, contributors, canEdit, notify }) {
       <ReadField label="Task Type" value={data.type_label || taskTypeLabel(data)} />
       {data.change_state === 'proposed' && (
         <div className="field-row"><span className="field-label">In this scenario</span>
-          <span className="field-value">Proposed &mdash; new here</span></div>
+          <span className="field-value">Proposed</span></div>
       )}
       <ReadField label="Description" value={data.description} multiline />
       {/* Hand-written: the parent is two columns stored together and read as
@@ -5351,8 +5915,22 @@ function TaskReadView({ data, contributors, canEdit, notify }) {
         <span className="field-value">{taskParentLabel(data)}</span></div>
     </CollapsibleSection>
     <CollapsibleSection title="Timing and progress">
-      <ReadField label="Expected Start" value={data.expected_start} />
-      <ReadField label="Expected End" value={data.expected_end} />
+      {/* `effective_*` falls back to the span the subtasks occupy when the
+          task has no date of its own. The raw column is what the edit view
+          shows and sends, so this display never becomes a stored value by
+          itself — see the note in `task_rows`.
+
+          `data.expected_start || …` second rather than first: the catalogue
+          generator takes the first `data.X` the EDIT view established as a
+          real column, and `effective_expected_start` is not one. Keeping the
+          real column in the expression is what lets a definition written for
+          "Expected Start" still resolve here. */}
+      <ReadField label="Expected Start"
+                 value={data.expected_start || data.effective_expected_start} />
+      {!!data.start_from_steps && <div className="gov-hint">From the earliest subtask</div>}
+      <ReadField label="Expected End"
+                 value={data.expected_end || data.effective_expected_end} />
+      {!!data.end_from_steps && <div className="gov-hint">From the latest subtask</div>}
       <ReadField label="Status" value={taskStatusLabel(data.status)} />
       {!!data.status_from_steps &&
         <div className="gov-hint">Determined based on subtasks</div>}
@@ -5462,10 +6040,28 @@ function TaskEditView({ form, set, onParent, original, missing, contributors,
       </div>
     </CollapsibleSection>
     <CollapsibleSection title="Timing and progress">
+      {/* Deliberately bound to the RAW columns, not the effective ones. A box
+          pre-filled with the derived date would be sent back on the next save
+          and become a stored override, so a task would stop tracking its
+          subtasks the first time anybody saved it for an unrelated reason.
+          Blank here means "derived"; typing a date overrides it; clearing it
+          again returns to derived. */}
       <EditField label="Expected Start" type="date" value={form.expected_start}
-                 onChange={v=>set('expected_start',v)} />
+                 onChange={v=>set('expected_start',v)}
+                 max={form.expected_end || original.derived_end} />
+      {!form.expected_start && original.derived_start &&
+        <div className="gov-hint">
+          Using {original.derived_start}, the earliest subtask start. Enter a
+          date to override it.
+        </div>}
       <EditField label="Expected End" type="date" value={form.expected_end}
-                 onChange={v=>set('expected_end',v)} />
+                 onChange={v=>set('expected_end',v)}
+                 min={form.expected_start || original.derived_start} />
+      {!form.expected_end && original.derived_end &&
+        <div className="gov-hint">
+          Using {original.derived_end}, the latest subtask end. Enter a date to
+          override it.
+        </div>}
       {fromSteps
         /* Shown as a value, not a control: with steps present the server
            recomputes this on every save, so an editable box would accept a
@@ -5473,7 +6069,11 @@ function TaskEditView({ form, set, onParent, original, missing, contributors,
         ? <div className="edit-field-row">
             <span className="field-label">Status</span>
             <div style={{flex:1}}>
-              <span className="field-value">{taskStatusLabel(form.status)}</span>
+              {/* The dash, not '', when the subtasks have produced no status.
+                  `ReadField` already falls back this way, and an empty cell
+                  here left the row with no value at all and the hint sitting
+                  where the value should be. An absence shown as an absence. */}
+              <span className="field-value">{taskStatusLabel(form.status) || '\u2014'}</span>
               <div className="gov-hint">Determined based on subtasks</div>
             </div>
           </div>
@@ -5534,27 +6134,26 @@ function TaskPeople({ value, contributors, onChange, variant }) {
   return (<>
     {chosen.map((cid, i) => (
       <Row label="Person Responsible" key={cid + i}>
-        <select className="edit-select" value={cid}
-                onChange={e => setAt(i, e.target.value)}>
-          <option value="">— remove —</option>
-          {assignable(contributors, cid)
-            .filter(c => c.contributor_id === cid || !taken.has(c.contributor_id))
-            .map(c => <option key={c.contributor_id} value={c.contributor_id}>
-              {contributorLabel(c.contributor_id, contributors)}</option>)}
-        </select>
+        <Combo value={cid} ariaLabel="Person Responsible"
+               onChange={v => setAt(i, v)}
+               options={[{ value: '', label: '— remove —' },
+                         ...assignable(contributors, cid)
+                           .filter(c => c.contributor_id === cid
+                                        || !taken.has(c.contributor_id))
+                           .map(c => ({ value: c.contributor_id,
+                             label: contributorLabel(c.contributor_id, contributors) }))]} />
       </Row>))}
     <Row label={chosen.length ? 'Add another' : 'Person Responsible'}>
       {/* The empty choice is the invitation, in grey italics, rather than a
           dash: a dropdown whose first line reads "— none —" says what is
           selected, not what to do with it. */}
-      <select className="edit-select select-hint" value=""
-              onChange={e => { if (e.target.value) onChange([...chosen, e.target.value]); }}>
-        <option value="" className="opt-hint">Add Contributor</option>
-        {assignable(contributors, null)
-          .filter(c => !taken.has(c.contributor_id))
-          .map(c => <option key={c.contributor_id} value={c.contributor_id}>
-            {contributorLabel(c.contributor_id, contributors)}</option>)}
-      </select>
+      <Combo value="" ariaLabel="Add a person responsible"
+             onChange={v => { if (v) onChange([...chosen, v]); }}
+             options={[{ value: '', label: 'Add Contributor', hint: true },
+                       ...assignable(contributors, null)
+                         .filter(c => !taken.has(c.contributor_id))
+                         .map(c => ({ value: c.contributor_id,
+                           label: contributorLabel(c.contributor_id, contributors) }))]} />
     </Row>
   </>);
 }
@@ -5619,24 +6218,18 @@ function TaskSubtasks({ steps, contributors, onChange, showHint }) {
         <div className="task-step-grid">
           <label>
             <span>Status</span>
-            <select className={'edit-select' + (s.status ? '' : ' select-hint')}
-                    value={s.status || ''}
-                    onChange={e => change(i, { status: e.target.value || null })}>
-              {TASK_STATUS_CHOICES.map(o =>
-                <option key={o.value} value={o.value}
-                        className={o.hint ? 'opt-hint' : undefined}>{o.label}</option>)}
-            </select>
+            <Combo value={s.status || ''} ariaLabel="Subtask status"
+                   options={TASK_STATUS_CHOICES}
+                   onChange={v => change(i, { status: v || null })} />
           </label>
           <label>
             <span>Person Responsible</span>
-            <select className={'edit-select' + (s.contributor_id ? '' : ' select-hint')}
-                    value={s.contributor_id || ''}
-                    onChange={e => change(i, { contributor_id: e.target.value || null })}>
-              <option value="" className="opt-hint">Add Contributor</option>
-              {assignable(contributors, s.contributor_id).map(c =>
-                <option key={c.contributor_id} value={c.contributor_id}>
-                  {contributorLabel(c.contributor_id, contributors)}</option>)}
-            </select>
+            <Combo value={s.contributor_id || ''} ariaLabel="Subtask person responsible"
+                   onChange={v => change(i, { contributor_id: v || null })}
+                   options={[{ value: '', label: 'Add Contributor', hint: true },
+                             ...assignable(contributors, s.contributor_id).map(c =>
+                               ({ value: c.contributor_id,
+                                  label: contributorLabel(c.contributor_id, contributors) }))]} />
           </label>
           {/* Captions matter more here than anywhere: a date input shows no
               placeholder, so two empty boxes side by side say nothing about
@@ -5645,12 +6238,14 @@ function TaskSubtasks({ steps, contributors, onChange, showHint }) {
             <span>Expected Start</span>
             <input type="date" className="edit-input"
                    value={s.expected_start || ''}
+                   max={s.expected_end || undefined}
                    onChange={e => change(i, { expected_start: e.target.value || null })} />
           </label>
           <label>
             <span>Expected End</span>
             <input type="date" className="edit-input"
                    value={s.expected_end || ''}
+                   min={s.expected_start || undefined}
                    onChange={e => change(i, { expected_end: e.target.value || null })} />
           </label>
         </div>
@@ -5681,8 +6276,11 @@ function TasksTable({ tasks, onSelect }) {
         <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
         <SortHeader label="Type" sortKey="task_type" sort={sort} toggle={toggle} />
         <SortHeader label="Attached to" sortKey="anchor_name" sort={sort} toggle={toggle} />
-        <SortHeader label="Expected Start" sortKey="expected_start" sort={sort} toggle={toggle} />
-        <SortHeader label="Expected End" sortKey="expected_end" sort={sort} toggle={toggle} />
+        {/* Sorted on the same value the column shows. Sorting on the raw
+            column while displaying the effective one would put a task whose
+            dates come from its subtasks among the blanks. */}
+        <SortHeader label="Expected Start" sortKey="effective_expected_start" sort={sort} toggle={toggle} />
+        <SortHeader label="Expected End" sortKey="effective_expected_end" sort={sort} toggle={toggle} />
         <SortHeader label="Status" sortKey="status" sort={sort} toggle={toggle} />
         <SortHeader label="Subtasks" sortKey="step_count" sort={sort} toggle={toggle} />
       </tr></thead>
@@ -5692,8 +6290,8 @@ function TasksTable({ tasks, onSelect }) {
           <td><strong>{t.name}</strong></td>
           <td>{t.type_label || t.task_type || '—'}</td>
           <td>{taskParentLabel(t)}</td>
-          <td>{t.expected_start || '—'}</td>
-          <td>{t.expected_end || '—'}</td>
+          <td>{t.effective_expected_start || '—'}</td>
+          <td>{t.effective_expected_end || '—'}</td>
           <td>{taskStatusLabel(t.status) || '—'}</td>
           <td>{(t.steps || []).length
                  ? `${(t.steps || []).filter(s => s.status === 'completed').length} of ${(t.steps || []).length}`
@@ -5703,11 +6301,12 @@ function TasksTable({ tasks, onSelect }) {
   </div>);
 }
 
-function AddTaskModal({ onClose, onSave, systems, flows, contributors, taskTypes }) {
+function AddTaskModal({ onClose, onSave, systems, flows, contributors, taskTypes,
+                        inScenario }) {
   const [form, setForm] = useState({
     name: '', task_type: '', task_type_other: '', description: '', parent: '',
     expected_start: '', expected_end: '', notes: '',
-    contributor_ids: [], steps: [],
+    contributor_ids: [], steps: [], proposed: false,
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const bodyRef = useRef(null);
@@ -5738,6 +6337,20 @@ function AddTaskModal({ onClose, onSave, systems, flows, contributors, taskTypes
           There are no systems or data flows yet. A task is attached to one of
           them, so add a system or a data flow first.
         </div>}
+        {/* First in the window and only inside a scenario, matching Add System
+            and Add Flow. The server has honoured `proposed` on create since
+            0016; what was missing was anywhere to say it. */}
+        {inScenario && (
+          <label className="check-inline">
+            <input type="checkbox" checked={!!form.proposed}
+                   onChange={e=>set('proposed', e.target.checked)} />
+            Proposed
+          </label>
+        )}
+        {/* Add System and Add Flow both separate the scenario checkbox from the
+            fields with a section title; this window had the checkbox and then
+            went straight into Name. */}
+        <div className="modal-section-title">Overview</div>
         <ReqField id="task-name" entity="task" col="name" label="Name *"
                   value={form.name} onChange={v=>set('name',v)}
                   error={req.errorFor(form, 'name')} />
@@ -5771,10 +6384,12 @@ function AddTaskModal({ onClose, onSave, systems, flows, contributors, taskTypes
         <div className="form-row">
           <ModalField id="task-start" entity="task" col="expected_start"
                       type="date" label="Expected start" value={form.expected_start}
-                      onChange={v=>set('expected_start',v)} />
+                      onChange={v=>set('expected_start',v)}
+                      max={form.expected_end} />
           <ModalField id="task-end" entity="task" col="expected_end"
                       type="date" label="Expected end" value={form.expected_end}
-                      onChange={v=>set('expected_end',v)} />
+                      onChange={v=>set('expected_end',v)}
+                      min={form.expected_start} />
         </div>
         {/* Directly under the dates, with no heading and no panel: one
             contributor row did not justify either, and it belongs beside the
@@ -6498,11 +7113,11 @@ function UserFormModal({ user, contributors, assignableRoles, onClose, onSave })
             </select></div>
         </div>
         <div className="form-group"><label>Linked contributor (optional)</label>
-          <select value={form.contributor_id || ''} onChange={e => set('contributor_id', e.target.value)}>
-            <option value="">— none —</option>
-            {contributors.map(c => <option key={c.contributor_id} value={c.contributor_id}>
-              {c.contributor_id} — {c.name}</option>)}
-          </select></div>
+          <Combo value={form.contributor_id || ''} ariaLabel="Linked contributor"
+                 onChange={v => set('contributor_id', v)}
+                 options={[{ value: '', label: '— none —' },
+                           ...contributors.map(c => ({ value: c.contributor_id,
+                             label: `${c.contributor_id} \u2014 ${c.name}` }))]} /></div>
         <div className="form-group">
           <label>{editing ? 'Set a new temporary password (optional)' : 'Temporary password *'}</label>
           <input type="text" value={form.password} onChange={e => set('password', e.target.value)}
@@ -6618,22 +7233,23 @@ function AddContributorModal({ onClose, onSave, pickableUsers }) {
         {(pickableUsers || []).length > 0 && (
           <div className="fd-share">
             <label htmlFor="con-user"><strong>Is this someone with an account?</strong></label>
-            <select id="con-user" value={linkUserId}
-                    onChange={e => e.target.value ? pick(e.target.value) : unlink()}>
-              <option value="">Select from drop down list</option>
-              {(pickableUsers || []).map(u => (
-                // Already-linked accounts stay in the list, disabled, which is
-                // how browsers grey an option. Removing them would leave
-                // someone hunting for a colleague who is simply absent.
-                <option key={u.user_id} value={u.user_id}
-                        disabled={!!u.linked_contributor_id}>
-                  {u.name} ({u.email})
-                  {u.linked_contributor_id
-                    ? ` \u2014 already linked to ${u.linked_contributor_name || u.linked_contributor_id}`
-                    : ''}
-                </option>
-              ))}
-            </select>
+            <Combo id="con-user" value={linkUserId} ariaLabel="Account"
+                   placeholder="Select from drop down list"
+                   onChange={v => v ? pick(v) : unlink()}
+                   options={[{ value: '', label: 'Select from drop down list',
+                               hint: true },
+                     ...(pickableUsers || []).map(u => ({
+                       value: u.user_id,
+                       // Already-linked accounts stay in the list, disabled,
+                       // which is what the browser did for a greyed <option>.
+                       // Removing them would leave someone hunting for a
+                       // colleague who is simply absent.
+                       disabled: !!u.linked_contributor_id,
+                       label: `${u.name} (${u.email})`
+                         + (u.linked_contributor_id
+                            ? ` \u2014 already linked to ${u.linked_contributor_name || u.linked_contributor_id}`
+                            : ''),
+                     }))]} />
             <div className="gov-hint">
               Picking someone fills in their name and attaches this contributor
               to their account, so you are not retyping details that already
@@ -6956,19 +7572,20 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
 
         <div className="form-group">
           <label htmlFor="fd-pick">Field</label>
-          <select id="fd-pick" value={chosen} onChange={e => pick(e.target.value)}>
-            <option value="">Choose a field…</option>
-            {Object.keys(groups).map(g => (
-              <optgroup key={g} label={g}>
-                {groups[g].map(f => (
-                  <option key={keyOf(f)} value={keyOf(f)}>
-                    {f.label}{f.definition ? ' ✓' : ''}
-                    {f.hidden ? ' — not used' : ''}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          {/* The longest list in the app — 80 fields — and the one Ben's
+              request was really about. `group` carries what `<optgroup>` was
+              doing; the tick and the "not used" note are part of each label so
+              filtering finds them too. */}
+          <Combo id="fd-pick" value={chosen} onChange={pick}
+                 placeholder="Choose a field…" ariaLabel="Field"
+                 options={[{ value: '', label: 'Choose a field…', hint: true },
+                   ...Object.keys(groups).flatMap(g => [
+                     { group: g },
+                     ...groups[g].map(f => ({
+                       value: keyOf(f),
+                       label: f.label + (f.definition ? ' \u2713' : '')
+                              + (f.hidden ? ' \u2014 not used' : '') })),
+                   ])]} />
           <div className="gov-hint">
             A tick marks a field that already has a definition.
             {' '}{defined.length} of {fields.length} defined so far.
@@ -8159,14 +8776,12 @@ function ScenarioPicker({ scenarios, current, onChange }) {
   return (
     <label className="scenario-picker">
       <span className="sr-only">Choose which view to show</span>
-      <select value={current === null ? 'live' : String(current)}
-              aria-label="Choose which view to show"
-              onChange={e => onChange(e.target.value === 'live' ? null : Number(e.target.value))}>
-        <option value="live">{LIVE_LABEL}</option>
-        {scenarios.map(s => (
-          <option key={s.scenario_id} value={s.scenario_id}>{scenarioLabel(s)}</option>
-        ))}
-      </select>
+      <Combo value={current === null ? 'live' : String(current)}
+             ariaLabel="Choose which view to show"
+             onChange={v => onChange(v === 'live' ? null : Number(v))}
+             options={[{ value: 'live', label: LIVE_LABEL },
+                       ...scenarios.map(s => ({ value: String(s.scenario_id),
+                                                label: scenarioLabel(s) }))]} />
     </label>
   );
 }
@@ -8427,16 +9042,14 @@ function ScenarioSettingsModal({ scenario, users, currentUserId, isSuper,
                   The current owner stays on as an editor rather than losing access
                   to their own work.
                 </div>
-                <select value={newOwner} aria-label="New owner"
-                        onChange={e => setNewOwner(e.target.value)}>
-                  <option value="">Choose a person…</option>
-                  {(users || []).filter(u => u.is_active &&
-                      u.user_id !== scenario.owner_user_id).map(u => (
-                    <option key={u.user_id} value={u.user_id}>
-                      {u.first_name} {u.last_name}
-                    </option>
-                  ))}
-                </select>
+                <Combo value={newOwner} ariaLabel="New owner"
+                       placeholder="Choose a person…"
+                       onChange={setNewOwner}
+                       options={[{ value: '', label: 'Choose a person…', hint: true },
+                         ...(users || []).filter(u => u.is_active
+                             && u.user_id !== scenario.owner_user_id)
+                           .map(u => ({ value: u.user_id,
+                             label: `${u.first_name} ${u.last_name}` }))]} />
                 <button className="btn" onClick={transfer} disabled={busy || !newOwner}>
                   Transfer
                 </button>
@@ -9345,7 +9958,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
                                                  onSave={addContributor}
                                                  pickableUsers={pickableUsers} />}
       {showAddTask && <AddTaskModal onClose={()=>setShowAddTask(false)} onSave={addTask}
-                                   systems={systems} flows={flows}
+                                   systems={systems} flows={flows} inScenario={inScenario}
                                    contributors={contributors} taskTypes={taskTypes} />}
       {whatsNew.length > 0 && <WhatsNewModal releases={whatsNew}
         onLater={() => setWhatsNew([])} onAcknowledge={acknowledgeReleases} />}

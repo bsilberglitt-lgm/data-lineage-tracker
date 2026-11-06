@@ -37,6 +37,7 @@ no terminal to prompt at. Prefer the prompt: a password on a command line ends
 up in shell history, and `!` or `#` in one is easily mangled.
 """
 import getpass
+import time
 import http.cookiejar
 import json
 import os
@@ -221,6 +222,84 @@ def sign_in_with(s, rq, argv=None):
     who = (body.get("user") or {})
     print(f"Signed in as {who.get('email', email)} ({who.get('role', '?')})\n")
     return s
+
+
+def ensure_account(boss, rq, email, first, last, role, temp, extra=None):
+    """Create a test account, or reset one an earlier run left behind.
+
+    Three suites needed this and each had written it as "create, then log in".
+    That works exactly once. On a second run against the same database the
+    POST is a 409, the stored password is whatever the first run changed it to
+    rather than `temp`, the login returns 401, and **every later assertion
+    about that person fails** — reported as the permission checks being broken
+    rather than as the sign-in never happening. Ben hit it on `t_tasks`: nine
+    failures, all role checks, none of them the actual fault. `t_052` and
+    `t_060` had the same bug waiting.
+
+    So the account is created **or reset**: if it already exists, the
+    SuperAdmin issues a fresh temporary password and makes sure it is active
+    and holds the right role.
+
+    **Resetting here is not the footgun this module exists to prevent.** That
+    rule is that a suite must not change the password of the account it
+    *borrows* to sign in as — a real person's. These accounts are the suite's
+    own: it creates them, names them for itself, and nobody else signs in as
+    them. Ownership is the whole distinction.
+
+    Returns `(status, session, password)`. The session's `t` is None if the
+    sign-in failed, so a caller that wants to assert on it can. `password` is
+    what the account holds **afterwards**, which a later re-login has to use —
+    it is not `temp`, because the first sign-in has to change it.
+    """
+    body = {"email": email, "first_name": first, "last_name": last,
+            "role": role, "password": temp}
+    body.update(extra or {})
+    st, _ = rq(boss, "POST", "/api/users", body)
+    created = st in (200, 201)
+    if not created:
+        st_u, users = rq(boss, "GET", "/api/users")
+        # A bare list. Written defensively because this branch only runs on a
+        # SECOND run, so a mistake in it passes every fresh-database test and
+        # shows up only where it is hardest to notice.
+        rows = users if isinstance(users, list) else (users.get("users") or [])
+        uid = next((u["user_id"] for u in rows
+                    if isinstance(u, dict) and u.get("email") == email), None)
+        if uid:
+            reset = {"password": temp, "is_active": 1, "role": role}
+            reset.update(extra or {})
+            rq(boss, "PUT", f"/api/users/{uid}", reset)
+
+    s = session()
+    s["base"] = BASE
+    held = temp
+    st_in, b = rq(s, "POST", "/api/auth/login",
+                  {"email": email, "password": temp})
+    if isinstance(b, dict):
+        s["t"] = b.get("csrf_token")
+        if (b.get("user") or {}).get("must_change_password"):
+            # It has to become something ELSE: change-password refuses a new
+            # password equal to the current one. That is exactly what made the
+            # original code unrepeatable — the account ended each run holding a
+            # password the next run did not know. It does not matter here,
+            # because the reset above reissues `temp` every time, so what the
+            # account ends up holding is never needed again.
+            rq(s, "POST", "/api/auth/change-password",
+               {"current_password": temp, "new_password": temp + "R2"})
+            held = temp + "R2"
+    return st_in, s, held
+
+
+def unique_email(local, domain="maine.gov"):
+    """An address no earlier run can have used.
+
+    `ensure_account` covers an account a suite reuses. It cannot help a check
+    that needs an account **nobody has touched** — "a title given at creation
+    is stored", or "an unlinked account is offered in the picker", which is
+    false the moment a previous run linked it. Those need a new address every
+    time, and the cost is one spare account per run on a local database that
+    is already full of test debris.
+    """
+    return f"{local}+{int(time.time() * 1000)}@{domain}"
 
 
 def report(passed, failed):

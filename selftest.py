@@ -42,7 +42,15 @@ def arg_value(name, fallback=None):
 _positional = [a for i, a in enumerate(sys.argv[1:], 1)
                if not a.startswith("--") and not (sys.argv[i - 1].startswith("--")
                                                   and sys.argv[i - 1] != "--insecure")]
-BASE = (_positional[0] if _positional else "http://localhost:8765").rstrip("/")
+# A bare port is accepted as well as a whole URL. The feature suites in
+# tools/tests take a port positionally and always have, so `selftest.py 8900`
+# is the obvious thing to type — and it used to die inside urllib with
+# `ValueError: unknown url type: '8900/api/systems'`, which names neither the
+# argument nor the fix.
+_target = _positional[0] if _positional else "http://localhost:8765"
+if _target.isdigit():
+    _target = "http://localhost:" + _target
+BASE = _target.rstrip("/")
 INSECURE = "--insecure" in sys.argv
 EMAIL = arg_value("email", os.environ.get("SELFTEST_EMAIL"))
 PASSWORD = arg_value("password", os.environ.get("SELFTEST_PASSWORD"))
