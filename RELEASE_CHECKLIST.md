@@ -686,14 +686,21 @@ Both services are **Docker**, which means Render refreshes nothing on your
 behalf: the image decides the trust store. When a CA compromise or a runtime
 CVE is announced:
 
-- [ ] Rebuild **both** images with the build cache cleared — the app
-  (`Dockerfile`) and the backup job (`backup/Dockerfile`). In the Dashboard
-  that is **Manual Deploy > Clear build cache & deploy**; a plain redeploy can
-  reuse a cached base layer and change nothing.
-- [ ] The backup job is the one that makes outbound HTTPS. Trigger it manually
-  afterwards and confirm the upload still succeeds — a CA change that breaks
-  verification shows up as a failed upload, and the next scheduled run is a
-  night away.
+- [ ] **Push the change.** Both services build from this repo, so a push to
+  the connected branch rebuilds both on its own. The two pages are not the
+  same, which is easy to trip over: a web service has **Deploys**, a cron job
+  has **Builds** and **Runs**, and a cron job has no Manual Deploy menu at
+  all. Watch each one's page until the build succeeds.
+- [ ] **Do not rely on a redeploy alone to refresh certificates.** A deploy
+  that changes nothing can reuse cached layers and leave the trust store
+  exactly as it was. Both Dockerfiles install the certificate package
+  explicitly for this reason — that fetches from the distribution's archive at
+  build time, so the store is current whatever the cache did. If a CA advisory
+  ever arrives *without* a Dockerfile change, force a fresh build instead.
+- [ ] The backup job is the one that makes outbound HTTPS. Run it by hand
+  afterwards — its **Runs** page, **Trigger Run** — and confirm the upload
+  succeeds. A CA change that breaks verification shows up as a failed upload,
+  and the next scheduled run is a night away.
 - [ ] Node and PHP advisories do not apply to anything deployed here. The app
   is Python and Tornado; the only Node is `node:22-alpine` in
   `tools/run_geometry_tests.sh`, a local test container that is never deployed
