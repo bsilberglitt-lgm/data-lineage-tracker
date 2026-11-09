@@ -680,6 +680,25 @@ If you deliberately left the release as a draft, publish it here instead:
 
 ---
 
+## After a certificate or runtime advisory
+
+Both services are **Docker**, which means Render refreshes nothing on your
+behalf: the image decides the trust store. When a CA compromise or a runtime
+CVE is announced:
+
+- [ ] Rebuild **both** images with the build cache cleared — the app
+  (`Dockerfile`) and the backup job (`backup/Dockerfile`). In the Dashboard
+  that is **Manual Deploy > Clear build cache & deploy**; a plain redeploy can
+  reuse a cached base layer and change nothing.
+- [ ] The backup job is the one that makes outbound HTTPS. Trigger it manually
+  afterwards and confirm the upload still succeeds — a CA change that breaks
+  verification shows up as a failed upload, and the next scheduled run is a
+  night away.
+- [ ] Node and PHP advisories do not apply to anything deployed here. The app
+  is Python and Tornado; the only Node is `node:22-alpine` in
+  `tools/run_geometry_tests.sh`, a local test container that is never deployed
+  and does no networking.
+
 ## Quarterly — prove a backup restores
 
 Not part of a release, but it belongs on the same list because it is the step

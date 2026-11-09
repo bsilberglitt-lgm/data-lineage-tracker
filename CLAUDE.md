@@ -134,6 +134,17 @@ bearing and easy to undo by accident:
   script that believes it succeeded. Without that guard the job would upload a
   stub every night and look healthy until someone needed it.
 
+**The CA store is pinned to the system one, on purpose.** This job is the only
+thing in the project that makes outbound HTTPS — `aws s3 cp` — so its trust
+store is the one that matters, and `AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt`
+makes botocore verify against the store the image refreshes at build time
+rather than any bundle it carries internally. That came out of Render's
+eMudhra advisory (October 2026), and the reason it is worth an explicit
+setting here rather than a rebuild and a shrug: if something could impersonate
+S3 to this job, what it receives is a full database dump. Rebuild both images
+after any CA advisory; for a Docker service nobody refreshes the trust store
+on your behalf.
+
 `sh backup/test_backup.sh` exercises both, plus the date logic, with no
 database, AWS account or Docker. The restore procedure is Part 3 of
 `backup/README.md`, and the release checklist carries a quarterly reminder to

@@ -11,6 +11,11 @@
 #
 # These suites are plain Node with no dependencies, so unlike check_jsx.sh
 # there is no npm install and nothing to go wrong with the registry.
+#
+# Node 22, not 20: everything before 22.x is end-of-life and was not patched
+# for the October 2026 TLS and Brotli issues. This container is a local test
+# tool that is never deployed and does no networking, so it was never exposed —
+# but there is no reason to keep reaching for an unpatched runtime.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -32,7 +37,7 @@ echo
 
 # One container for all of them: pulling the image is the slow part, and a
 # single run also means one exit status to read.
-docker run --rm -v "$PWD":/work:ro -w /work node:20-alpine sh -c '
+docker run --rm -v "$PWD":/work:ro -w /work node:22-alpine sh -c '
   set -e
   fail=0
   for suite in '"${SUITES[*]}"'; do
