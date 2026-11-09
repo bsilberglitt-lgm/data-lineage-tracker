@@ -24,16 +24,33 @@
 
 FROM alpine:3.23
 
+# `ca-certificates` is named explicitly even though aws-cli pulls it in: this
+# is the one service here that makes outbound HTTPS — `aws s3 cp` to the backup
+# bucket — so its trust store is the one that actually matters. Naming it means
+# a rebuild is visibly a certificate refresh, not incidentally one.
 RUN apk add --no-cache \
+      ca-certificates \
       postgresql18-client \
       aws-cli \
       gzip \
-      wget
+      wget \
+ && update-ca-certificates
 
 # Fail the build rather than the 3am run if either tool is missing or the
 # client is somehow older than the server. A broken image that builds cleanly
 # and fails nightly is the thing worth avoiding here.
 RUN pg_dump --version && aws --version
+
+# Make the AWS CLI verify against the system store that the layer above just
+# refreshed, rather than any CA bundle botocore ships inside itself.
+#
+# This is the "some libraries bundle their own certificates and require
+# separate updates" case in Render's eMudhra advisory, and it matters more here
+# than anywhere else in the project: if an attacker holding the compromised
+# eMudhra keys could impersonate S3 to this job, the thing handed over is a
+# full database dump. One environment variable removes the question of which
+# store botocore chose.
+ENV AWS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /backup
 COPY backup.sh ./
