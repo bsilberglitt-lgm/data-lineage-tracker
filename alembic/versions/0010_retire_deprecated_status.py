@@ -12,7 +12,7 @@ closest surviving value, and it was chosen deliberately in the knowledge that
 it does not mean quite the same thing.
 
 **Every conversion is written to the audit log first**, with the original value
-in the `before` column, so a record that turns out to have been mislabelled can
+in the `before` column, so a record that turns out to have been mislabeled can
 be identified and set back by hand. The audit log is append-only, so this is
 the one durable record of what each value used to be.
 

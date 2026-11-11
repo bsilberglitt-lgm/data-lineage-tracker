@@ -55,7 +55,7 @@ How the seed and the database relate, since it is easy to get wrong:
 ### 2. Keep the release checklist current — in BOTH formats
 
 `RELEASE_CHECKLIST.md` is the source of truth for how a release is done, and
-`RELEASE_CHECKLIST.docx` is a Word copy Ben ticks off by hand.
+`RELEASE_CHECKLIST.docx` is a Word copy Ben checks off by hand.
 
 **Whenever anything changes that affects the release process** — a new command,
 a new environment, a changed verification step, a new one-time setup item, a
@@ -76,7 +76,72 @@ continuation content indented **2 spaces** (6 spaces makes pandoc render fenced
 code blocks as literal ``` characters), and check the result by converting to
 PDF and looking at the pages before declaring it done.
 
-### 3. Move uploaded files to S3 when object storage exists
+### 3. Check the knowledge base at every release
+
+**Every release, without being asked, before the release notes go out:**
+
+1. Read the release's changes against `help_articles.py` and decide, for each
+   one, whether an existing article is now wrong or incomplete, and whether the
+   release introduces something with no article at all.
+2. **Tell Ben what you found** — which articles need changing and why, and
+   which new ones you think are needed — as a short list, as part of the
+   release. Say so explicitly when nothing needs changing; silence reads as
+   not having looked.
+3. Write the drafts only if he says go ahead.
+4. **Publish only after he has reviewed them.** Same rule as the release
+   notes, and for the same reason: an article is the thing a user reads when
+   they are already confused, so it should not be the first draft of anything.
+
+A release note says what changed; an article says how to use it. The notes are
+read once and the article is read every time somebody new arrives, so an
+article left behind by a release is the more expensive of the two to get
+wrong. Articles live in **code** (`help_articles.py`), not the database, so
+this is a normal edit with a normal review — there is no draft state to lean
+on, which is why the review has to happen before the commit rather than after.
+
+While you are in there: `SCREENS` maps a screen to the articles offered on it,
+so a new screen with no entry silently offers nothing, and a new article that
+names no screen can only be found by searching.
+
+### 4. The commit message goes in a file, not into Terminal
+
+Write the release's commit message to **`COMMIT_MSG.txt`** in the project root
+and tell Ben to run:
+
+```bash
+git commit -F COMMIT_MSG.txt && git push
+```
+
+Not `-m`, and not a heredoc. A long message pasted into Terminal breaks on the
+first quote, backtick, or line that looks like a shell word — Ben lost one to
+exactly that, and the failure is a half-written commit plus a shell waiting at
+a continuation prompt, which is an unpleasant place to be mid-release. `-F`
+reads the bytes from the file and nothing interprets them.
+
+`COMMIT_MSG.txt` is in `.gitignore`: it describes a commit rather than
+belonging to one, and it is overwritten every release. Posting the message in
+chat as well is fine and worth doing — Ben reviews it there — but the file is
+what he actually commits from.
+
+### 5. The app is written in American English
+
+Ben asked for this in November 2026: color without a "u", "Check" rather than
+"Tick", catalog, behavior, gray, center, organization, analyze, labeled.
+
+It applies to **everything in the repository**, not only what a user sees —
+the UI strings, the help articles, this file, `ACCESSIBILITY.md`,
+`RELEASE_CHECKLIST.md`, the migration docstrings and the code comments. A
+comment written in one dialect and a label in another is how a label gets
+written the wrong way the next time somebody copies the wording from a comment
+beside it.
+
+Two things are deliberately exempt, because changing them would be a schema or
+API change dressed up as a spelling fix: `aria-labelledby`, which is an HTML
+attribute, and any identifier, column or endpoint that already exists. All of
+the current ones happen to be American already (`field_catalog.py`,
+`/api/field-catalog`), so this has not yet cost anything.
+
+### 6. Move uploaded files to S3 when object storage exists
 
 Uploaded documents (the Resources feature) and schema `.sql` files are currently
 stored **in PostgreSQL** as binary columns. That was a deliberate interim choice:
@@ -119,7 +184,7 @@ gets stored and what the endpoint serves, so the two can never disagree. Do not
 add SVG to the accepted list: an SVG can carry script, and this one is served
 from our own origin.
 
-### 4. Backups: the job never deletes
+### 7. Backups: the job never deletes
 
 `backup/` holds a Render Cron Job that dumps the database nightly to S3 —
 30 daily, 12 monthly, 3 years of annual snapshots. Two properties are load-
@@ -228,7 +293,7 @@ before the opening tag rather than the tag itself.
 A `{/* ... */}` comment cannot sit outside the root element of a `return`: it
 is a JSX expression container, and there is no element for it to belong to.
 Use a `//` comment above the `return` instead. This is a genuine syntax error
-rather than a scan artefact, and `check_jsx.py` reports it correctly.
+rather than a scan artifact, and `check_jsx.py` reports it correctly.
 
 `check_jsx.py` is a scan, not a parser, and during 0.4.1 it **passed a region
 that had orphaned closing tags** left behind by a block that was moved. If you
@@ -253,7 +318,7 @@ the new field simply cannot be given a definition, with no error anywhere.
 Every field already states its own database column at its call site, so the
 list is derived from what is actually rendered.
 
-**Keyed on the column, never the label.** The same column is labelled
+**Keyed on the column, never the label.** The same column is labeled
 differently depending on where it is drawn:
 
     system.encryption_at_rest    edit "Encrypt at Rest" / read "Encryption at Rest"
@@ -269,9 +334,9 @@ field call sites.
 **Not every field is an `EditField`.** `ContributorSelect` and
 `ContributorField` draw the person pickers, and the first version of the
 generator knew only about `EditField` — so six fields, Data Steward among them,
-were absent from the catalogue with no error anywhere, and could not be given a
-definition. The generator now **fails** on any labelled component it does not
-recognise rather than quietly producing a short list. Add new field components
+were absent from the catalog with no error anywhere, and could not be given a
+definition. The generator now **fails** on any labeled component it does not
+recognize rather than quietly producing a short list. Add new field components
 to `EDIT_COMPONENTS` / `READ_COMPONENTS`.
 
 **Modal fields declare their column; required-ness is read, not listed.**
@@ -281,7 +346,7 @@ field had no identity anything else could use. The generator recovered the
 column with a regex and found **40 of 80**: anything spread over several lines,
 anything inside a `form-row`, and every checkbox was invisible to it, with no
 error. `ModalField`, `ModalCheck` and `ReqField` now carry `col=`, so this is a
-read rather than a guess, and `ReqField` is also where the catalogue learns a
+read rather than a guess, and `ReqField` is also where the catalog learns a
 field is **required** — which is what makes it unhideable.
 
 Four hand-written blocks remain, deliberately: a data flow's display name and
@@ -289,17 +354,17 @@ the three inputs for the flow created alongside a Manual Entry system are not
 record fields, so there is nothing for hiding or a definition to resolve. They
 carry no `col` and a comment saying why.
 
-The generator **fails** if a modal's `useRequired` list names a catalogue field
+The generator **fails** if a modal's `useRequired` list names a catalog field
 that is drawn with an optional component. Those are two statements of the same
-fact, and a field that validates as required while the catalogue thinks it
+fact, and a field that validates as required while the catalog thinks it
 optional would be hideable — which would make that record type impossible to
 create.
 
 **Field hiding is per record type, and never deletes.** `field_hidden`
 (migration 0012) is keyed on `(entity_type, column_name)` with **no shared
 `"*"` scope**, unlike definitions: what a field *means* is usually the same
-everywhere, whether you *use* it is not, and one tick emptying three screens is
-a worse surprise than three ticks. Hiding never touches the stored value, so
+everywhere, whether you *use* it is not, and one check emptying three screens is
+a worse surprise than three checks. Hiding never touches the stored value, so
 the preference is safe to get wrong — the alternative is a mis-click that needs
 a restore. Required fields are refused on write *and* filtered on read, because
 a row could predate a field becoming required.
@@ -307,7 +372,7 @@ a row could predate a field becoming required.
 Note the asymmetry in how the two are looked up: **definitions are keyed on
 every label**, because 81 call sites pass nothing else; **hiding is keyed on
 the column**, with a label-to-column map sent alongside for the older
-components. Keying hiding on text would mean a field relabelled in one view
+components. Keying hiding on text would mean a field relabeled in one view
 quietly reappearing there.
 
 **Shared definitions use `entity_type = "*"`.** A row stored that way applies
@@ -316,6 +381,43 @@ overrides it (`effective_definition`). Eleven columns appear on more than one
 record type; that is what lets Data Steward be defined once for all three while
 Description stays different per type. No schema change was needed — the primary
 key already allowed it.
+
+### A component a view renders can hide its fields from the generator
+
+The generator reads the bodies of the components named in `VIEWS` —
+`TaskEditView`, `AddTaskModal` and so on. So a field drawn by a *different*
+component that one of those renders is invisible to it, and the catalog simply
+comes up short: Preferences offers one field fewer than the app has, that field
+cannot be given a definition or hidden, and nothing anywhere says so.
+
+That is exactly the silent omission the generator exists to end, and it
+happened in 0.8.0. `TaskExtras` holds the automated flag and the dependency
+block, written once because the flyout and the Add window both need them and
+two copies of a control that size is how one stops matching the other. Its
+`ModalCheck` and `EditField` sat outside every view body, `unknown_field_components`
+could not see it — that rule looks for a `label=` and `<TaskExtras />` carries
+none — and `is_automated` was absent from the catalog with all four checks
+green.
+
+Two things close it:
+
+- **`FIELD_GROUPS`** names the components whose bodies are read as part of the
+  view that renders them, and `expand` substitutes each body **at the tag**,
+  not at the end. A field's section comes from the nearest heading above it, so
+  a body appended to the end lands its fields under whichever section happens
+  to be last — `is_automated` first came out under Notes, three sections below
+  where it is drawn.
+- **`unscanned_field_groups` fails** on any other capitalized tag a view
+  renders whose own body contains a field component. That is decidable without
+  a JS parser and without a list of every out-of-scope screen: read the
+  component, look for a field component in it. `OUT_OF_SCOPE_VIEWS` and the
+  names in `VIEWS` are excluded, and they have to be listed because a
+  component's boundary here is the span from one declaration to the next — so
+  the last component declared inside `DetailPanel` swallows that panel's
+  render, which names every view it can draw.
+
+So: a new sub-component that draws fields fails the check rather than quietly
+shortening the catalog. Add it to `FIELD_GROUPS`.
 
 ### The harness applies every migration in `alembic/versions/`
 
@@ -412,10 +514,10 @@ that an `x`/`y`-shaped fixture snaps *nothing*.
 which makes a diagonal look deliberate — Ben said that felt right immediately
 — but it cannot square a corner, because the outgoing segment keeps whatever
 angle the destination imposes. That is the "45 works, 90 does nothing" he
-reported. `snapBend` lines the dragged point up with either neighbour's x or y
+reported. `snapBend` lines the dragged point up with either neighbor's x or y
 when close, which is exact and makes both segments axis-aligned, and falls back
 to the rotation for anything not near an axis. It also refuses to collapse a
-bend onto the neighbour it is locking to, which would not be a bend at all.
+bend onto the neighbor it is locking to, which would not be a bend at all.
 
 ### `const` does not escape an `eval`
 
@@ -453,7 +555,7 @@ jsPDF plus its SVG plugin — roughly 400KB on every page load and two more
 pinned versions — for a button used rarely. `printDiagram` opens the browser's
 print dialog instead, where "Save as PDF" is a destination: lossless vector
 output, no dependency, and it covers actual paper too. GIF was asked for and
-dropped: 256 colours, no browser encoder, and visibly worse than PNG for text
+dropped: 256 colors, no browser encoder, and visibly worse than PNG for text
 and thin lines. The viewBox is set from
 `diagramExtent()` so the file holds the **whole** diagram rather than the
 scrolled viewport. And the pan-and-zoom transform is removed, along with the
@@ -507,7 +609,7 @@ and hides the corresponding form fields.
 job while `/api/users` is Administrator-only. It returns the minimum that job
 needs — name, email, title, and whether they are already linked — and nothing
 about anyone's access. Already-linked accounts are returned rather than
-filtered out, so the window can grey them and name the contributor that has
+filtered out, so the window can gray them and name the contributor that has
 them; omitting them would leave someone hunting for a colleague who is simply
 absent. The server refuses a double link with a 409 as well, because the list
 is a snapshot and two people can be adding contributors at once.
@@ -522,7 +624,7 @@ gets a 401 where it expected a 403. Sign in again instead.
 
 ### A read field may mention more than one `data.` value
 
-`read_labels` in the catalogue generator took the *first* `data.X` in a read
+`read_labels` in the catalog generator took the *first* `data.X` in a read
 field's attributes. That broke on a resolved value with a fallback:
 
 ```jsx
@@ -610,6 +712,21 @@ flyout go in `DORMANT` in that file, each with a reason.
 
 This is the `field_catalog.py` lesson in a different place: a hand-kept list
 that has to track another hand-kept list drifts, and the failure is silent.
+
+#### It only covered three record types
+
+`SERVER_TUPLES` listed `system`, `flow` and `element` — and **not `task`**,
+which is where this project has found the silently-unsaveable field three
+times: Owner on a flow, `proposed` with no checkbox, `status` dropped by a
+`continue`. The check written to catch that shape was not looking at the record
+type that keeps producing it.
+
+`is_automated` made it four. It was in `TASK_FIELDS`, drawn in the flyout and
+in the Add window, and missing from one object literal — so it could be set
+when creating a task and never changed afterwards — and `--check` passed.
+`task` and `contributor` are in the list now. **When you add a record type,
+add it here**, because the only thing worse than no check is one that reports
+OK about a file it never read.
 
 ### Deactivation, not deletion — and assignments survive it
 
@@ -852,16 +969,16 @@ task hidden while its system shows would be a circle nobody could find.
 `ReadField` resolves field hiding by **label**, so a task field hidden in
 Preferences called "Status" would blank every subtask's status as well — two
 unrelated things that happen to share a word. The subtask block therefore draws
-its own `field-row`s: a number, then each value labelled, with a rule between
-subtasks. The first version crammed status, person and both dates into one grey
+its own `field-row`s: a number, then each value labeled, with a rule between
+subtasks. The first version crammed status, person and both dates into one gray
 line under the description, which read as a jumble and made a value nobody had
 entered indistinguishable from one that was not being displayed.
 
-**Steps, assignments and the parent are not catalogued fields.** The parent is
+**Steps, assignments and the parent are not cataloged fields.** The parent is
 two columns answered by one choice; the people and the steps are lists. None
 has a single column for a definition or for hiding to resolve against, so all
 three are hand-written, like the four blocks on a data flow. `t_tasks.py`
-asserts their *absence* from the catalogue, so the next person to add a field
+asserts their *absence* from the catalog, so the next person to add a field
 component there finds out on purpose.
 
 ### Feature suites sign in through `tools/tests/_client.py`
@@ -891,7 +1008,7 @@ suite's.
 used — so on Ben's own local app, where he had hidden a field in Preferences
 while testing that very feature, his correct setting was reported as a test
 failure. It now records what was already hidden, asserts the *invariant* the
-original check was reaching for (the catalogue and `/api/field-definitions`
+original check was reaching for (the catalog and `/api/field-definitions`
 agree about the hidden set, despite being keyed differently), picks a victim
 field that is **not** already hidden, and **restores every field it touched to
 the state it found** rather than to visible. A closing check proves it.
@@ -944,7 +1061,7 @@ way for a person to change the value it sends. **A payload check proves the
 wiring, not that a control exists.**
 
 The checkbox is first in the section and only inside a scenario, matching
-`SystemEditView` and `FlowEditView`, and unticking it writes `unchanged`
+`SystemEditView` and `FlowEditView`, and unchecking it writes `unchanged`
 without touching `removed` — retiring has its own action. `t_tasks.py` toggles
 it both ways, because "it can be turned on" says nothing about whether it can
 be turned off.
@@ -952,21 +1069,21 @@ be turned off.
 ### A "do something" line in a dropdown is styled on the SELECT
 
 "Add Status" and "Add Contributor" are the empty option in their dropdowns,
-phrased as invitations rather than as values, and they are drawn grey and
+phrased as invitations rather than as values, and they are drawn gray and
 italic by a class on the **`<select>`** — `.select-hint` — not on the
 `<option>`.
 
 Styling the option is the obvious thing and it fails on macOS: the system draws
 native select popups itself and ignores `option { color; font-style }`
 entirely. So it looked right on one platform and did nothing on Ben's. The
-option keeps the class too, for the browsers that do honour it, but nothing
+option keeps the class too, for the browsers that do honor it, but nothing
 depends on that.
 
 The class is applied when the current value matches an option marked
 `hint: true` (`selectHintClass`), so the italics disappear by themselves the
 moment a real value is chosen rather than needing to be cleared.
 
-### A status that cannot be recognised was dropped, not cleared
+### A status that cannot be recognized was dropped, not cleared
 
 Before migration 0019 the task update handler read:
 
@@ -981,7 +1098,7 @@ silently-unsaveable-field shape this project keeps finding, from a `continue`
 that looked like input validation.
 
 It now clears on `None`, `""` or `"none"` and ignores only genuinely
-unrecognised words. `t_tasks.py` drives **the whole payload
+unrecognized words. `t_tasks.py` drives **the whole payload
 `DetailPanel.saveEdit` builds**, not just the one field, because a partial
 request proves the handler works and says nothing about what the browser
 actually sends.
@@ -1098,7 +1215,7 @@ filling from the top-left, and once the box is full it stacks rather than
 spilling outside, because a circle outside its own system is worse than two
 overlapping.
 
-**Colour coding is still to come.** Every circle currently reads the same, with
+**Color coding is still to come.** Every circle currently reads the same, with
 the status in its tooltip, and the legend says only "Task". One neutral circle
 now is better than a palette that has to be explained before it is finished.
 
@@ -1109,13 +1226,13 @@ reads 9.02:1 against it — so the circle looks like an object rather than a hol
 in the diagram. The legend reuses `.task-ring`, sized to match `.legend-color`
 at 14px, so the key cannot drift from the thing it explains, and
 `.legend-divider` rules separate System Types from the task entry and from the
-scenario entries. Without the rules, a circle in a list of coloured squares
+scenario entries. Without the rules, a circle in a list of colored squares
 read as a ninth system type.
 
-**Selection is an outer halo, not a recolour — and that is a contrast fix, not
+**Selection is an outer halo, not a recolor — and that is a contrast fix, not
 a style choice.** The ring is `#1B3A5C`: 8.69:1 against the worst of the eight
 `TYPE_PALETTE` fills (purple) and 11.63:1 on white, because a task attached to
-a system is drawn *inside* its box. Recolouring the ring to the app's selected
+a system is drawn *inside* its box. Recoloring the ring to the app's selected
 orange was the obvious thing and it fails — `#D4772C` is **2.43:1** on that
 purple, under the 3:1 WCAG 1.4.11 wants for a non-text indicator, so a selected
 task inside a purple box would have been *less* visible than an unselected one.
@@ -1144,7 +1261,7 @@ took three goes. A free perpendicular offset let a circle be dragged anywhere
 on the canvas, including inside an unrelated system box. Clamping it to a
 distance fixed that and was still wrong: where two flows run close together, a
 circle a little off one of them is ambiguous between the two, and which flow it
-belongs to is the one thing the circle has to communicate. Centred on the path
+belongs to is the one thing the circle has to communicate. Centered on the path
 there is nothing to misread, and the gesture is one-dimensional — up and down
 the line, which is all anybody wanted. A non-zero value stored by an earlier
 build is **ignored rather than migrated**, so those circles simply snap onto
@@ -1177,7 +1294,7 @@ invisible to a screen reader.
 ### The harness had to learn `op.alter_column`, and read every migration
 
 Two separate faults in `tools/gen_harness_schema.py`, both found by migration
-0019 making `status` nullable, and both of the project's favourite shape — a
+0019 making `status` nullable, and both of the project's favorite shape — a
 schema change that reaches production and silently misses the test harness.
 
 **SQLite cannot alter a column**, so `op.alter_column(..., nullable=True)` had
@@ -1274,7 +1391,7 @@ Four more things that are not obvious:
   `.form-group input` *is* wanted here, which is why one property is overridden
   rather than the class opted out of.
 * **`disabled` and `group` exist because a native `<select>` gave them for
-  free.** The account picker lists already-linked accounts greyed rather than
+  free.** The account picker lists already-linked accounts grayed rather than
   omitting them, and the 80-field definition picker used `<optgroup>`. Dropping
   either would have been a regression dressed up as a new feature. The arrow
   keys step *over* both: landing on a row that Enter ignores is a dead end the
@@ -1292,7 +1409,7 @@ and the scenario owner transfer all go through it.
 role lists, the preferences controls, the logo position, the audit filters, the
 scenario status. Each is a fixed list of two to five choices, where there is
 nothing to filter and a combobox is strictly worse — it trades the platform's
-own popup and keyboard handling for ours to no benefit. This is a judgement
+own popup and keyboard handling for ours to no benefit. This is a judgment
 rather than a rule, so if the uniformity matters more than the trade, convert
 them; nothing in `Combo` assumes a long list.
 
@@ -1332,7 +1449,7 @@ a bare identifier (`options={taskParentOptions(systems, flows)}` is invisible to
 it), and anything in a component assigned to a `const`. Those still need the
 click-through.
 
-### Task colours: precedence, and what an unset status is not
+### Task colors: precedence, and what an unset status is not
 
 `taskSignal(task, today)` returns one of five keys and the **order is the whole
 design**, so it is written out in the source rather than left to a conditional
@@ -1343,7 +1460,7 @@ explains.
 Three rules are easy to get wrong:
 
 * **Completed beats every date.** A task finished after its end date is
-  finished, not late. Colouring it red teaches people to ignore red.
+  finished, not late. Coloring it red teaches people to ignore red.
 * **A subtask's dates count, not just the task's own.** This was a bug: Ben set
   a subtask to In progress with an end date of yesterday and the circle stayed
   yellow, because both date rules read only `task.expected_end` and
@@ -1370,20 +1487,20 @@ Three rules are easy to get wrong:
 derives the status on read, so a task with one subtask in progress arrives with
 `status: 'in_progress'` already — but asking the subtasks directly means the
 browser does not depend on the server having got it right, and the two cannot
-disagree about a colour. A test fixture that omitted the derived status is what
+disagree about a color. A test fixture that omitted the derived status is what
 exposed the dependency, which is the useful kind of unrealistic fixture.
 
-**The colour is never the only cue.** The five fills cannot be told apart by hue
+**The color is never the only cue.** The five fills cannot be told apart by hue
 alone — active yellow and `late_start` orange are 15 degrees apart, which is no
-distinction for anyone with a colour deficiency — so every state but `open`
+distinction for anyone with a color deficiency — so every state but `open`
 draws a mark inside the ring, and `open` draws none because the absence of
 information is shown as an absence. `late_start`'s mark is a hollow ring rather
 than a dash, because a horizontal bar is what a retired task already draws
 across itself.
 
-**The ring does not change colour.** It is what delineates the circle against
+**The ring does not change color.** It is what delineates the circle against
 the eight system fills it may sit on (8.69:1 against the worst), and
-recolouring it per status would put that measurement back in play five times
+recoloring it per status would put that measurement back in play five times
 over. The status goes in the **fill**, where the only contrast that has to hold
 is against the ring and the mark — at worst 6.54:1. Measured over every fill,
 not inferred from the lightest, which is the mistake recorded above for the
@@ -1403,29 +1520,100 @@ that `eval` slices of that region with `SyntaxError: Unexpected token '<'`. It
 lives with the other components now, with a note saying why.
 
 **The legend grows in three steps, and the middle one is the point.** No tasks
-in the view: no entry at all. Tasks but nothing colour-coded: one grey circle
-labelled "Task", which is the 0.7.0 legend. Something colour-coded: the
+in the view: no entry at all. Tasks but nothing color-coded: one gray circle
+labeled "Task", which is the 0.7.0 legend. Something color-coded: the
 five-state key. Ben's reasoning is that the complexity of five rows should only
-arrive once somebody is using statuses or dates — until then the grey circle is
-the whole truth about the diagram, and five rows explaining colours that appear
+arrive once somebody is using statuses or dates — until then the gray circle is
+the whole truth about the diagram, and five rows explaining colors that appear
 nowhere are noise to read past. `tasksUseSignals` decides it, and asks "is any
-circle not grey" rather than "has anyone set a status", because the two
-date-driven states colour a circle without anyone having touched a status
+circle not gray" rather than "has anyone set a status", because the two
+date-driven states color a circle without anyone having touched a status
 field and a key that omitted them would leave an orange circle unexplained.
 
-**The legend swatches were all grey, and the cause is already in this file.**
+**The legend swatches were all gray, and the cause is already in this file.**
 `.legend .task-ring` set `fill: #dfe3e8`, and a stylesheet rule beats a `fill`
-attribute on the element — so every status swatch came out grey however it was
+attribute on the element — so every status swatch came out gray however it was
 drawn. That is the same trap recorded two paragraphs below for the swatch's
 *size*, where `width`/`height` attributes lose to `.canvas-container svg`. The
-comment was in the file and I walked into it with the colour. When a swatch is
+comment was in the file and I walked into it with the color. When a swatch is
 meant to vary, the varying property cannot be in the stylesheet.
 
 `tools/tests/t_tasksignal.js` drives every combination the precedence
 distinguishes, and reads the fills out of the source rather than hardcoding
-them, so it cannot keep passing after somebody changes a colour. The two
+them, so it cannot keep passing after somebody changes a color. The two
 assertions that encoded the old unset-status rule are left pointing at the new
 one, so the reversal reads as deliberate rather than as drift.
+
+### Automated tasks: a blue that replaces gray and nothing else
+
+Ben: "when a task is automated, it should show up as a blue circle instead of
+grey — this will allow a user to see in the diagram which tasks are automated
+vs manual." (Quoted as he wrote it, which is why "grey" survives the American
+English rule here: a quotation is a record of what somebody said, not our
+prose.) The question behind it is the one Manual Steps on a data flow
+already answers for flows: which of this depends on a person being at their
+desk.
+
+`is_automated` is an INTEGER 0/1 column on `task` (migration 0021), not a task
+type. Automation cuts across every type — a validation can be automated or run
+by hand, and so can a transfer — so folding it into the type would double a
+list a SuperAdmin maintains and make the catalog's Type column answer two
+questions badly. It defaults to 0, because relabeling existing history as
+automated would be a claim nobody made.
+
+**Instead of gray — so it replaces the resting state and competes with
+nothing.** `taskSignal` returns `automated` where it would have returned
+`open`, and every stage above it wins: a task past its end date is drawn
+overdue whether or not a machine runs it, because urgency is what the color is
+for and automation is not urgency. The blue therefore appears exactly where
+there was nothing to report, which is most circles most of the time, and that
+is what makes "which of these need a person" a scan rather than a count.
+`TASK_RESTING` names the two resting states once, because three places ask "is
+anything being reported here" and a list written out at each would have
+drifted the first time a state was added — which adding this one would have
+done.
+
+**The contrast that matters is the mark, not the fill.** `#93bde4` is 5.89:1
+against the ring, so the triangle inside it passes as text. Against the
+resting gray it is **1.53:1**, which is no distinction at all — and that is
+deliberate rather than an oversight: automated draws a triangle and *nothing
+recorded yet* draws nothing, and a mark against no mark does not depend on
+color vision. A darker blue would read as a stage. Measured over every fill,
+per the rule in `ACCESSIBILITY.md`, not inferred from the lightest.
+
+**The legend grows in three steps and the automated row is independent of
+them.** `tasksUseAutomated` asks whether anything in the view is automated, and
+the row appears on that basis whether or not the five-state key is showing —
+so a blue circle on screen always has an entry explaining it, and a key never
+explains a color that is not there.
+
+**A copy carries the flag; a copy does not carry dependencies.** Whether a
+person has to do the work is a fact about the work, so next quarter's copy of a
+nightly load is still automated. A dependency is not: the task its predecessor
+waited on was the *previous* occurrence of something upstream, so a carried
+link would leave March's copy waiting on February's load — already satisfied
+before the copy existed, which is worse than no link because it reads as a
+checked assumption. Same judgment as the dates.
+
+**Both controls live in `TaskExtras`, rendered by the flyout and the Add
+window.** Ben asked for both in both places. The `modal` prop picks the
+surrounding markup rather than there being two components: the flyout lays
+fields out in a 140px label column (`.edit-field-row`), the Add window in
+`.form-group` with the label above the control, and a control that brings the
+wrong family with it looks like a bug even though it works — the reused-CSS
+lesson met head on instead of walked into. Sharing one component is also what
+made the field catalog miss `is_automated`; see the generator section above.
+
+The pair sits **below** both dates rather than between them. Ben asked for the
+automated checkbox directly above the dependency one, and the two of them
+wedged between Expected Start and Expected End split a pair of dates that
+reads as a pair. Below both, the reason the dependency block is here at all
+still holds.
+
+**Dependencies are deliberately not drawn on the diagram.** Ben decided this
+directly. The circles already say what is blocked and the hover card names
+what it is waiting on; lines between tasks would cross the flow arrows they
+sit on and make the picture answer two questions at once.
 
 ### An end date cannot precede its start date
 
@@ -1484,7 +1672,7 @@ bearing in a way that is easy to undo:
   was saved for an unrelated reason. Blank means derived; typing a date
   overrides; clearing it returns to derived. A hint under each box names the
   date it is using and says how to override it, because an empty box with
-  invisible behaviour is worse than no behaviour.
+  invisible behavior is worse than no behavior.
 * The **read view, the catalog and its sort keys use the effective value.**
   Sorting on the raw column while displaying the effective one would file a task
   whose dates come from its subtasks among the blanks.
@@ -1495,7 +1683,109 @@ bearing in a way that is easy to undo:
   are both inventions.
 
 `taskSignal` does not read the effective dates and does not need to: it already
-asks the subtasks directly, so the colour was right before this existed.
+asks the subtasks directly, so the color was right before this existed.
+
+### Dependencies: the start date is what gives them teeth
+
+A task can wait on other tasks (0.8.0, migration 0020). The first spec had the
+start date **override** the dependencies; Ben revised it so the start date is
+what makes them matter, and the revision is better. The rule in full:
+
+| Start date | Dependencies | State |
+|---|---|---|
+| set, not yet reached | any | `open` |
+| set, passed | all complete | `late_start` |
+| set, passed | any unfinished | `blocked` |
+| none anywhere | any unfinished | `open` |
+| none anywhere | all complete | `late_start` |
+
+The sense of it: **before the date, waiting is what the plan says should be
+happening** and there is nothing to report. After it, waiting is the reason
+nothing has started, which is worth a color. And with no date at all the
+dependencies stand in for one — the moment the last finishes, the work could
+have begun.
+
+Four things are load-bearing:
+
+* **`taskDepsComplete` returns false for a task with NO dependencies.**
+  "Nothing is holding this up" and "everything that was holding it up is done"
+  are different facts, and only the second should start the clock. A truthy
+  `every()` over an empty array would have made every dateless task in the
+  database report late the moment this shipped.
+* **The no-date clause asks whether a start date is SET, not whether one has
+  passed.** Asking the latter lets a task with a *future* start date fall
+  through to the dependency rule and report late before its own start. Both
+  are tested.
+* **A dependency's status is the DERIVED one.** `task_rows` resolves it the
+  same way it resolves a task's own, so the comparison is against the status
+  the dependency would *show*. Resolving it server-side is what keeps
+  `taskSignal` a pure function the Node suite can drive.
+* **A dependency nobody has assessed is not a finished one**, the same
+  asymmetry the subtask derivation keeps.
+
+**Three refusals, never silent drops** (`check_task_dependencies`): a task
+cannot depend on itself, on a task in another view — the rule
+`check_task_anchor` already applies to parents, for the same leak reasons —
+or in a way that closes a loop. The cycle check walks the graph **as it would
+be after the save**, which is why the proposed list is passed in rather than
+read back from the table; and it follows the whole chain, so A→C→B→A is caught
+even though no two of them are paired directly.
+
+**The scenario copy needs a SECOND pass.** A dependency points at another
+task, and on the first pass the target may not have been given its scenario id
+yet — one pass silently drops every forward reference, which is half the links
+depending on id order. `copied_tasks` is tracked separately from `id_map`
+because that map also holds the systems and flows copied earlier. A dependency
+whose target was not copied is dropped rather than left pointing across the
+boundary, mirroring how a task whose parent was not copied is dropped.
+
+**Deleting a task clears rows naming it in EITHER column.** A dangling
+`depends_on_task_id` would leave a task waiting forever on something that no
+longer exists, and the color rules would read that as unfinished and draw it
+blocked with nothing in the panel to fix.
+
+**Only at the task level, deliberately.** Subtasks are an ordered checklist
+inside one piece of work; a subtask waiting on a task elsewhere would give the
+derived status two masters.
+
+### A state's label is not always the state's own label
+
+`late_start` is reached two ways — a start date that has passed, and no start
+date at all with every dependency finished — and Ben asked for the second to
+read **"Not started, dependencies completed"** rather than "past its start
+date". He is right: a task with no start date cannot be past one, and a label
+that contradicts the record is worse than a vague one. Somebody reads "past
+its start date", opens the task, finds the field empty, and stops trusting the
+circle.
+
+**It is a labeling function, not a sixth signal.** `taskSignalLabel(task,
+today)` wraps `taskSignal` and substitutes the wording; the key, the fill and
+the mark are unchanged, because it *is* the same state. Adding a signal would
+have meant a seventh fill to measure, a seventh legend row and a seventh
+branch in the precedence, to say the same thing in different words.
+
+**`taskLateFromDeps` is exact rather than a guess.** `startPassed` requires a
+start date to exist, so a `late_start` on a task with no start date anywhere
+can only have come from the dateless-dependency clause — nothing else reaches
+it. The case that makes it worth a test is a date on a **subtask**: the task's
+own column is empty there, so a predicate reading only `task.expected_start`
+would hand back the dependency wording for a task that genuinely has a date.
+
+**The legend still says "Not started, past its start date".** The key explains
+a color, and both routes to that color are the same color; wording it per
+task would mean deciding what a key says based on which tasks happen to be in
+view. If that mismatch ever reads wrong, the fix is a longer legend label
+covering both, not a second row.
+
+`t_tasksignal.js` drives the boundary from both sides, and greps the hover
+card's call site for `taskSignalLabel` — a correct function nobody calls is the
+shape of bug this project keeps finding.
+
+One thing the suite cost on the way: it compares against labels read out of the
+source with a regex, and the source writes two of them with `\uXXXX` escapes.
+Read raw, the label comes back with a literal backslash and four digits, and a
+label assertion fails for a reason that has nothing to do with labels. The
+reader decodes them now.
 
 ### A suite borrows the database — including from the suite before it
 
@@ -1568,7 +1858,7 @@ checklist passes a whole URL and did not hit this.
 ## Accessibility
 
 `ACCESSIBILITY.md` records the WCAG contrast measurements for every system-type
-colour and what screen reader support exists. **Colours for system types must
+color and what screen reader support exists. **Colors for system types must
 come from `TYPE_PALETTE` in `app.py`** — every entry has been verified against
 AA, so an arbitrary hex value would bypass that guarantee. The known gaps
 (focus trapping, no real screen reader testing) are listed there too.

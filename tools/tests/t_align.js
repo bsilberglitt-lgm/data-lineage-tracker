@@ -110,13 +110,13 @@ console.log('-- alignment: inert outside tolerance --');
      JSON.stringify(r));
 }
 
-console.log('-- alignment: centres and right edges --');
+console.log('-- alignment: centers and right edges --');
 {
-  // Centre-to-centre. Both boxes are 200 wide here, so a centre match and a
+  // Center-to-center. Both boxes are 200 wide here, so a center match and a
   // left match coincide; offset the other box to tell them apart.
-  const other = { x_pos: 100, y_pos: 200 };            // centre 200, right 300
+  const other = { x_pos: 100, y_pos: 200 };            // center 200, right 300
   const r = alignSnap(198, 400, W, H, [other], 6);
-  ck('a centre match snaps', near(r.x, 200) || near(r.x, 198 + 2),
+  ck('a center match snaps', near(r.x, 200) || near(r.x, 198 + 2),
      String(r.x));
   // Right edge of the dragged box onto the left edge of the other: dragged
   // right edge = x + 200, so x = -100 puts it at 100.
@@ -261,34 +261,34 @@ console.log('-- right-angle corners --');
   // Dragging the bend to roughly above `prev`: its x should lock to prev.x,
   // which makes that segment exactly vertical.
   const r = snapBend(at(104, 300), prev, next, 8, 5);
-  ck('a bend near a neighbour\'s x locks to it', near(r.x, 100), String(r.x));
+  ck('a bend near a neighbor\'s x locks to it', near(r.x, 100), String(r.x));
   ck('and keeps the y it was dragged to', near(r.y, 300), String(r.y));
 }
 {
   const prev = at(100, 100), next = at(400, 500);
   const r = snapBend(at(300, 104), prev, next, 8, 5);
-  ck('a bend near a neighbour\'s y locks to it', near(r.y, 100), String(r.y));
+  ck('a bend near a neighbor\'s y locks to it', near(r.y, 100), String(r.y));
 }
 {
-  // The other neighbour counts too, which is the half that was missing.
+  // The other neighbor counts too, which is the half that was missing.
   const prev = at(100, 100), next = at(400, 500);
   const r = snapBend(at(396, 300), prev, next, 8, 5);
   ck('the following point can be the one it lines up with',
      near(r.x, 400), String(r.x));
 }
 {
-  // Both axes within tolerance of the SAME neighbour would collapse the bend
+  // Both axes within tolerance of the SAME neighbor would collapse the bend
   // onto that point, which is not a bend. The nearer axis wins and the other
   // floats.
   const prev = at(100, 100);
   const r = snapBend(at(104, 103), prev, null, 8, 5);
   const collapsed = near(r.x, 100) && near(r.y, 100);
-  ck('a bend is never collapsed onto its neighbour', !collapsed,
+  ck('a bend is never collapsed onto its neighbor', !collapsed,
      JSON.stringify(r));
 }
 {
   // Away from both axes, the 45-degree rotation still applies — this is the
-  // behaviour Ben said felt right, so it has to survive the fix.
+  // behavior Ben said felt right, so it has to survive the fix.
   const prev = at(0, 0), next = at(1000, 1000);
   const p = at(Math.cos(47 * Math.PI / 180) * 100,
                Math.sin(47 * Math.PI / 180) * 100);
@@ -306,7 +306,7 @@ console.log('-- right-angle corners --');
 }
 {
   const r = snapBend(at(50, 60), null, null, 8, 5);
-  ck('with no neighbours at all, nothing moves',
+  ck('with no neighbors at all, nothing moves',
      near(r.x, 50) && near(r.y, 60), JSON.stringify(r));
 }
 

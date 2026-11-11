@@ -15,7 +15,7 @@ What this pins down:
      function in scenarios.py so they cannot disagree.
   2. **The Proposed checkbox must not clobber a retired record.** It wrote
      change_state unconditionally, so saving a retired system with the box
-     clear quietly un-retired it, and with the box ticked claimed a live
+     clear quietly un-retired it, and with the box checked claimed a live
      system had been invented in the scenario.
   3. **copy_members.** The modal has always sent it; nothing read it. Carried
      people must arrive with their original roles, the source's owner must
@@ -156,7 +156,7 @@ ck("saving with the box clear does not un-retire it", row["change_state"] == "re
 st, _ = rq(boss, "PUT", f"/api/systems/{target}", {"proposed": True}, sc=sid)
 st, rows = rq(boss, "GET", "/api/systems", None, sc=sid)
 row = next(x for x in rows if x["system_id"] == target)
-ck("and ticking it does not claim a live system was invented here",
+ck("and checking it does not claim a live system was invented here",
    row["change_state"] == "removed", f"became {row['change_state']}")
 
 print("\n-- retiring a data flow --")

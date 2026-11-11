@@ -42,7 +42,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 MAX_LOGO_BYTES = 512 * 1024
 
 # A byte cap alone does not protect the browser. A 10000x10000 PNG of flat
-# colour compresses to a few kilobytes and still has to be decoded into ~400 MB
+# color compresses to a few kilobytes and still has to be decoded into ~400 MB
 # of bitmap. Cap the pixels as well.
 MAX_LOGO_DIMENSION = 2000
 
@@ -65,7 +65,7 @@ ENTITY_LABELS = {
 # beside the field.
 MAX_FIELD_DEFINITION = 600
 
-# Colours a SuperAdmin may choose for a system type. Every combination has been
+# Colors a SuperAdmin may choose for a system type. Every combination has been
 # checked against WCAG 2.1 AA — text on fill exceeds 4.5:1 and the border
 # exceeds 3:1 against the canvas. See ACCESSIBILITY.md for the measurements.
 TYPE_PALETTE = {
@@ -161,7 +161,7 @@ FK_FIELDS = {"owner_id", "data_steward_id", "data_owner_id", "agreement_id",
 
 
 def fk(value):
-    """Normalise an optional foreign key coming from a form.
+    """Normalize an optional foreign key coming from a form.
 
     A dropdown left on "none" submits an empty string, not null. PostgreSQL
     rejects that against a foreign key and the request dies as a 500 — which is
@@ -242,7 +242,7 @@ def _jpeg_dimensions(body):
     """
     i, n = 2, len(body)
     while i < n - 1:
-        if body[i] != 0xFF:               # resynchronise on padding
+        if body[i] != 0xFF:               # resynchronize on padding
             i += 1
             continue
         marker = body[i + 1]
@@ -378,6 +378,13 @@ def delete_tasks_for(conn, kind, parent_id):
     conn.execute(f"DELETE FROM task_step WHERE task_id IN ({marks})", tuple(ids))
     conn.execute(f"DELETE FROM task_contributor WHERE task_id IN ({marks})",
                  tuple(ids))
+    # Both columns. A row naming a deleted task as a DEPENDENCY would leave
+    # whatever waits on it blocked forever against something that no longer
+    # exists, which the color rules would draw as a red circle nobody can
+    # clear.
+    conn.execute(
+        f"DELETE FROM task_dependency WHERE task_id IN ({marks}) "
+        f"OR depends_on_task_id IN ({marks})", tuple(ids) + tuple(ids))
     conn.execute(
         f"DELETE FROM resource_version WHERE resource_id IN "
         f"(SELECT resource_id FROM resource WHERE entity_type='task' "
@@ -616,7 +623,7 @@ def task_rows(conn, where, params, include_children=True):
     ids = [r["task_id"] for r in rows]
     marks = ",".join("?" for _ in ids)
 
-    steps, people = {}, {}
+    steps, people, deps = {}, {}, {}
     if include_children:
         for st in conn.execute(
                 f"SELECT * FROM task_step WHERE task_id IN ({marks}) "
@@ -627,6 +634,41 @@ def task_rows(conn, where, params, include_children=True):
                 f"WHERE task_id IN ({marks}) ORDER BY contributor_id",
                 tuple(ids)).fetchall():
             people.setdefault(tc["task_id"], []).append(tc["contributor_id"])
+        for td in conn.execute(
+                f"SELECT task_id, depends_on_task_id FROM task_dependency "
+                f"WHERE task_id IN ({marks}) ORDER BY depends_on_task_id",
+                tuple(ids)).fetchall():
+            deps.setdefault(td["task_id"], []).append(td["depends_on_task_id"])
+
+    # A dependency is carried with its NAME and its RESOLVED status, not as a
+    # bare identifier. Two reasons, and the second is the one that matters:
+    #
+    # * the flyout has to say "Validate enrollment file", and it is reading one
+    #   task, so it has no catalog to look the name up in;
+    # * the color rules need the status a dependency would *report*, which for
+    #   a task with subtasks is derived rather than stored. Resolving it here
+    #   means `taskSignal` in the browser compares the same value the catalog
+    #   shows, and cannot disagree with it.
+    #
+    # Fetched directly rather than by calling task_rows again: a dependency may
+    # point at a task outside this result set, and a recursive call would walk
+    # the whole chain to answer a question that only needs one hop.
+    dep_info = {}
+    wanted = sorted({d for row_deps in deps.values() for d in row_deps})
+    if wanted:
+        dmarks = ",".join("?" for _ in wanted)
+        dep_steps = {}
+        for st in conn.execute(
+                f"SELECT task_id, status FROM task_step "
+                f"WHERE task_id IN ({dmarks})", tuple(wanted)).fetchall():
+            dep_steps.setdefault(st["task_id"], []).append(dict(st))
+        for dr in conn.execute(
+                f"SELECT task_id, name, status FROM task "
+                f"WHERE task_id IN ({dmarks})", tuple(wanted)).fetchall():
+            own = dep_steps.get(dr["task_id"], [])
+            status = derived_task_status(own) if own else dr["status"]
+            dep_info[dr["task_id"]] = {
+                "task_id": dr["task_id"], "name": dr["name"], "status": status}
 
     # Parent names, so a catalog row can say what the task is attached to
     # without the browser holding every system and flow.
@@ -644,6 +686,14 @@ def task_rows(conn, where, params, include_children=True):
     for r in rows:
         r["steps"] = steps.get(r["task_id"], [])
         r["contributor_ids"] = people.get(r["task_id"], [])
+        # Both shapes: the ids are what the edit form binds to and sends back,
+        # the resolved rows are what the read view and the color rules use.
+        # A dependency whose task has since been deleted simply drops out —
+        # the cascade should have removed the row, and showing a dangling
+        # identifier would be worse than showing nothing.
+        r["dependency_ids"] = [d for d in deps.get(r["task_id"], [])
+                               if d in dep_info]
+        r["dependencies"] = [dep_info[d] for d in r["dependency_ids"]]
         r["anchor_name"] = parents.get((r["anchor_kind"], r["anchor_id"]))
         # The stored status is authoritative only for a task with no subtasks.
         # Resolved on read as well as on write, so a row edited directly in the
@@ -1434,13 +1484,13 @@ SEED_RELEASES = [
 
 * *ETL Process* and *Internal* have been retired. CONNECT is now a Data Store.
 * A SuperAdmin can edit the list of system types, their descriptions, and their
-  colours in Preferences.
+  colors in Preferences.
 * The diagram key has an information button explaining what each type means.
 * Choosing a type is now required when creating a system.
 
 **Diagram**
 
-* Sources are blue and destinations are green. Every colour has been checked
+* Sources are blue and destinations are green. Every color has been checked
   for contrast against accessibility standards.
 * Click a data flow's number to open its details — an easier target than the line.
 * With a details panel open, clicking the diagram closes it.
@@ -1660,9 +1710,9 @@ SEED_RELEASES = [
   field in the details panel, for everyone. Point at it, or reach it with the
   Tab key, to read the definition.
 * Pick a field from a list that shows where it lives — *Data Flow → Transfer
-  Details → Frequency*. A tick marks the ones already done, and the count
+  Details → Frequency*. A check marks the ones already done, and the count
   shows how far along you are, which makes the gaps visible.
-* Some fields are labelled slightly differently in different places — a
+* Some fields are labeled slightly differently in different places — a
   classification is "Classification" in one view and "Data Classification" in
   another. **One definition covers every phrasing**, and Preferences tells you
   when a field has more than one.
@@ -1670,8 +1720,8 @@ SEED_RELEASES = [
 **Fields that appear in more than one place**
 
 * Eleven fields exist on several kinds of record — **Data Steward** is on
-  systems, data flows and data elements. For those there is a tick box: **use
-  one definition everywhere this field appears**, ticked to begin with. Change
+  systems, data flows and data elements. For those there is a check box: **use
+  one definition everywhere this field appears**, checked to begin with. Change
   the wording once and all of them update.
 * Leave the box clear where the meaning really differs: a system's
   *Description* says what the system is for, a data flow's says what the flow
@@ -1683,7 +1733,7 @@ SEED_RELEASES = [
 
 * Definitions appear in the details panel in this release. The **Add** windows
   follow in the next one, along with the ability to **hide fields** that your
-  organisation does not use.
+  organization does not use.
 """),
     ("0.5.1", "Only the fields you use", None, 1, 1200, """\
 ## What's new in this release
@@ -1734,7 +1784,7 @@ SEED_RELEASES = [
 
 **Data flows**
 
-* New **Manual Steps** tick box records that a flow depends on a person, so
+* New **Manual Steps** check box records that a flow depends on a person, so
   the places where timing can slip are easy to find. Sortable in the data
   flows table.
 
@@ -1771,7 +1821,7 @@ SEED_RELEASES = [
   nothing to get wrong.
 * Their email and title stay with their account rather than being copied, so
   the two can never drift apart.
-* Anyone who already has a contributor record is greyed out in the list, with
+* Anyone who already has a contributor record is grayed out in the list, with
   the record they belong to named.
 
 **Layout**
@@ -1832,7 +1882,9 @@ SEED_RELEASES = [
     # Published 6 November 2026, in Ben's own wording. Published notes are
     # never overwritten by `ensure_releases`, so from here on an
     # administrator's edits in the app survive restarts and deploys.
-    (VERSION, "Searchable lists and task colors", None, 1, 1700, """\
+    # Pinned once published, so the next bump cannot re-insert these notes
+    # under a new number and show the announcement to everyone twice.
+    ("0.7.1", "Searchable lists and task colors", None, 1, 1700, """\
 ## What's new in this release
 
 **Fixes**
@@ -1861,6 +1913,40 @@ SEED_RELEASES = [
 * The legend at the bottom left will only show the task circle when a task has
   been included in the diagram, and it will only show the color-coding when
   dates and/or statuses have been added to tasks.
+"""),
+    # Reviewed and approved by Ben, 11 November 2026, so published. A published
+    # release is never re-seeded: further wording changes are made in the app,
+    # not here.
+    (VERSION, "Task dependencies and automated tasks", None, 1, 1800, """\
+## What's new in this release
+
+**Tasks can wait on other tasks**
+
+* A task can now list other tasks it depends on. Check **Add Dependencies**,
+  in the Add Task window or on an existing task, and choose them.
+* A task past its start date with an unfinished dependency is shown as
+  **Blocked** on the diagram, and hovering names what it is waiting for.
+* A task with no start date anywhere counts as ready to start once every
+  dependency is completed, so a chain of work can be planned without putting a
+  date on each step. Hovering reads "Not started, dependencies completed".
+* A task cannot depend on itself, on a task in another view, or in a way that
+  forms a loop.
+* Unchecking **Add Dependencies** removes the dependencies, and asks first.
+
+**Automated tasks**
+
+* Check **Automated task** on work a machine does, and its circle turns blue,
+  so the diagram shows at a glance which tasks need a person.
+* The blue appears where there is nothing else to report: a task that is late
+  or blocked is still shown that way.
+* A copy of a task stays automated.
+
+**Elsewhere**
+
+* **Un-hide everything** in a scenario now asks first. There is no undo, and
+  nothing records which items were hidden.
+* A help article on tasks is in the help panel, covering subtasks, dates, the
+  diagram colors, automated tasks and dependencies.
 """),
 ]
 
@@ -2132,7 +2218,7 @@ def skip_forced_password_change():
 
     Off by default, and it should stay off anywhere real. A temporary password
     typed into an environment variable has been seen by whoever set it and may
-    sit in a shell history or a `.env` file, which is why the normal behaviour
+    sit in a shell history or a `.env` file, which is why the normal behavior
     is to force a change at first sign-in.
 
     On a local machine, where the database is routinely thrown away and
@@ -2721,7 +2807,7 @@ if HAS_TORNADO:
                 # Never overwrite "removed" from here. The Proposed checkbox
                 # wrote change_state unconditionally, so saving a retired
                 # record with the box clear quietly un-retired it, and with
-                # the box ticked claimed a live system was invented here.
+                # the box checked claimed a live system was invented here.
                 # Retiring has its own action; this only moves between
                 # proposed and unchanged.
                 conn.execute(
@@ -2989,7 +3075,7 @@ if HAS_TORNADO:
                 # Never overwrite "removed" from here. The Proposed checkbox
                 # wrote change_state unconditionally, so saving a retired
                 # record with the box clear quietly un-retired it, and with
-                # the box ticked claimed a live system was invented here.
+                # the box checked claimed a live system was invented here.
                 # Retiring has its own action; this only moves between
                 # proposed and unchanged.
                 conn.execute(
@@ -3192,7 +3278,7 @@ if HAS_TORNADO:
             where, params = self.scope_sql(table="contributor")
             # A deactivated contributor is still referenced by records and by
             # the audit trail, so the row is never removed — it is only taken
-            # out of circulation. A SuperAdmin keeps seeing them, greyed, which
+            # out of circulation. A SuperAdmin keeps seeing them, grayed, which
             # is the only way to find one again and reactivate it.
             if not permissions.at_least(self.current_user["role"],
                                         permissions.SUPERADMIN):
@@ -3226,7 +3312,7 @@ if HAS_TORNADO:
                         return self.fail(
                             400, "That user account is deactivated.")
                     if linked_row["contributor_id"]:
-                        # Checked here as well as greyed out in the list: the
+                        # Checked here as well as grayed out in the list: the
                         # list is a snapshot, and two people could be creating
                         # contributors at once.
                         existing = conn.execute(
@@ -3287,7 +3373,7 @@ if HAS_TORNADO:
             self.write_json(payload)
 
     TASK_FIELDS = ('name', 'task_type', 'task_type_other', 'description',
-                   'anchor_kind', 'anchor_id',
+                   'anchor_kind', 'anchor_id', 'is_automated',
                    'pos_main', 'pos_cross', 'expected_start', 'expected_end',
                    'status', 'completed_date', 'notes')
 
@@ -3359,6 +3445,73 @@ if HAS_TORNADO:
                 return complaint
         return None
 
+    def check_task_dependencies(conn, handler, task_id, wanted):
+        """Complain about a dependency list, or return the cleaned one.
+
+        Three things can be wrong, and all three have to be refused rather
+        than quietly dropped — a dependency that vanishes on save is the
+        silently-unsaveable-field shape this project keeps finding.
+
+        **A task cannot wait on itself.** Trivially true and trivially easy to
+        click, since the picker is a list of tasks.
+
+        **A dependency must be in the same view.** The same rule as a task's
+        parent (`check_task_anchor`): a scenario task waiting on a live task is
+        the cross-view reference the leak tests exist for, and the color
+        coding would be reading a status from a world the viewer is not
+        looking at.
+
+        **A dependency must not close a loop.** A waits on B waits on A is not
+        a plan, and the color rules would have each of them blocked by the
+        other forever. The walk is over the graph as it would be *after* this
+        save, which is why the proposed list is passed in rather than read
+        back from the table.
+        """
+        where, params = handler.scope_sql()
+        clean, seen = [], set()
+        for dep in (wanted or []):
+            dep = (dep or "").strip()
+            if not dep or dep in seen:
+                continue
+            seen.add(dep)
+            if dep == task_id:
+                return None, "A task cannot depend on itself."
+            row = conn.execute(
+                f"SELECT task_id, name FROM task WHERE task_id=? AND {where}",
+                (dep,) + params).fetchone()
+            if not row:
+                return None, (f"{dep} is not a task in this view, so it cannot "
+                              f"be a dependency.")
+            clean.append(dep)
+
+        if clean:
+            # Walk forward from each proposed dependency. If this task is
+            # reachable, adding the link would close a loop.
+            #
+            # Breadth-first with a seen set rather than recursion: the data
+            # already in the table is trusted to be acyclic (this check is the
+            # only way in), but a seen set costs nothing and means a loop that
+            # somehow got in cannot hang the request.
+            edges = {}
+            for r in conn.execute(
+                    f"SELECT d.task_id, d.depends_on_task_id "
+                    f"FROM task_dependency d JOIN task t ON t.task_id=d.task_id "
+                    f"WHERE {where}", params).fetchall():
+                edges.setdefault(r["task_id"], []).append(r["depends_on_task_id"])
+            edges[task_id] = clean
+
+            frontier, visited = list(clean), {task_id}
+            while frontier:
+                node = frontier.pop()
+                if node == task_id:
+                    return None, ("That would create a circular dependency: "
+                                  f"{task_id} already comes before it.")
+                if node in visited:
+                    continue
+                visited.add(node)
+                frontier.extend(edges.get(node, []))
+        return clean, None
+
     def check_task_anchor(conn, handler, kind, anchor_id):
         """Is this a real parent, visible in the view being written to?
 
@@ -3402,6 +3555,18 @@ if HAS_TORNADO:
                     """INSERT INTO task_contributor
                          (task_id, contributor_id, added_date, added_by)
                        VALUES (?,?,?,?)""", (task_id, cid, now, uid))
+
+        # Replaced wholesale, like the people: the browser sends the list it
+        # wants to end up with, and the pair being the primary key means a
+        # duplicate is impossible rather than merely tidied up.
+        if "dependency_ids" in data:
+            conn.execute("DELETE FROM task_dependency WHERE task_id=?",
+                         (task_id,))
+            for dep in (data.get("dependency_ids") or []):
+                conn.execute(
+                    """INSERT INTO task_dependency
+                         (task_id, depends_on_task_id, added_date, added_by)
+                       VALUES (?,?,?,?)""", (task_id, dep, now, uid))
 
         if replace_steps and "steps" in data:
             conn.execute("DELETE FROM task_step WHERE task_id=?", (task_id,))
@@ -3497,14 +3662,19 @@ if HAS_TORNADO:
                     """INSERT INTO task
                          (task_id, name, task_type, task_type_other,
                           description, anchor_kind,
-                          anchor_id, pos_main, pos_cross, expected_start,
+                          anchor_id, is_automated, pos_main, pos_cross,
+                          expected_start,
                           expected_end, status, completed_date, notes,
                           created_date, updated_date, created_by, updated_by,
                           scenario_id, change_state)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (tid, data["name"].strip(), ttype, other,
                      data.get("description"),
-                     kind, anchor_id, data.get("pos_main"), data.get("pos_cross"),
+                     kind, anchor_id,
+                     # INTEGER 0/1 by convention, and coerced here so a JSON
+                     # `true` from the browser cannot land as a string.
+                     1 if data.get("is_automated") else 0,
+                     data.get("pos_main"), data.get("pos_cross"),
                      data.get("expected_start") or None,
                      data.get("expected_end") or None,
                      # No default: a task nobody has assessed has no status,
@@ -3514,6 +3684,15 @@ if HAS_TORNADO:
                      data.get("completed_date") or None, data.get("notes"),
                      now, now, uid, uid, self.scenario_id,
                      change_state_for_new(self, data)))
+                if "dependency_ids" in data:
+                    clean, complaint = check_task_dependencies(
+                        conn, self, tid, data.get("dependency_ids"))
+                    if complaint:
+                        # Rolled back rather than left half-made: the task row
+                        # is already inserted at this point.
+                        conn.rollback()
+                        return self.fail(400, complaint)
+                    data["dependency_ids"] = clean
                 write_task_children(conn, self, tid, data, replace_steps=True)
                 apply_task_status(conn, tid)
                 self.audit_create(conn, "task", tid,
@@ -3583,6 +3762,15 @@ if HAS_TORNADO:
                 complaint = check_task_steps_dates(data)
                 if complaint:
                     return self.fail(400, complaint)
+                # Same reasoning for the dependencies, and the cycle walk has
+                # to happen before anything is written or it would be checking
+                # the graph it just changed.
+                if "dependency_ids" in data:
+                    clean, complaint = check_task_dependencies(
+                        conn, self, tid, data.get("dependency_ids"))
+                    if complaint:
+                        return self.fail(400, complaint)
+                    data["dependency_ids"] = clean
                 gaps = missing_required("task", data, before)
                 if gaps:
                     return self.fail(
@@ -3623,7 +3811,7 @@ if HAS_TORNADO:
                         continue
                     value = data[key]
                     if key == "status":
-                        # An empty value clears it; anything unrecognised is
+                        # An empty value clears it; anything unrecognized is
                         # ignored rather than stored.
                         if value in (None, "", "none"):
                             value = None
@@ -3635,6 +3823,12 @@ if HAS_TORNADO:
                             return self.fail(400, "A task name is required.")
                     if key in ("expected_start", "expected_end", "completed_date"):
                         value = value or None
+                    if key == "is_automated":
+                        # Boolean-ish columns are INTEGER 0/1 here, and the
+                        # browser sends a JSON boolean. Coerced rather than
+                        # stored as `true`, which would compare wrongly and
+                        # read back as something the frontend does not expect.
+                        value = 1 if value else 0
                     fields.append(f"{key}=?")
                     vals.append(value)
                 now = iso(utcnow())
@@ -3701,6 +3895,9 @@ if HAS_TORNADO:
                 # their own right, so they go with it.
                 conn.execute("DELETE FROM task_step WHERE task_id=?", (tid,))
                 conn.execute("DELETE FROM task_contributor WHERE task_id=?", (tid,))
+                conn.execute(
+                    "DELETE FROM task_dependency "
+                    "WHERE task_id=? OR depends_on_task_id=?", (tid, tid))
                 conn.execute("DELETE FROM resource_version WHERE resource_id IN "
                              "(SELECT resource_id FROM resource "
                              " WHERE entity_type='task' AND entity_id=?)", (tid,))
@@ -3720,11 +3917,19 @@ if HAS_TORNADO:
         making the second one has to be cheap — type, parent, position,
         description, notes, the people and the whole checklist come across.
 
+        **Dependencies do not come across either**, and that is the same
+        judgment as the dates. A copy is the next occurrence of a recurring
+        job, and the task its predecessor waited on was the *previous*
+        occurrence of something upstream — so a carried link would leave March's
+        copy waiting on February's load, satisfied before it was made, which is
+        worse than no link because it reads as a checked assumption. The new
+        occurrence names what it waits on.
+
         **Dates and progress deliberately do not.** The dates are the one thing
         that differs between occurrences, and a copy that arrived pre-filled
         with March's dates would be wrong in a way nobody would notice until it
         was overdue. Progress resets for the same reason: a new occurrence has
-        not been done, and inheriting ticks from the last one would report work
+        not been done, and inheriting checks from the last one would report work
         that never happened.
         """
         SCENARIO_AWARE = True
@@ -3754,14 +3959,19 @@ if HAS_TORNADO:
                     """INSERT INTO task
                          (task_id, name, task_type, task_type_other,
                           description, anchor_kind,
-                          anchor_id, pos_main, pos_cross, expected_start,
+                          anchor_id, is_automated, pos_main, pos_cross,
+                          expected_start,
                           expected_end, status, completed_date, notes,
                           created_date, updated_date, created_by, updated_by,
                           scenario_id, change_state)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (new_id, name, src["task_type"], src["task_type_other"],
                      src["description"],
                      src["anchor_kind"], src["anchor_id"],
+                     # Carried: whether a person has to do the work is a fact
+                     # about the work, not about this occurrence of it. A
+                     # nightly load copied for next quarter is still automated.
+                     src["is_automated"],
                      # Position is dropped: two circles at identical
                      # coordinates look like one, and the copy would be
                      # undraggable because the original is on top of it.
@@ -4515,7 +4725,7 @@ if HAS_TORNADO:
                     ok = (user["is_active"]
                           and auth.verify_password(password, user["password_hash"]))
                 else:
-                    auth.verify_password(password, dummy_hash())  # equalise timing
+                    auth.verify_password(password, dummy_hash())  # equalize timing
                     ok = False
 
                 conn.execute(
@@ -5318,7 +5528,7 @@ if HAS_TORNADO:
 
         Resolved here rather than in the browser because the label a component
         is given is not a reliable key on its own — the read view, the edit
-        view and the Add modal spell the same column differently. The catalogue
+        view and the Add modal spell the same column differently. The catalog
         knows every spelling, so one definition is emitted under each of them
         and a component can look itself up knowing only its own label.
         """
@@ -5342,7 +5552,7 @@ if HAS_TORNADO:
     def required_columns():
         """{(entity, column)} that an Add window validates as required.
 
-        Read from the generated catalogue rather than listed here, because the
+        Read from the generated catalog rather than listed here, because the
         authority is `useRequired` in the UI and a second hand-kept list would
         drift. The generator fails if the two disagree.
         """
@@ -5357,7 +5567,7 @@ if HAS_TORNADO:
         definition has to be findable from the label a component was handed,
         because there are 81 call sites that pass nothing else. Hiding is asked
         by the newer field components, which declare their column outright, so
-        resolving on the column means a field relabelled in one view cannot
+        resolving on the column means a field relabeled in one view cannot
         quietly reappear there.
 
         The label-to-column map is emitted alongside so the older components —
@@ -5400,7 +5610,7 @@ if HAS_TORNADO:
             self.write_json(payload)
 
     class FieldCatalogHandler(BaseAPIHandler):
-        """The whole catalogue with its definitions, for the Preferences editor."""
+        """The whole catalog with its definitions, for the Preferences editor."""
         READ_ROLE = permissions.SUPERADMIN
         WRITE_ROLE = permissions.SUPERADMIN
 
@@ -5458,7 +5668,7 @@ if HAS_TORNADO:
             column = (data.get("column") or "").strip()
             text = (data.get("definition") or "").strip()
 
-            # Only fields the catalogue knows about. Without this the table
+            # Only fields the catalog knows about. Without this the table
             # would accept definitions for anything, including typos that then
             # silently never appear anywhere.
             known = {(f["entity"], f["column"]) for f in field_catalog.FIELDS}
@@ -5552,7 +5762,7 @@ if HAS_TORNADO:
 
             # No shared scope here, unlike definitions. See migration 0012:
             # whether a field is *used* is a per-record-type question, and one
-            # tick emptying three screens is a worse surprise than three ticks.
+            # check emptying three screens is a worse surprise than three checks.
             if entity == SHARED:
                 return self.fail(
                     400, "Hiding is set for one record type at a time. "
@@ -6396,7 +6606,7 @@ if HAS_TORNADO:
 
         Governance already entered against a table or column is carried forward
         by name, and the previous schema is snapshotted so the upload can be
-        reverted. One audit event summarises the change rather than thousands of
+        reverted. One audit event summarizes the change rather than thousands of
         per-column rows.
         """
         READ_ROLE = permissions.EDITOR

@@ -127,7 +127,7 @@ def check_password_policy(password, policy=None, email=None, first_name=None,
     if password is None:
         return ["Password is required."]
 
-    # Normalise so visually identical characters compare consistently.
+    # Normalize so visually identical characters compare consistently.
     pw = unicodedata.normalize("NFKC", password)
 
     if len(pw) < min_len:

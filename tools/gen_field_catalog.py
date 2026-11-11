@@ -12,7 +12,7 @@ Every field in `index.html` already states its own database column at the call
 site, so the list can be derived instead and cannot disagree with what is
 actually rendered.
 
-**Why keyed on the column, not the label.** The same column is labelled
+**Why keyed on the column, not the label.** The same column is labeled
 differently depending on where it appears:
 
     system.encryption_at_rest    read view "Encryption at Rest"
@@ -22,7 +22,7 @@ differently depending on where it appears:
                                  add modal "Transfer Method"
 
 Ten columns differ between the flyout and the Add modals, and six differ
-between the read and edit views of the flyout itself. A catalogue keyed on
+between the read and edit views of the flyout itself. A catalog keyed on
 label would therefore treat one field as several, and a definition written
 against one spelling would not appear beside the others. The column is the
 thing that is actually stable, so each entry records the column once and lists
@@ -57,7 +57,7 @@ VIEWS = [
     ("contributor", "ContributorEditView", "ContributorReadView",
      "AddContributorModal"),
     # A task's parent, its people and its steps are drawn by hand rather than
-    # with a field component, so they are absent from the catalogue on purpose:
+    # with a field component, so they are absent from the catalog on purpose:
     # the parent is two columns answered by one choice, and the other two are
     # lists. None has a single column for a definition or for hiding to
     # resolve against — the same reason the four hand-written blocks on a data
@@ -113,11 +113,11 @@ def component(src, name):
 
 SECTION_TOKEN = "@@SECTION@@"
 
-# Components that render one labelled field. `EditField` covers most of them;
+# Components that render one labeled field. `EditField` covers most of them;
 # `ContributorSelect` is a person picker and `ContributorField` its read-only
 # twin; `SystemSelect` and `SystemField` are the same pair for a reference to a
 # system. The person pickers were missed when this generator only knew about EditField —
-# six fields, Data Steward among them, were silently absent from the catalogue
+# six fields, Data Steward among them, were silently absent from the catalog
 # and so could not be given a definition. Anything else carrying a `label=` is
 # now reported rather than skipped; see `unknown_field_components`.
 EDIT_COMPONENTS = ("EditField", "ContributorSelect", "SystemSelect")
@@ -141,17 +141,108 @@ MODAL_COMPONENTS = MODAL_REQUIRED_COMPONENTS + MODAL_OPTIONAL_COMPONENTS
 # itself, drawn beside a label. It appears directly in the markup wherever a row
 # is hand-written rather than built from one of the field components — the
 # Manual Steps row on a data flow, for instance. Listing it here says "known,
-# and not a field", which is different from not recognising it.
+# and not a field", which is different from not recognizing it.
 NON_FIELD_COMPONENTS = ("FieldInfo", "Tooltip")
 
 KNOWN_COMPONENTS = (set(EDIT_COMPONENTS) | set(READ_COMPONENTS)
                     | set(MODAL_COMPONENTS) | set(NON_FIELD_COMPONENTS))
 
 
-def unknown_field_components(body):
-    """Names of labelled components this generator does not understand.
+# Components that are not themselves a field but whose body draws fields, and
+# which a view renders. Their bodies are scanned as part of the view that
+# renders them.
+#
+# `TaskExtras` is the automated flag plus the dependency block, written once
+# and rendered by both the task edit view and the Add Task window — because two
+# copies of a control with that much behavior in it is how one of them stops
+# matching the other. The cost is that its fields sit outside the view bodies
+# this generator reads, so `is_automated` was absent from the catalog with
+# nothing anywhere saying so: the catalog came up short and Preferences
+# offered one field fewer than the app has. That is the exact silent omission
+# this generator was written to end, arriving through a door it was not
+# watching. Two things close it: the bodies listed here are spliced in, and
+# `unscanned_field_groups` **fails** on any other component a view renders that
+# turns out to draw fields.
+FIELD_GROUPS = ("TaskExtras", "TaskDependencies")
 
-    A silent omission is the dangerous failure here: the catalogue simply comes
+
+def _view_names():
+    out = set()
+    for row in VIEWS:
+        out.update(n for n in row[1:] if n)
+    return out
+
+
+def expand(src, body, seen=None):
+    """A view body with each FIELD_GROUPS tag replaced by that body, in place.
+
+    In place, not appended. A field's section comes from the most recent
+    section heading above it, so a body tacked on the end lands the fields
+    under whatever section happens to be last — `is_automated` came out under
+    Notes, three sections below where it is drawn. Substituting at the tag
+    keeps both the section and the render order.
+    """
+    seen = set() if seen is None else seen
+    for name in sorted(set(re.findall(r"<([A-Z]\w+)\b", body))):
+        if name not in FIELD_GROUPS or name in seen:
+            continue
+        seen.add(name)
+        sub = component(src, name)
+        if not sub:
+            continue
+        sub = expand(src, sub, seen)
+        # The tag is self-closing in every current use; match up to the `/>`
+        # that is not inside a nested tag by taking the shortest run with no
+        # intervening `<`.
+        body = re.sub(r"<" + name + r"\b[^<]*?/>", lambda _m: sub, body)
+    return body
+
+
+# Names `unscanned_field_groups` must not report. Two kinds, and neither is a
+# fudge:
+#
+# * The views in VIEWS, which are scanned in their own right.
+# * The schema governance views, deliberately out of scope for the same reason
+#   VIEWS leaves them out — they describe a database's columns rather than the
+#   department's records.
+#
+# They need listing at all only because a component's boundary here is the span
+# between one declaration and the next, so the last component declared inside
+# `DetailPanel` swallows that panel's render — which names every view it can
+# draw. Tightening the boundary would need a JS parser; naming the thirteen is
+# cheaper and says what it is doing.
+OUT_OF_SCOPE_VIEWS = ("SchemaTableReadView", "SchemaColumnReadView",
+                      "SchemaGovEditView")
+
+
+def unscanned_field_groups(src, body):
+    """Components a view renders that draw fields and are not FIELD_GROUPS.
+
+    Decidable without a JS parser and without a list of every out-of-scope
+    screen: take each capitalized tag the view renders, read that component's
+    own body, and ask whether it contains a field component. If it does and it
+    is not listed above, its fields are invisible to this generator — which is
+    the silent omission the whole file exists to prevent.
+    """
+    found = set()
+    for name in sorted(set(re.findall(r"<([A-Z]\w+)\b", body))):
+        if (name in KNOWN_COMPONENTS or name in FIELD_GROUPS
+                or name in OUT_OF_SCOPE_VIEWS or name in _view_names()):
+            continue
+        sub = component(src, name)
+        if not sub:
+            continue
+        if re.search(r"<(?:" + "|".join(sorted(set(KNOWN_COMPONENTS)
+                                               - set(NON_FIELD_COMPONENTS)))
+                     + r")\b", sub):
+            found.add(name)
+    return found
+
+
+def unknown_field_components(body):
+    """Names of labeled components this generator does not understand.
+
+    A silent omission is the dangerous failure here: the catalog simply comes
     up short, Preferences offers fewer fields than the app has, and nothing
     anywhere says so. Returning them lets --check fail instead.
     """
@@ -250,8 +341,8 @@ def required_keys(body):
 
     Cross-checked against the required components above. The two are different
     statements of the same fact — `useRequired` drives the validation, the
-    component choice drives what the catalogue records — and a field that
-    validates as required while the catalogue thinks it optional would be
+    component choice drives what the catalog records — and a field that
+    validates as required while the catalog thinks it optional would be
     hideable, which would make that record type impossible to create.
     """
     flat = re.sub(r"\s+", " ", body)
@@ -274,6 +365,12 @@ def build():
         if not ebody:
             problems.append(f"{entity}: edit view {ev} not found")
             continue
+        for comp_name in sorted(unscanned_field_groups(src, ebody)):
+            problems.append(
+                f"{entity}: {ev} renders <{comp_name}>, which draws fields of "
+                f"its own that this generator never reads \u2014 add it to "
+                f"FIELD_GROUPS or those fields cannot be defined or hidden")
+        ebody = expand(src, ebody)
         fields = edit_fields(ebody)
         if not fields:
             problems.append(f"{entity}: no fields found in {ev}")
@@ -283,6 +380,11 @@ def build():
                 f"generator does not know about \u2014 add it to EDIT_COMPONENTS "
                 f"or those fields cannot be defined")
         rbody = component(src, rv) or ""
+        for comp_name in sorted(unscanned_field_groups(src, rbody)):
+            problems.append(
+                f"{entity}: {rv} renders <{comp_name}>, which draws fields of "
+                f"its own \u2014 add it to FIELD_GROUPS")
+        rbody = expand(src, rbody)
         for comp_name in sorted(unknown_field_components(rbody)):
             problems.append(
                 f"{entity}: {rv} renders fields with <{comp_name}> \u2014 add it "
@@ -291,14 +393,21 @@ def build():
         # resolved display value apart from a real one.
         reads = read_labels(rbody, known={c for c, _, _ in fields})
         mbody = component(src, am) or "" if am else ""
+        if mbody:
+            for comp_name in sorted(unscanned_field_groups(src, mbody)):
+                problems.append(
+                    f"{entity}: {am} renders <{comp_name}>, which draws fields "
+                    f"of its own \u2014 add it to FIELD_GROUPS or those fields "
+                    f"cannot be hidden")
+            mbody = expand(src, mbody)
         modals, required = modal_labels(mbody)
         for comp_name in sorted(unknown_field_components(mbody)):
             problems.append(
                 f"{entity}: {am} renders fields with <{comp_name}>, which this "
                 f"generator does not know about \u2014 add it to "
                 f"MODAL_OPTIONAL_COMPONENTS or those fields cannot be hidden")
-        # The validation and the catalogue must agree about what is required —
-        # but only about fields the catalogue actually has. An Add window also
+        # The validation and the catalog must agree about what is required —
+        # but only about fields the catalog actually has. An Add window also
         # validates things that are not record fields at all: a data flow's
         # name and its two endpoints are required there and appear nowhere in
         # the edit view, so they are not hideable to begin with.
@@ -306,7 +415,7 @@ def build():
         for col in sorted((required_keys(mbody) & own) - required):
             problems.append(
                 f"{entity}.{col}: {am} validates it as required but draws it "
-                f"with an optional component, so the catalogue would let it be "
+                f"with an optional component, so the catalog would let it be "
                 f"hidden \u2014 draw it with <ReqField>")
 
         seen = set()
@@ -394,7 +503,7 @@ def main():
     if "--check" in sys.argv:
         current = open(OUT, encoding="utf-8").read() if os.path.exists(OUT) else ""
         if problems:
-            print("field catalogue: PROBLEMS")
+            print("field catalog: PROBLEMS")
             for p in problems:
                 print("  -", p)
             return 1
@@ -402,7 +511,7 @@ def main():
             print("field_catalog.py is out of date — run "
                   "`python3 tools/gen_field_catalog.py`")
             return 1
-        print(f"field catalogue up to date ({len(entries)} fields)")
+        print(f"field catalog up to date ({len(entries)} fields)")
         return 0
 
     for p in problems:

@@ -14,7 +14,7 @@ row edited directly in the database still reports something true.
 **A copy carries everything except the dates and the progress.** That is what
 replaced recurrence — a quarterly job is four tasks — so the copy has to bring
 the checklist and the people across, and must *not* bring March's dates or
-March's ticks, which would be wrong in a way nobody notices until it is
+March's checks, which would be wrong in a way nobody notices until it is
 overdue.
 
 **A task belongs to exactly one parent, visible in the view being written.**
@@ -424,6 +424,18 @@ ck("an unused one can", st == 200, str(st))
 
 # ---------------------------------------------------------------- scenarios
 print("-- a scenario gets its own copy, pointing at its own parents --")
+# A dependency that exists before the scenario is made, so the copy has a link
+# to remap. Both ends are copied, so it must survive — pointing at the
+# scenario's own tasks, never back at the live ones.
+st, pre_a = rq(boss, "POST", "/api/tasks",
+               {"name": "Runs first", "task_type": "Validation",
+                "anchor_kind": "data_flow", "anchor_id": FLOW})
+st, pre_b = rq(boss, "POST", "/api/tasks",
+               {"name": "Runs second", "task_type": "Validation",
+                "anchor_kind": "data_flow", "anchor_id": FLOW})
+PA, PB = pre_a.get("task_id", ""), pre_b.get("task_id", "")
+rq(boss, "PUT", f"/api/tasks/{PB}", {"dependency_ids": [PA]})
+
 st, scn = rq(boss, "POST", "/api/scenarios",
              {"name": "Task leak check", "start_from": "live"})
 SC = scn.get("scenario_id")
@@ -433,6 +445,22 @@ ck("the copy report counts tasks", (scn.get("copied") or {}).get("task", 0) > 0,
 
 st, live_tasks = rq(boss, "GET", "/api/tasks")
 st, scn_tasks = rq(boss, "GET", f"/api/tasks?scenario={SC}")
+# The dependency came across remapped. A one-pass copy would drop any link
+# whose target had not been given its scenario id yet, which is half of them
+# depending on id order — the kind of bug that looks like "sometimes it works".
+scn_by_origin = {t.get("origin_id"): t for t in scn_tasks}
+copied_b = scn_by_origin.get(PB) or {}
+copied_a = scn_by_origin.get(PA) or {}
+ck("the dependency survived the copy",
+   len(copied_b.get("dependency_ids") or []) == 1,
+   json.dumps(copied_b.get("dependency_ids")))
+ck("and points at the SCENARIO's task, not the live one",
+   (copied_b.get("dependency_ids") or [None])[0] == copied_a.get("task_id"),
+   f"{(copied_b.get('dependency_ids') or [None])[0]} vs {copied_a.get('task_id')}")
+ck("which is not the live id it was copied from",
+   (copied_b.get("dependency_ids") or [None])[0] != PA,
+   str((copied_b.get("dependency_ids") or [None])[0]))
+
 ck("the scenario has its own copy of every task",
    len(scn_tasks) == len(live_tasks), f"{len(scn_tasks)} vs {len(live_tasks)}")
 ck("the copies have scenario-prefixed ids",
@@ -578,7 +606,7 @@ ck("an empty string from a dropdown clears it as well",
    viaempty["status"] is None, repr(viaempty["status"]))
 
 st, junk = rq(boss, "PUT", f"/api/tasks/{BL}", {"status": "nonsense"})
-ck("an unrecognised status is ignored, not stored",
+ck("an unrecognized status is ignored, not stored",
    junk["status"] is None, repr(junk["status"]))
 
 # Subtasks with no status say nothing about the task, rather than voting
@@ -718,13 +746,19 @@ st, _ = rq(boss, "GET", "/api/resources/contributor/CON-001")
 ck("and an unsupported parent type is refused", st in (400, 404), str(st))
 
 # ------------------------------------------------- the fifth record type
-print("-- a task's fields are in the catalogue, like every other record type --")
+print("-- a task's fields are in the catalog, like every other record type --")
 st, cat = rq(boss, "GET", "/api/field-catalog")
 task_fields = [f for f in cat["fields"] if f["entity"] == "task"]
-# Nine since 0.7.0 gained the "Other" wording box. Asserted as a number so a
-# field silently dropping out of the catalogue is caught — that failure is
-# otherwise invisible: the field just cannot be given a definition.
-ck("task fields are catalogued", len(task_fields) == 9, str(len(task_fields)))
+# Ten since 0.8.0 gained the automated flag. Asserted as a number so a field
+# silently dropping out of the catalog is caught — that failure is otherwise
+# invisible: the field just cannot be given a definition. `is_automated`
+# reached the catalog only because the generator was taught to read the
+# components a view renders as well as the view itself; before that it was
+# missing here and nothing said so.
+ck("task fields are cataloged", len(task_fields) == 10, str(len(task_fields)))
+ck("including the automated flag",
+   any(f["column"] == "is_automated" for f in task_fields),
+   ", ".join(sorted(f["column"] for f in task_fields)))
 cols = {f["column"] for f in task_fields}
 ck("including the ones a person fills in",
    {"name", "task_type", "expected_start", "expected_end", "status"} <= cols,
@@ -855,6 +889,136 @@ ck("the catalog lists it", WIN in by_id, str(len(catalog)))
 ck("and carries the derived window too",
    by_id.get(WIN, {}).get("effective_expected_start") == "2027-02-01",
    repr(by_id.get(WIN, {}).get("effective_expected_start")))
+
+# ------------------------------------------------------------- dependencies
+# ------------------------------------------------------- the automated flag
+print("-- whether a person has to do the work --")
+st, auto = rq(boss, "POST", "/api/tasks",
+              {"name": "Nightly load", "task_type": "Validation",
+               "anchor_kind": "data_flow", "anchor_id": FLOW,
+               "is_automated": True})
+AU = auto.get("task_id", "")
+ck("a task can be created automated", st in (200, 201) and
+   auto.get("is_automated") == 1, f"{st} {repr(auto.get('is_automated'))}")
+# The whole point of the check: `is_automated` was in TASK_FIELDS, drawn in
+# both windows, and missing from the saveEdit object literal — so it could be
+# set when creating a task and never changed afterwards. That is the fourth
+# time this project has shipped a field in exactly that state, so the payload
+# is driven whole rather than one key at a time.
+st, off = rq(boss, "PUT", f"/api/tasks/{AU}", {
+    "name": "Nightly load", "task_type": "Validation",
+    "task_type_other": None, "description": None,
+    "anchor_kind": "data_flow", "anchor_id": FLOW,
+    "is_automated": 0,
+    "expected_start": None, "expected_end": None,
+    "dependency_ids": [], "completed_date": None, "notes": None,
+    "steps": [], "contributor_ids": [], "status": None})
+ck("the browser's own payload can turn it off", st == 200 and
+   off.get("is_automated") == 0, f"{st} {repr(off.get('is_automated'))}")
+st, back = rq(boss, "PUT", f"/api/tasks/{AU}", {"is_automated": True})
+ck("and on again", back.get("is_automated") == 1,
+   repr(back.get("is_automated")))
+st, reread = rq(boss, "GET", f"/api/tasks/{AU}")
+ck("stored as 0/1 by the project convention, not a boolean",
+   reread.get("is_automated") in (0, 1), repr(reread.get("is_automated")))
+# A new task says nothing about automation rather than claiming either answer.
+st, plain = rq(boss, "POST", "/api/tasks",
+               {"name": "By hand", "task_type": "Validation",
+                "anchor_kind": "data_flow", "anchor_id": FLOW})
+ck("a task nobody marked is not automated", plain.get("is_automated") == 0,
+   repr(plain.get("is_automated")))
+# A copy is the next occurrence of the same work, so the flag comes across
+# even though the dates and the progress do not.
+st, cp = rq(boss, "POST", f"/api/tasks/{AU}/copy", {"name": "Nightly load Q2"})
+ck("a copy stays automated", cp.get("is_automated") == 1,
+   f"{st} {repr(cp.get('is_automated'))}")
+rq(boss, "DELETE", f"/api/tasks/{cp.get('task_id')}")
+rq(boss, "DELETE", f"/api/tasks/{AU}")
+rq(boss, "DELETE", f"/api/tasks/{plain.get('task_id')}")
+
+print("-- a task can wait on other tasks --")
+st, dep_a = rq(boss, "POST", "/api/tasks",
+               {"name": "Upstream load", "task_type": "Validation",
+                "anchor_kind": "data_flow", "anchor_id": FLOW})
+st, dep_b = rq(boss, "POST", "/api/tasks",
+               {"name": "Downstream check", "task_type": "Validation",
+                "anchor_kind": "data_flow", "anchor_id": FLOW})
+DA, DB = dep_a.get("task_id", ""), dep_b.get("task_id", "")
+ck("two tasks to link together", bool(DA and DB), f"{DA} {DB}")
+
+st, _ = rq(boss, "PUT", f"/api/tasks/{DB}", {"dependency_ids": [DA]})
+ck("a dependency can be set", st == 200, str(st))
+st, row = rq(boss, "GET", f"/api/tasks/{DB}")
+ck("it comes back as ids for the edit form",
+   row.get("dependency_ids") == [DA], str(row.get("dependency_ids")))
+ck("and resolved, so the flyout can name it",
+   (row.get("dependencies") or [{}])[0].get("name") == "Upstream load",
+   json.dumps(row.get("dependencies")))
+
+print("-- three things that must be refused, not quietly dropped --")
+st, e = rq(boss, "PUT", f"/api/tasks/{DB}", {"dependency_ids": [DB]})
+ck("a task cannot depend on itself", st == 400, str(st))
+st, e = rq(boss, "PUT", f"/api/tasks/{DA}", {"dependency_ids": [DB]})
+ck("a two-task loop is refused", st == 400, str(st))
+ck("and the message says why",
+   "circular" in json.dumps(e).lower(), json.dumps(e)[:120])
+st, e = rq(boss, "PUT", f"/api/tasks/{DB}", {"dependency_ids": ["TSK-99999"]})
+ck("a task that does not exist here is refused", st == 400, str(st))
+
+# The walk has to follow the chain, not just look one hop back. A check that
+# only compared the immediate pair would pass this and leave a real loop.
+st, dep_c = rq(boss, "POST", "/api/tasks",
+               {"name": "Third in the chain", "task_type": "Validation",
+                "anchor_kind": "data_flow", "anchor_id": FLOW})
+DC = dep_c.get("task_id", "")
+st, _ = rq(boss, "PUT", f"/api/tasks/{DC}", {"dependency_ids": [DB]})
+ck("a chain of three is allowed", st == 200, str(st))
+st, e = rq(boss, "PUT", f"/api/tasks/{DA}", {"dependency_ids": [DC]})
+ck("but closing it into a loop is refused", st == 400, str(st))
+
+st, row = rq(boss, "GET", f"/api/tasks/{DA}")
+ck("and the refused edit left the task alone",
+   not (row.get("dependency_ids") or []), str(row.get("dependency_ids")))
+
+print("-- a dependency reports its DERIVED status --")
+# The color rules compare against this, so it has to be the status the
+# dependency would SHOW, not the one stored on its row. A task with subtasks
+# does not own its status, and a dependency is just a task.
+st, _ = rq(boss, "PUT", f"/api/tasks/{DA}",
+           {"steps": [{"description": "one", "status": "completed"},
+                      {"description": "two", "status": "completed"}]})
+st, row = rq(boss, "GET", f"/api/tasks/{DB}")
+ck("every subtask completed reads as completed",
+   row["dependencies"][0]["status"] == "completed",
+   repr(row["dependencies"][0]["status"]))
+st, _ = rq(boss, "PUT", f"/api/tasks/{DA}",
+           {"steps": [{"description": "one", "status": "completed"},
+                      {"description": "two", "status": "in_progress"}]})
+st, row = rq(boss, "GET", f"/api/tasks/{DB}")
+ck("reopening one subtask is visible to whatever waits on it",
+   row["dependencies"][0]["status"] == "in_progress",
+   repr(row["dependencies"][0]["status"]))
+
+print("-- duplicates collapse, and the list is replaced wholesale --")
+st, _ = rq(boss, "PUT", f"/api/tasks/{DB}", {"dependency_ids": [DA, DA]})
+st, row = rq(boss, "GET", f"/api/tasks/{DB}")
+ck("the same dependency twice is stored once",
+   row.get("dependency_ids") == [DA], str(row.get("dependency_ids")))
+st, _ = rq(boss, "PUT", f"/api/tasks/{DB}", {"dependency_ids": []})
+st, row = rq(boss, "GET", f"/api/tasks/{DB}")
+ck("an empty list clears them", not row.get("dependency_ids"),
+   str(row.get("dependency_ids")))
+
+print("-- deleting a task does not strand what was waiting on it --")
+st, _ = rq(boss, "PUT", f"/api/tasks/{DC}", {"dependency_ids": [DB]})
+ck("C waits on B again", st == 200, str(st))
+st, _ = rq(boss, "DELETE", f"/api/tasks/{DB}")
+ck("B can be deleted", st == 200, str(st))
+st, row = rq(boss, "GET", f"/api/tasks/{DC}")
+# A row left behind here would leave C waiting forever on something that no
+# longer exists, and the diagram would draw it blocked with nothing to fix.
+ck("C is no longer waiting on a task that is gone",
+   not (row.get("dependencies") or []), json.dumps(row.get("dependencies")))
 
 # -------------------------------------------------- dates must be in order
 print("-- an end date cannot precede its start date --")

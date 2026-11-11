@@ -28,7 +28,7 @@ could not get in.
 
 So: credentials come from the command line, the password is prompted for when
 it is not supplied, and **nothing here ever changes a password.** Same
-behaviour as `selftest.py`, including refusing to run against an account whose
+behavior as `selftest.py`, including refusing to run against an account whose
 password is still temporary — that account cannot do anything until it is
 changed, and changing it is the owner's business.
 

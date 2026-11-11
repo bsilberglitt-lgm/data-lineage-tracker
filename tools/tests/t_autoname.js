@@ -38,11 +38,11 @@ console.log('\n-- a name the user typed is theirs --');
 h = harness({ name: '', source_system_id: '', destination_system_id: '' });
 h.change('source_system_id', 'SYS-001');
 h.change('destination_system_id', 'SYS-002');
-h.form.name = 'Nightly enrolment extract';           // as if typed
+h.form.name = 'Nightly enrollment extract';           // as if typed
 let typed = harness({ ...h.form });
 typed.change('destination_system_id', 'SYS-003');
 ck('changing a system does not overwrite it',
-   typed.form.name === 'Nightly enrolment extract', typed.form.name);
+   typed.form.name === 'Nightly enrollment extract', typed.form.name);
 ck('...but the system did change', typed.form.destination_system_id === 'SYS-003');
 
 console.log('\n-- the flyout, opening an existing flow --');
@@ -51,10 +51,10 @@ let saved = harness({ name: 'NEO to Federal Reporting',
 saved.change('destination_system_id', 'SYS-003');
 ck('a still-generated name follows the change', saved.form.name === 'NEO to Staging', saved.form.name);
 
-let custom = harness({ name: 'Enrolment feed',
+let custom = harness({ name: 'Enrollment feed',
                        source_system_id: 'SYS-001', destination_system_id: 'SYS-002' });
 custom.change('destination_system_id', 'SYS-003');
-ck('a custom name survives the change', custom.form.name === 'Enrolment feed', custom.form.name);
+ck('a custom name survives the change', custom.form.name === 'Enrollment feed', custom.form.name);
 
 console.log('\n-- edge cases --');
 let cleared = harness({ name: '', source_system_id: 'SYS-001', destination_system_id: 'SYS-002' });

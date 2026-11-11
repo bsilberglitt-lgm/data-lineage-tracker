@@ -801,6 +801,15 @@ FIELDS = [
     },
     {
         'entity': 'task',
+        'column': 'is_automated',
+        'label': 'Automated task',
+        'section': 'Timing and progress',
+        'read_label': 'Automated Task',
+        'modal_label': 'Automated task',
+        'required': False,
+    },
+    {
+        'entity': 'task',
         'column': 'status',
         'label': 'Status',
         'section': 'Timing and progress',

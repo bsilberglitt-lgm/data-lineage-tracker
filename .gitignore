@@ -26,3 +26,10 @@ venv/
 # Node (only ever created by tooling containers)
 node_modules/
 package-lock.json
+
+# The commit message for the release in hand. Claude writes it here and you run
+# `git commit -F COMMIT_MSG.txt`, because a long message pasted into Terminal as
+# a heredoc or a chain of -m flags breaks on the first quote, backtick or line
+# that looks like a shell word. Untracked: it describes a commit rather than
+# belonging to one, and it is rewritten every release.
+COMMIT_MSG.txt

@@ -55,7 +55,7 @@ for (const len of [CLEARANCE, 40, 50, 60, 70, 90]) {
      `anchor.y=${a.y.toFixed(1)} end.y=${pts[1].y} midpoint.y=${midpointOf(pts).y}`);
 }
 
-console.log('\n-- below the clearance, the old midpoint behaviour is kept --');
+console.log('\n-- below the clearance, the old midpoint behavior is kept --');
 // Not an oversight. At these distances the gap between the two system boxes is
 // smaller than the label itself, so every position collides with something. An
 // earlier attempt moved the label below the anchor, which hid it behind the

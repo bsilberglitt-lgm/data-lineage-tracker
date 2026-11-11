@@ -44,7 +44,7 @@ and use it consistently; `us-east-1` is fine.
 - [ ] **Create the bucket.** S3 → Create bucket. A name must be globally
   unique, so something like `maine-doe-lineage-backups`.
 
-  - **Block all public access** — leave the default box ticked.
+  - **Block all public access** — leave the default box checked.
   - **Bucket Versioning: Enable.** Protects against a corrupted file being
     written over a good one.
   - **Default encryption: SSE-S3 (SSE-KMS also works, and costs a little.)**
@@ -164,7 +164,7 @@ Do this when you set the job up, and once a quarter afterwards. It takes about
 ten minutes and is the only thing that turns "we have backups" into a fact.
 
 - [ ] **Download the newest backup.** Easiest from the browser: S3 console →
-  your bucket → `data-lineage-tracker/daily/` → tick the newest object →
+  your bucket → `data-lineage-tracker/daily/` → check the newest object →
   **Download**. Then:
 
   ```bash

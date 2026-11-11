@@ -18,7 +18,7 @@ of Truth on a data element had the same hole. Both reached Ben.
 
 This is the `field_catalog.py` lesson in a different place: a hand-kept list
 that has to track another hand-kept list drifts, and the failure is silent. The
-catalogue was fixed by generating it. These payloads could be generated too,
+catalog was fixed by generating it. These payloads could be generated too,
 but they are only five literals and generating them would mean teaching a tool
 the per-type shape of a save; comparing them is cheaper and catches the same
 failure.
@@ -52,13 +52,26 @@ DORMANT = {
         "Diagram position, written by the drag handler, not by a save.",
     ("system", "y_pos"):
         "Diagram position, written by the drag handler, not by a save.",
+    ("task", "pos_main"):
+        "Diagram placement, written by /api/tasks/<id>/position, not by a save.",
+    ("task", "pos_cross"):
+        "Diagram placement, written by /api/tasks/<id>/position, not by a save.",
 }
 
 # The server tuple that governs each record type's update.
+# Tasks and contributors were absent from this list until 0.8.0, which is
+# exactly the wrong omission: tasks are where this project has found the
+# silently-unsaveable field *three times* — Owner on a flow, then `proposed`
+# with no checkbox, then `status` dropped by a `continue` — and the check that
+# exists to catch that shape was not looking at them. `is_automated` made it
+# four: in TASK_FIELDS, drawn in both windows, and missing from the saveEdit
+# literal, with every check green. Add a record type here when you add one.
 SERVER_TUPLES = {
     "system": "SYSTEM_FIELDS",
     "flow": "FLOW_FIELDS",
     "element": "ELEMENT_FIELDS",
+    "task": "TASK_FIELDS",
+    "contributor": "CONTRIBUTOR_FIELDS",
 }
 
 

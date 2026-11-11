@@ -339,7 +339,7 @@ def main():
         for f in FAIL:
             print(f"  - {f}")
         sys.exit(1)
-    print(f"All {len(PASS)} behaviours matched the description in SCENARIOS.md.")
+    print(f"All {len(PASS)} behaviors matched the description in SCENARIOS.md.")
 
 
 if __name__ == "__main__":

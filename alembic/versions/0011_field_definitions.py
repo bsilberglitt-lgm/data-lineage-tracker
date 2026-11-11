@@ -7,7 +7,7 @@ in a document nobody opens. A definition written here appears as a tooltip
 beside that field for every user.
 
 **Keyed on (entity_type, column_name), not on the label.** The same column is
-labelled differently depending on where it is drawn — `encryption_at_rest` is
+labeled differently depending on where it is drawn — `encryption_at_rest` is
 "Encrypt at Rest" in the edit view and "Encryption at Rest" in the read view
 and the Add modal — so a definition keyed on text would attach to one spelling
 and be missing from the others. Seventeen of the seventy-seven fields have more
@@ -16,7 +16,7 @@ than one spelling. The column is what is actually stable.
 `field_catalog.py`, generated from the UI, is what maps a label back to its
 column, and is the authority on which (entity, column) pairs exist. Rows here
 for a field that no longer exists are harmless: nothing reads them, and the
-catalogue decides what is offered.
+catalog decides what is offered.
 
 No foreign key to anything, deliberately. These describe the *schema* rather
 than any record, so they survive every system and data flow being deleted.

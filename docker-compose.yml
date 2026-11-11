@@ -15,7 +15,7 @@
 #     restore drill in backup/README.md fails against an older local Postgres —
 #     and fails in a way that looks like a corrupt backup rather than a version
 #     mismatch.
-#   * Behaviour differences between majors are exactly what local testing is
+#   * Behavior differences between majors are exactly what local testing is
 #     supposed to catch before production does.
 #
 # **Two things change together for 18+, and missing the second one fails.**

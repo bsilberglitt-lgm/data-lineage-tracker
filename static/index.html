@@ -14,10 +14,10 @@
 body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #1a2332; height: 100vh; overflow: hidden; }
 /* --- Scenario view ------------------------------------------------------
    A scenario is not the live diagram, and that must be obvious at a glance
-   without relying on colour alone: the header also names the scenario and
+   without relying on color alone: the header also names the scenario and
    carries a "(Scenario)" suffix, satisfying WCAG 1.4.1. The tint is
    #fcf7e3 — measurably different from the normal page background
-   (dE 12.7) while keeping every text colour above AA. See ACCESSIBILITY.md. */
+   (dE 12.7) while keeping every text color above AA. See ACCESSIBILITY.md. */
 .scenario-view { background: #fcf7e3; }
 .scenario-view .data-table, .scenario-view .panel { background: #fffdf6; }
 .scenario-view .schema-canvas, .scenario-view .table-view,
@@ -26,7 +26,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
   padding: 2px 8px; border-radius: 10px; background: #f7ecc0; color: #6b5200;
   margin-left: 8px; vertical-align: middle; }
 /* Proposed / removed, drawn so the pattern carries the meaning rather than
-   the colour: a dotted outline survives every kind of colour blindness. */
+   the color: a dotted outline survives every kind of color blindness. */
 .state-proposed { border-style: dashed !important; }
 .state-removed { opacity: 0.55; text-decoration: line-through; }
 .state-modified-dot { display: inline-block; width: 7px; height: 7px;
@@ -244,7 +244,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 /* A disabled input has to look unusable, not merely unresponsive. Measured:
    #5a6472 on #e4e9ef is 4.91:1, past AA for small text, so the value stays
    readable while the box plainly is not editable. The first attempt used
-   #6b6b6b, which measured 4.37:1 and failed — grey-on-grey is exactly where
+   #6b6b6b, which measured 4.37:1 and failed — gray-on-gray is exactly where
    "looks about right" and "passes" part company, so this was measured rather
    than eyeballed. */
 .form-group input:disabled, .form-group textarea:disabled,
@@ -254,7 +254,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
    "why can I not turn this one off?" is on the page instead of absent. */
 .fd-disabled { opacity: 0.6; cursor: not-allowed; }
 /* Measured: #8a4b00 on #fff3e0 is 6.20:1, comfortably past AA for small text.
-   See ACCESSIBILITY.md — every badge colour in this app is checked. */
+   See ACCESSIBILITY.md — every badge color in this app is checked. */
 .badge-manual { background: #fff3e0; color: #8a4b00; }
 /* The deactivation warning. Scrolls rather than growing without limit: a
    contributor named on four hundred schema columns would otherwise push the
@@ -427,8 +427,8 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .combo-opt.sel { font-weight: 600; }
 .combo-opt-hint { color: #6b6b6b; font-style: italic; }
 /* Shown but not choosable. #767676 on white is 4.54:1, so it still passes AA
-   for text — a greyed option has to stay readable, because the reason it is
-   greyed is written in it. */
+   for text — a grayed option has to stay readable, because the reason it is
+   grayed is written in it. */
 .combo-opt-off { color: #767676; cursor: default; }
 .combo-group { padding: 6px 10px 2px; font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.04em; color: #4a5764;
@@ -459,42 +459,42 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .legend-title { font-weight: 600; margin-bottom: 6px; color: #555; }
 .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
 .legend-color { width: 14px; height: 14px; border-radius: 3px; }
-/* A task's circle. Deliberately NOT coloured by status yet — status colours
+/* A task's circle. Deliberately NOT colored by status yet — status colors
    are a later release, and one neutral circle now is better than a palette
    that has to be explained before it is finished.
 
    The ring must read against every system fill in TYPE_PALETTE, because a
    task attached to a system is drawn INSIDE its box. #1B3A5C measures 8.69:1
    against the worst of the eight (purple, #e8daef) and 11.63:1 on white, so
-   it clears AA everywhere. The fill is a soft grey rather than white, and the
+   it clears AA everywhere. The fill is a soft gray rather than white, and the
    ring reads 9.02:1 against it, so the outline stays crisp while the circle
    reads as an object rather than a hole in the diagram. The fill itself is
    decorative — against some box fills it is nearly the same luminance
    (1.01:1 on magenta), and the *ring* is what delineates the shape, which is
    what WCAG 1.4.11 asks of a non-text indicator.
 
-   **Selection is an outer halo, not a recolour.** Using the app's selected
+   **Selection is an outer halo, not a recolor.** Using the app's selected
    orange for the ring itself was the obvious thing and it fails: #D4772C is
    only 2.43:1 against that purple fill, under the 3:1 WCAG 1.4.11 needs for a
    non-text indicator — so a selected task inside a purple box would be less
    visible than an unselected one. The dark ring therefore stays put and the
-   orange is drawn outside it, where its neighbours are the dark ring (3.58:1)
-   and the fill. Selection is also never colour alone: the flyout opens. */
+   orange is drawn outside it, where its neighbors are the dark ring (3.58:1)
+   and the fill. Selection is also never color alone: the flyout opens. */
 /* No `fill` here any more. The status supplies it as an attribute, and a
    stylesheet rule beats a presentation attribute — the same trap as the legend
-   swatch being stretched by `.canvas-container svg`. The `open` grey that used
+   swatch being stretched by `.canvas-container svg`. The `open` gray that used
    to live here is now `TASK_SIGNALS`' last entry, which is also what the
    legend draws, so the two cannot disagree. */
 .task-node .task-ring { stroke: #1B3A5C; stroke-width: 2; }
 .task-node .task-hit { fill: transparent; stroke: none; }
-/* The status marks, in the ring's own colour. #1B3A5C measures at worst 6.54:1
+/* The status marks, in the ring's own color. #1B3A5C measures at worst 6.54:1
    against the five status fills (the red), so it clears AA as text as well as
    the 3:1 WCAG 1.4.11 asks of a non-text indicator. Measured over every fill,
    not guessed from the lightest — the mistake made and recorded for the
    selection halo.
 
    `pointer-events: none` so the mark never intercepts a drag: the circle is
-   one gesture, and a press that lands on the tick rather than the ring has to
+   one gesture, and a press that lands on the check rather than the ring has to
    behave identically. */
 .task-mark { fill: none; stroke: #1B3A5C; stroke-width: 1.8;
   stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
@@ -511,10 +511,10 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 
    **No `fill` here.** It used to set `fill: #dfe3e8`, and a stylesheet rule
    beats a `fill` attribute on the element — so every swatch in the status key
-   came out grey however it was drawn. Exactly the trap recorded two rules down
+   came out gray however it was drawn. Exactly the trap recorded two rules down
    for the swatch's *size*, where `width`/`height` attributes lose to
    `.canvas-container svg`; the comment was already in the file and I walked
-   into the same thing with the colour. The status supplies the fill, as it
+   into the same thing with the color. The status supplies the fill, as it
    does on the diagram. */
 .legend .task-ring { stroke: #1B3A5C; stroke-width: 2; }
 /* A rule across the key, so System Types reads as one group and what follows
@@ -525,7 +525,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .panel-subtitle { font-size: 11px; color: #5a6472; margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A task's hover card. Appears immediately, which is the entire reason it
-   exists rather than a `<title>`. Centred on the circle and lifted above it by
+   exists rather than a `<title>`. Centered on the circle and lifted above it by
    its own transform, so the inline left/top can be the circle's screen
    position without this needing to know its own size. */
 .task-card { position: absolute; z-index: 6; transform: translate(-50%, -100%);
@@ -678,7 +678,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
    Styling the control works everywhere, and the italics disappear by
    themselves the moment a real value is chosen. */
 .select-hint { font-style: italic; color: #6b7684; }
-/* Kept for the option as well: where a browser does honour it, the popup list
+/* Kept for the option as well: where a browser does honor it, the popup list
    matches the closed control. Harmless where it does not. */
 .opt-hint { font-style: italic; color: #6b7684; }
 /* `.edit-select` is sized by its flex parent in the flyout and has no width of
@@ -686,7 +686,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
    control — it shrank to its content. Matched to the modal's inputs instead. */
 .form-group > .edit-select { width: 100%; box-sizing: border-box; }
 /* One subtask in the flyout: a number, then its fields, then a rule. The rule
-   is what lets the eye group five labelled rows with the number above them;
+   is what lets the eye group five labeled rows with the number above them;
    without it five subtasks are twenty-five rows of the same shape. */
 .subtask-read { padding-bottom: 8px; margin-bottom: 8px;
   border-bottom: 1px solid #e8ecf0; }
@@ -710,8 +710,8 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .policy-list { text-align: left; font-size: 12px; color: #c0392b; margin: -4px 0 12px; padding-left: 18px; }
 .policy-list li { margin-bottom: 2px; }
 /* The account chip. It used to sit at the foot of the navy sidebar, where the
-   white-on-translucent colours came free; in the toolbar it is on white, so
-   every colour here is set rather than inherited. Measured: #4a5764 on #fff is
+   white-on-translucent colors came free; in the toolbar it is on white, so
+   every color here is set rather than inherited. Measured: #4a5764 on #fff is
    7.40:1 and the avatar's #fff on #2E75B6 is 4.84:1 — both past AA for small
    text. See ACCESSIBILITY.md. */
 .user-menu { position: relative; flex-shrink: 0; }
@@ -1009,7 +1009,7 @@ const api = {
   quiet: (method, url, data) => request(method, url, data).catch(() => {}),
 };
 
-// System types (and their colours) are configured in Preferences and loaded
+// System types (and their colors) are configured in Preferences and loaded
 // from the server. These are only a fallback for the first paint.
 const FALLBACK_TYPE = { fill: '#e2e6ea', stroke: '#4a5764', text: '#333f4a' };
 let TYPE_COLORS = {
@@ -1254,8 +1254,8 @@ function SidebarBrand({ settings, title, subtitle }) {
   );
 }
 
-// The sign-in screen's logo. Always above the title and centred, because the
-// card itself is centred — the sidebar's four positions would look arbitrary
+// The sign-in screen's logo. Always above the title and centered, because the
+// card itself is centered — the sidebar's four positions would look arbitrary
 // here. The title always stays: on a sign-in page the name of the thing you
 // are signing in to is worth stating in words.
 function LoginLogo({ settings }) {
@@ -1442,7 +1442,7 @@ function computeHops(order, pointsById) {
   return hops;
 }
 
-// What an arrow is labelled with: its short display name when one is set,
+// What an arrow is labeled with: its short display name when one is set,
 // otherwise its identifier. The identifier is unambiguous but says nothing, and
 // the full name is usually a sentence — far too long to sit on a line.
 function flowLabel(flow) {
@@ -1495,7 +1495,7 @@ function midpointOf(points) {
 // ===== Exporting the diagram =====
 // SVG rather than an image: the diagram already *is* SVG, so the export is
 // nearly lossless, stays sharp at any size, and opens in Visio, Illustrator
-// and PowerPoint. A PNG would have meant rasterising at some arbitrary
+// and PowerPoint. A PNG would have meant rasterizing at some arbitrary
 // resolution and choosing wrong.
 //
 // Three things have to be fixed up, and all three are the difference between a
@@ -1514,7 +1514,7 @@ const EXPORT_PADDING = 40;
 const EXPORT_TITLE_SPACE = 54;
 
 // The stylesheet rules the diagram actually uses. Taken from the page's own
-// <style> block rather than hand-maintained, so a colour changed in one place
+// <style> block rather than hand-maintained, so a color changed in one place
 // does not need changing in two — the export would otherwise drift out of
 // agreement with the screen and nobody would notice until they opened a file.
 //
@@ -1588,7 +1588,7 @@ function exportHeading(viewName) {
 function exportFilename(title, scenario) {
   const today = new Date().toISOString().slice(0, 10);
   const parts = [title || 'Data Lineage', scenario || 'Current Architecture', today];
-  // Keep the spaces and the dashes — this is a file a person will recognise in
+  // Keep the spaces and the dashes — this is a file a person will recognize in
   // a Downloads folder, not something a script reads. Only the characters a
   // filesystem objects to are removed.
   return parts.join(' \u2014 ').replace(/[\\/:*?"<>|]/g, '');
@@ -1624,12 +1624,12 @@ function exportDownloadName(stem, formatId) {
 
 // ===== Alignment guides =====
 // Dragging a box compares its edges against every other box and snaps to the
-// nearest match, drawing the dotted line that shows why — the behaviour
+// nearest match, drawing the dotted line that shows why — the behavior
 // PowerPoint and every diagram tool has, and the reason you can line boxes up
 // without eyeballing it.
 //
-// Against other boxes only. Guides to the canvas centre were considered and
-// dropped: on a sparse diagram the centre is near everything, so the guide
+// Against other boxes only. Guides to the canvas center were considered and
+// dropped: on a sparse diagram the center is near everything, so the guide
 // fires constantly and means nothing.
 //
 // Six pixels, which the caller divides by the zoom so the stickiness feels the
@@ -1638,8 +1638,8 @@ function exportDownloadName(stem, formatId) {
 // centimetre at 0.3x.
 const ALIGN_TOLERANCE = 6;
 
-// The three interesting coordinates on each axis. Centre is included because
-// two boxes of different widths look aligned when their centres match, not
+// The three interesting coordinates on each axis. Center is included because
+// two boxes of different widths look aligned when their centers match, not
 // their left edges.
 function edgesOf(pos, size) {
   return [pos, pos + size / 2, pos + size];
@@ -1750,7 +1750,7 @@ function snapAngle(anchor, point, tolerance) {
            y: anchor.y + Math.sin(radians) * length };
 }
 
-// How close a bend has to be to a neighbour's axis before it lines up exactly.
+// How close a bend has to be to a neighbor's axis before it lines up exactly.
 // In diagram units, divided by the zoom at the call site like the box guides.
 const BEND_AXIS_TOLERANCE = 8;
 
@@ -1764,7 +1764,7 @@ const BEND_AXIS_TOLERANCE = 8;
 // so the corner never squared up however carefully you dragged. That is the
 // "45 works, 90 does nothing" Ben reported.
 //
-// So: line the point up with either neighbour's x or y when it is close. That
+// So: line the point up with either neighbor's x or y when it is close. That
 // is exact, it makes both segments axis-aligned, and it is how every diagram
 // tool behaves. Angle snapping stays as the fallback for everything that is
 // not near an axis, which is what keeps diagonals feeling the way they do.
@@ -1773,17 +1773,17 @@ function snapBend(point, prev, next, axisTolerance, degreeTolerance) {
   const out = { x: point.x, y: point.y };
   let lockedX = false, lockedY = false;
 
-  // Nearer neighbour first, so when both are in range the closer one decides.
-  const neighbours = [prev, next].filter(Boolean).slice().sort((a, b) =>
+  // Nearer neighbor first, so when both are in range the closer one decides.
+  const neighbors = [prev, next].filter(Boolean).slice().sort((a, b) =>
     (Math.abs(a.x - point.x) + Math.abs(a.y - point.y))
     - (Math.abs(b.x - point.x) + Math.abs(b.y - point.y)));
 
-  neighbours.forEach(n => {
+  neighbors.forEach(n => {
     if (!lockedX && Math.abs(n.x - point.x) <= tol) { out.x = n.x; lockedX = true; }
     if (!lockedY && Math.abs(n.y - point.y) <= tol) { out.y = n.y; lockedY = true; }
   });
 
-  // Both axes locked to the same neighbour would collapse the segment to
+  // Both axes locked to the same neighbor would collapse the segment to
   // nothing, which is not a bend at all. Keep the nearer axis and let the
   // other float.
   if (lockedX && lockedY && prev && out.x === prev.x && out.y === prev.y) {
@@ -1824,7 +1824,7 @@ function pointBackFromEnd(points, dist) {
 // label *below* the anchor in that range, which hid it behind the source box —
 // so dragging two systems together made the name vanish abruptly instead of
 // being gradually covered, which is how every other flow behaves. Falling back
-// to the midpoint keeps that familiar behaviour; the arrowhead only needs
+// to the midpoint keeps that familiar behavior; the arrowhead only needs
 // protecting on flows long enough to read in the first place.
 function labelPointOf(points) {
   if (points.length < 2) return midpointOf(points);
@@ -1839,12 +1839,12 @@ function labelPointOf(points) {
 }
 
 // ===== What a task's circle says about where it stands =====
-// Status colour coding. Five states, in strict precedence. The order is the
+// Status color coding. Five states, in strict precedence. The order is the
 // whole design, so it is written out rather than left to a chain of
 // conditionals to imply:
 //
 //   1. **complete** — the status says completed. It wins over every date: a
-//      task finished after its end date is finished, not late. Colouring it
+//      task finished after its end date is finished, not late. Coloring it
 //      red teaches people to ignore red.
 //   2. **overdue** — an expected end has passed with nothing saying the work
 //      is done. A fact about the record, not a guess.
@@ -1852,7 +1852,7 @@ function labelPointOf(points) {
 //      below, because a task that has begun cannot also be failing to begin.
 //   4. **late_start** — an expected start has passed and the thing has not
 //      begun. "Not begun" includes a status nobody has set: see below.
-//   5. **open** — everything else. The plain grey circle, and the only state
+//   5. **open** — everything else. The plain gray circle, and the only state
 //      with no mark inside it, so an absence of information is shown as an
 //      absence — the same way the catalog shows a dash.
 //
@@ -1885,26 +1885,40 @@ function labelPointOf(points) {
 // comparison and no parsing is needed — the same reason `type="date"` is used
 // for the inputs.
 //
-// **The colour is never the only cue.** Each state but `open` draws a mark in
+// **The color is never the only cue.** Each state but `open` draws a mark in
 // the ring, because the five fills cannot be told apart by hue: active yellow
 // and late_start orange are 15 degrees apart, which is no distinction for
-// anyone with a colour deficiency, and WCAG 1.4.1 asks that colour not be the
+// anyone with a color deficiency, and WCAG 1.4.1 asks that color not be the
 // sole carrier. The marks are drawn in the same #1B3A5C as the ring, at worst
 // 6.54:1 against these fills, so they clear AA as text as well as the 3:1
 // WCAG 1.4.11 wants of a non-text indicator.
 //
-// **The ring itself does not change colour.** It is what delineates the shape
+// **The ring itself does not change color.** It is what delineates the shape
 // against the eight system fills a circle may sit on (8.69:1 against the worst
-// of them), and recolouring it per status would put that measurement back in
+// of them), and recoloring it per status would put that measurement back in
 // play five times over. The status goes in the fill, where the only contrast
 // that has to hold is against the ring and the mark.
 const TASK_SIGNALS = [
   { key: 'complete',   label: 'Completed',          fill: '#b2dcb6' },
   { key: 'overdue',    label: 'Past its end date',  fill: '#f2b3ab' },
+  { key: 'blocked',    label: 'Blocked \u2014 waiting on another task', fill: '#e8938a' },
   { key: 'active',     label: 'In progress',        fill: '#f6e08f' },
   { key: 'late_start', label: 'Not started, past its start date', fill: '#f8c489' },
+  // Two resting states. `automated` is not a stage of the work — it is a fact
+  // about who does it — so it stands in for `open` rather than competing with
+  // the stages: a task that is late is drawn late whether or not a machine
+  // runs it, because that is the thing needing attention. The blue shows up
+  // exactly where there is nothing else to report, which is most of the time,
+  // and that is what makes "which of these need a person" readable at a
+  // glance.
+  { key: 'automated',  label: 'Automated \u2014 nothing recorded yet', fill: '#93bde4' },
   { key: 'open',       label: 'Nothing recorded yet', fill: '#dfe3e8' },
 ];
+
+// The two states that mean "nothing to report". Named once because three
+// different places ask the question and a list written out at each would
+// drift the first time a state is added.
+const TASK_RESTING = ['open', 'automated'];
 
 const TASK_SIGNAL_BY_KEY = TASK_SIGNALS.reduce(
   (m, s) => { m[s.key] = s; return m; }, {});
@@ -1918,6 +1932,46 @@ const TASK_SIGNAL_BY_KEY = TASK_SIGNALS.reduce(
 // rule reads an absent status differently from a report of one.
 function taskNotBegun(status) {
   return status !== 'in_progress' && status !== 'completed';
+}
+
+// Have all of this task's dependencies finished? `false` when it has none,
+// because "nothing is holding this up" and "everything that was holding it up
+// is done" are different facts and only the second should start the clock.
+// Callers that care about the difference ask `(task.dependencies || []).length`
+// as well, which is why this does not try to answer both questions at once.
+function taskDepsComplete(task) {
+  const deps = (task && task.dependencies) || [];
+  return deps.length > 0 && deps.every(d => d.status === 'completed');
+}
+
+// Did `late_start` come from the dependencies rather than from a date?
+//
+// Exact rather than a guess: `startPassed` requires a start date to exist, so
+// a `late_start` on a task with no start date anywhere can only have come from
+// the dateless-dependency clause below. Nothing else reaches it.
+function taskLateFromDeps(task) {
+  if (!task) return false;
+  const steps = task.steps || [];
+  const anyStartSet = !!task.expected_start || steps.some(x => x.expected_start);
+  return !anyStartSet && taskDepsComplete(task);
+}
+
+// The wording for a state, which is not always the state's own label.
+//
+// Ben: a task with no start date whose dependencies have all finished should
+// read "Not started, dependencies completed" rather than "past its start
+// date", because it has no start date to be past. The color and the mark are
+// the same — it is the same state, reached a different way — and only the
+// sentence changes, so this is a labeling function rather than a sixth signal.
+// A state whose own label contradicts the record is worse than a vague one:
+// somebody reads "past its start date", opens the task, finds the field empty,
+// and stops trusting the circle.
+const LATE_START_FROM_DEPS = 'Not started, dependencies completed';
+
+function taskSignalLabel(task, today) {
+  const sg = taskSignal(task, today);
+  if (sg === 'late_start' && taskLateFromDeps(task)) return LATE_START_FROM_DEPS;
+  return TASK_SIGNAL_BY_KEY[sg].label;
 }
 
 function taskSignal(task, today) {
@@ -1938,30 +1992,62 @@ function taskSignal(task, today) {
   // the subtasks on read, so a task with one in progress arrives with
   // `status: 'in_progress'` already — but asking the subtasks directly means
   // this function does not depend on the server having got that right, and the
-  // two cannot disagree about the colour. A test fixture that omitted the
+  // two cannot disagree about the color. A test fixture that omitted the
   // derived status is what exposed the dependency.
   if (st === 'in_progress') return 'active';
   if (steps.some(x => x.status === 'in_progress')) return 'active';
 
   const startPassed = (start, status) =>
     !!(start && today && start < today && taskNotBegun(status));
-  if (startPassed(task.expected_start, st)) return 'late_start';
-  if (steps.some(x => startPassed(x.expected_start, x.status))) return 'late_start';
+  const anyStartPassed = startPassed(task.expected_start, st)
+    || steps.some(x => startPassed(x.expected_start, x.status));
+  const anyStartSet = !!task.expected_start || steps.some(x => x.expected_start);
+  const deps = task.dependencies || [];
+  const depsDone = taskDepsComplete(task);
 
-  return 'open';
+  // **Blocked: a start date has passed and something it waits on has not
+  // finished.** Ben's refinement, and it is better than the rule we started
+  // from. The first draft had the start date *override* the dependencies;
+  // this makes the start date the thing that gives them teeth. Before the
+  // date there is nothing to report — waiting is simply what the plan says
+  // should be happening. After it, waiting is the reason the work has not
+  // begun, and that is worth a color.
+  if (anyStartPassed && deps.length && !depsDone) return 'blocked';
+
+  // Past a start date and not blocked: the ordinary late start.
+  if (anyStartPassed) return 'late_start';
+
+  // **No date anywhere, and everything it waits on is done.** The dependencies
+  // stand in for a start date that nobody set: the moment the last one
+  // finishes, this task could have begun. Only when NO start date exists at
+  // the task or on any subtask — with one, the date is the statement of
+  // intent and this would be second-guessing it.
+  if (!anyStartSet && depsDone) return 'late_start';
+
+  return task.is_automated ? 'automated' : 'open';
 }
 
 // Whether anybody is using statuses or dates on these tasks. Drives how much
-// of the key the legend shows: the five-state colour key is only worth its
-// complexity once something is actually colour-coded, and until then a single
-// grey circle labelled "Task" says everything true about the diagram.
+// of the key the legend shows: the five-state color key is only worth its
+// complexity once something is actually color-coded, and until then a single
+// gray circle labeled "Task" says everything true about the diagram.
 //
-// Asked as "is any circle not grey" rather than "has anyone set a status",
-// because the two date-driven states colour a circle without anyone having
+// Asked as "is any circle not gray" rather than "has anyone set a status",
+// because the two date-driven states color a circle without anyone having
 // touched a status field, and a legend that omitted them would leave an
 // orange circle unexplained.
 function tasksUseSignals(tasks, today) {
-  return (tasks || []).some(t => taskSignal(t, today) !== 'open');
+  return (tasks || []).some(
+    t => TASK_RESTING.indexOf(taskSignal(t, today)) < 0);
+}
+
+// Whether anything on this diagram is automated. Asked separately from the
+// above because the two legends answer different questions: one is "is the
+// status coding in use", the other is "is the automated/manual distinction
+// in use". A diagram of nothing but automated tasks with no statuses needs
+// the blue explained and nothing else.
+function tasksUseAutomated(tasks) {
+  return (tasks || []).some(t => t && t.is_automated);
 }
 
 // Today as the same 'YYYY-MM-DD' the dates are stored in, in the **viewer's**
@@ -1987,7 +2073,7 @@ function todayISO() {
 // coordinates would strand every circle in open space the first time somebody
 // moved a system or rerouted an arrow.
 const TASK_R = 11;                 // circle radius, in diagram units
-const TASK_SLOT = TASK_R * 2 + 6;  // centre-to-centre spacing between circles
+const TASK_SLOT = TASK_R * 2 + 6;  // center-to-center spacing between circles
 // How far along a flow the first circle sits, and how far it steps when that
 // spot is taken. 0.5 is the midpoint.
 const TASK_FLOW_STEP = 0.12;
@@ -1999,7 +2085,7 @@ const TASK_FLOW_STEP = 0.12;
 // could drag a circle anywhere. Clamping was not enough: where two flows run
 // close together, a circle a little off one line is ambiguous between them,
 // and the one thing the circle has to communicate is which flow it belongs
-// to. Centred on the path there is nothing to misread. It also removes a
+// to. Centered on the path there is nothing to misread. It also removes a
 // degree of freedom nobody needed — dragging up and down the line is the whole
 // gesture.
 const TASK_FLOW_OFFSET = 0;
@@ -2042,7 +2128,7 @@ function taskPoint(task, parent, W = DIAGRAM_NODE_W, H = DIAGRAM_NODE_H) {
     const pts = parent || [];
     if (pts.length < 2) return null;
     const at = pointAlong(pts, main === null || main === undefined ? 0.5 : main);
-    // `cross` is deliberately ignored: a circle on a flow is centred on the
+    // `cross` is deliberately ignored: a circle on a flow is centered on the
     // line. A non-zero value stored by an earlier build is simply not used,
     // so those circles snap onto their lines rather than needing a migration.
     return { x: at.x, y: at.y };
@@ -2199,7 +2285,7 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   // Per render rather than module level: the app is left open overnight and a
-  // date fixed at load time would colour tasks against yesterday.
+  // date fixed at load time would color tasks against yesterday.
   const today = todayISO();
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   // Guides for the box currently being dragged. Cleared on mouse up, so they
@@ -2336,10 +2422,11 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
   // portal cannot be a child of an SVG node.
   const [taskHover, setTaskHover] = useState(null);
   const taskList = tasks || [];
-  // Whether the key shows the five-state colour legend or the single grey
+  // Whether the key shows the five-state color legend or the single gray
   // "Task" row. Computed here, beside the list it is about, so the legend
   // itself stays a straight render of a decision made in one place.
   const taskSignalsShown = tasksUseSignals(taskList, today);
+  const taskAutomatedShown = tasksUseAutomated(taskList);
   const taskParentOf = (t) => t.anchor_kind === 'data_flow'
     ? pointsById[t.anchor_id]
     : sysMap[t.anchor_id];
@@ -2484,7 +2571,7 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // Released on the next tick: revoking immediately cancels the download in
+    // Released on the next check: revoking immediately cancels the download in
     // some browsers before it has started.
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -2556,7 +2643,7 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
   }, [buildSvg, exportTitle]);
 
   // The Export button sits in the view bar, which belongs to App, while the
-  // SVG it has to serialise is here. Publishing the function through a ref
+  // SVG it has to serialize is here. Publishing the function through a ref
   // keeps the DOM work next to the element it operates on, rather than
   // lifting the whole diagram's internals up a level to reach a button.
   useEffect(() => {
@@ -2606,7 +2693,7 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
       setRouteDrag(rd => ({ ...rd, at: best ? { x: best.x, y: best.y } : p,
                             over: best }));
     } else {
-      // Lines up with either neighbour's axis when close — which is what
+      // Lines up with either neighbor's axis when close — which is what
       // makes a square corner possible — and otherwise rotates onto the
       // nearest 45 degrees. Shift holds both off, because a deliberate odd
       // angle has to stay possible.
@@ -2645,7 +2732,7 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
       if (!rd.at) return;
       bends.splice(rd.insertAt, 0, rd.at);
     } else {
-      // Dragged back onto the straight line between its neighbours: remove it,
+      // Dragged back onto the straight line between its neighbors: remove it,
       // which is how a bend is undone.
       const ends = endpoints[flow.flow_id];
       const all = [ends.from, ...bends, ends.to];
@@ -2783,8 +2870,8 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
                  onDoubleClick={(e)=>{e.stopPropagation(); if(sys.schema_table_count>0 && onDrill) onDrill(sys.system_id);}}
                  transform={`translate(${sys.x_pos},${sys.y_pos})`}>
                 {/* Outer band: grab here to move the node. A dashed border marks
-                    something proposed — a pattern rather than a colour, so it
-                    survives every form of colour blindness. */}
+                    something proposed — a pattern rather than a color, so it
+                    survives every form of color blindness. */}
                 <rect className={`node-frame ${canEdit ? '' : 'locked'}`}
                       width={NODE_W} height={NODE_H} fill={c.fill}
                       stroke={isSel?'#D4772C':c.stroke} strokeWidth={isSel?3:2}
@@ -2992,13 +3079,13 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
             something present:
 
               * no tasks in this view — nothing at all, not even "Task"
-              * tasks, but nothing colour-coded — one grey circle, "Task"
-              * something colour-coded — the five-state key
+              * tasks, but nothing color-coded — one gray circle, "Task"
+              * something color-coded — the five-state key
 
             The middle step is the 0.7.0 legend, and keeping it is Ben's point:
             the complexity of five rows should only arrive once somebody is
-            using statuses or dates. Until then the grey circle is the whole
-            truth about the diagram, and five rows explaining colours that
+            using statuses or dates. Until then the gray circle is the whole
+            truth about the diagram, and five rows explaining colors that
             appear nowhere on screen is just noise to read past.
 
             Every swatch is the real thing — `<circle className="task-ring">`
@@ -3016,8 +3103,25 @@ function DiagramCanvas({ systems, flows, tasks, selected, onSelectSystem, onSele
             Task
           </div>
         )}
+        {/* The automated row appears whenever anything is automated, in both
+            the short and the full key — and only then. A key explaining a
+            blue that is nowhere on the diagram is the same noise as a key
+            explaining colors nobody is using. */}
+        {taskList.length > 0 && !taskSignalsShown && taskAutomatedShown && (
+          <div className="legend-item">
+            <svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"
+                 style={{flex:'0 0 auto'}}>
+              <circle className="task-ring" r={6.5}
+                      fill={TASK_SIGNAL_BY_KEY.automated.fill} />
+              <TaskMark signal="automated" r={6.5} />
+            </svg>
+            Automated task
+          </div>
+        )}
         {taskSignalsShown && <div className="legend-title">Tasks</div>}
-        {taskSignalsShown && TASK_SIGNALS.map(sig => (
+        {taskSignalsShown && TASK_SIGNALS
+          .filter(sig => sig.key !== 'automated' || taskAutomatedShown)
+          .map(sig => (
           <div className="legend-item" key={sig.key}>
             <svg width="14" height="14" viewBox="-8 -8 16 16" aria-hidden="true"
                  style={{flex:'0 0 auto'}}>
@@ -3245,7 +3349,7 @@ function useFieldHidden(label, col) {
 // geometry region, and JSX is not evaluable: a component written in there
 // takes every one of them down with `SyntaxError: Unexpected token '<'`.
 // Keep JSX out of that region.
-// The mark inside a task's circle, drawn in the ring's own colour. Its own
+// The mark inside a task's circle, drawn in the ring's own color. Its own
 // component because the legend draws the identical thing: a key that can drift
 // from what it explains is worse than no key, which is the same reason the
 // legend swatch reuses `.task-ring`.
@@ -3272,6 +3376,26 @@ function TaskMark({ signal, r = TASK_R }) {
     // "part way" without needing a legend to decode it.
     return <path className="task-mark-fill"
                  d={`M 0 ${-6 * u} A ${6 * u} ${6 * u} 0 0 1 0 ${6 * u} Z`} />;
+  }
+  if (signal === 'blocked') {
+    // A cross. Two strokes, so it reads at the size an exclamation mark does
+    // and cannot be confused with it — the two share a color family, which
+    // is what Ben asked for, so the marks carry the whole distinction.
+    return (<>
+      <path className="task-mark" d={`M ${-3.6 * u} ${-3.6 * u}
+        L ${3.6 * u} ${3.6 * u}`} />
+      <path className="task-mark" d={`M ${3.6 * u} ${-3.6 * u}
+        L ${-3.6 * u} ${3.6 * u}`} />
+    </>);
+  }
+  if (signal === 'automated') {
+    // A play triangle: the one glyph that reads as "runs on its own" at this
+    // size. A gear would be the obvious symbol and is unreadable inside an
+    // 11px circle. Filled, so it cannot be confused with the hollow ring, and
+    // pointing right rather than up so it is not read as a status arrow.
+    return <path className="task-mark-fill"
+                 d={`M ${-2.6 * u} ${-4.2 * u} L ${4.2 * u} 0
+                     L ${-2.6 * u} ${4.2 * u} Z`} />;
   }
   if (signal === 'late_start') {
     // A hollow ring, not a dash: a horizontal bar is what a retired task
@@ -3533,8 +3657,8 @@ function EditField({ label, value, onChange, type, options, invalid, min, max })
   );
   // The box used to be followed by the word "Yes" or "No" reflecting the
   // current value, which read as a choice being offered rather than a state —
-  // an unticked box beside the word "No" looks like "No" is what you are about
-  // to select, and ticking it made the word change, which is stranger still.
+  // an unchecked box beside the word "No" looks like "No" is what you are about
+  // to select, and checking it made the word change, which is stranger still.
   // The field's own label is the question; the box is the answer.
   //
   // Nothing explains individual fields here on purpose: field-level definitions
@@ -3613,7 +3737,7 @@ const PANEL_REQUIRED = {
 };
 
 // ===== Detail Panel with Edit =====
-function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetire, systems, flows, taskTypes, onCopyTask, onDrill, canEdit, notify, contributors, isAdmin, isSuper, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
+function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetire, systems, flows, tasks, taskTypes, onCopyTask, onDrill, canEdit, notify, contributors, isAdmin, isSuper, systemTypes, onSchemaChanged, inScenario, onSetHidden, onResetRoute }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [missing, setMissing] = useState([]);
@@ -3632,7 +3756,7 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
   // parts of it, not records of their own, so the dialog can say what goes
   // without asking the server first.
   const [confirmTaskDelete, setConfirmTaskDelete] = useState(false);
-  // Memoised so the provider does not hand every field a new object on each
+  // Memoized so the provider does not hand every field a new object on each
   // keystroke, which would re-render all 30-odd of them while typing.
   const defsContext = useMemo(
     () => ({ ...(fieldMeta || {}), entity: PANEL_ENTITY[type] || null }),
@@ -3761,7 +3885,12 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
         name: form.name, task_type: form.task_type,
         task_type_other: form.task_type_other, description: form.description,
         anchor_kind: form.anchor_kind, anchor_id: form.anchor_id,
+        is_automated: form.is_automated ? 1 : 0,
         expected_start: form.expected_start, expected_end: form.expected_end,
+        // Sent on every task save, like the people and the subtasks: the
+        // server replaces the list wholesale, so omitting the key would leave
+        // the control working and the value never changing.
+        dependency_ids: form.dependency_ids || [],
         completed_date: form.completed_date, notes: form.notes,
         // Steps and the people are parts of the task, replaced wholesale.
         steps: (form.steps || [])
@@ -3938,7 +4067,7 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
           {/* Deactivating is the contributor equivalent of retiring: the record
               stays, the assignments stay, and the person stops being offered.
               It asks first and says what still names them, because the useful
-              question is not "are you sure" but "do you realise this person is
+              question is not "are you sure" but "do you realize this person is
               the Data Steward on four systems". */}
           {!editing && isSuper && type === 'contributor' && !isDeactivated(data) &&
             <Tooltip text="Take this contributor out of circulation. Nothing is deleted and existing assignments are kept; they stop being offered when assigning an Owner or Data Steward.">
@@ -4047,6 +4176,7 @@ function DetailPanel({ data, type, fieldMeta, onClose, onSave, onDelete, onRetir
                           canEdit={canEdit} notify={notify} />}
           {type === 'task' && editing &&
             <TaskEditView form={form} set={set} original={data} missing={missing}
+                          allTasks={tasks}
                           onParent={v => setForm(f => ({ ...f, ...splitParent(v),
                                                          pos_main: null, pos_cross: null }))}
                           contributors={contributors} systems={systems} flows={flows}
@@ -4905,7 +5035,7 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
         {/* The two systems come first so the name can be offered ready-made
             once both are chosen. Typing over it keeps whatever you typed. */}
         <div className="form-row">
-          {/* The endpoints and the name are required but are not catalogue
+          {/* The endpoints and the name are required but are not catalog
               fields: a flow's identity is not something the details panel
               draws as an editable row. No `col`, so no definition marker. */}
           <ReqField id="flow-src" label="Source System *" type="select" value={form.source_system_id}
@@ -4918,7 +5048,7 @@ function AddFlowModal({ systems, onClose, onSave, contributors, inScenario }) {
         <ReqField id="flow-name" label="Name *" value={form.name} onChange={v=>set('name',v)}
                   error={req.errorFor(form,'name')} placeholder="Filled in from the two systems — overwrite it if you like" />
         {/* Not a record field: display_name is how the diagram labels the
-            arrow, and has no entry in the catalogue. No `col`, so nothing for
+            arrow, and has no entry in the catalog. No `col`, so nothing for
             hiding or a definition to resolve. */}
         <div className="form-group">
           <label htmlFor="flow-display">Display Name</label>
@@ -5185,7 +5315,7 @@ function SystemTypeKeyModal({ types, onClose }) {
 
 // ===== Required-field validation =====
 // The Save button stays enabled; pressing it surfaces what's missing rather
-// than leaving the user guessing why a greyed-out button won't respond.
+// than leaving the user guessing why a grayed-out button won't respond.
 function useRequired(fields, scrollRef) {
   const [touched, setTouched] = useState(false);
   // Required fields are often below the fold, so a failed save must bring the
@@ -5227,13 +5357,13 @@ function useRequired(fields, scrollRef) {
   };
 }
 
-// A labelled input that shows its own required-field error.
+// A labeled input that shows its own required-field error.
 // ===== Fields in an Add window =====
 // `col` is the database column, and declaring it is the entire point of these
 // two components. Every optional field in the Add windows used to be a
 // hand-written `form-group` whose column appeared only inside an onChange
 // closure — so a modal field had no identity anything else could use. Three
-// consequences, all of which this removes: the catalogue generator had to
+// consequences, all of which this removes: the catalog generator had to
 // recover the column with a regex and managed 40 of 80; field hiding had
 // nothing to ask; and a definition written in Preferences could not be shown
 // here, which the 0.5.0 notes promised for this release.
@@ -5271,11 +5401,11 @@ function ReqField({ label, value, onChange, error, type, options, placeholder, i
 }
 
 // The optional variant. Returns nothing at all when the field has been hidden
-// for this record type, which is what makes one tick in Preferences empty the
+// for this record type, which is what makes one check in Preferences empty the
 // field out of the Add window as well as the details panel.
 //
 // `wide` opts out of the two-column `form-row` so a textarea can have the full
-// width, matching what the hand-written blocks did. `hint` is the small grey
+// width, matching what the hand-written blocks did. `hint` is the small gray
 // line some fields carry beneath the input.
 function ModalField({ entity, col, label, value, onChange, type, options,
                       placeholder, id, maxLength, hint, children, blank,
@@ -5776,13 +5906,26 @@ const taskTooltip = (task, today) => {
   // a real state, and "Name ()" reads as a fault.
   lines.push(task.name + (status ? ` (${status})` : ''));
   if (n) lines.push(assessed ? `${done} of ${n} ${word} done` : `${n} ${word}`);
-  // Why the circle is the colour it is, but only when the colour says
+  // Why the circle is the color it is, but only when the color says
   // something the status does not. A red circle whose status reads "In
   // progress" is otherwise unexplained, and the alternative — naming the state
   // every time — would have the card say "Completed" twice.
   const sg = taskSignal(task, today);
   if (sg === 'overdue' || sg === 'late_start') {
-    lines.push(TASK_SIGNAL_BY_KEY[sg].label);
+    // `taskSignalLabel`, not the state's own label: a dateless task whose
+    // dependencies have finished must not claim to be past a start date it
+    // does not have.
+    lines.push(taskSignalLabel(task, today));
+  }
+  // Blocked names the culprits rather than restating the color. "Blocked" on
+  // its own sends you into the flyout to find out by what, which is exactly
+  // the trip a hover card exists to save.
+  if (sg === 'blocked') {
+    const waiting = (task.dependencies || [])
+      .filter(d => d.status !== 'completed').map(d => d.name);
+    lines.push(waiting.length
+      ? `Waiting on ${waiting.join(', ')}`
+      : TASK_SIGNAL_BY_KEY.blocked.label);
   }
   const type = task.type_label || task.task_type;
   if (type) lines.push(type);
@@ -5920,7 +6063,7 @@ function TaskReadView({ data, contributors, canEdit, notify }) {
           shows and sends, so this display never becomes a stored value by
           itself — see the note in `task_rows`.
 
-          `data.expected_start || …` second rather than first: the catalogue
+          `data.expected_start || …` second rather than first: the catalog
           generator takes the first `data.X` the EDIT view established as a
           real column, and `effective_expected_start` is not one. Keeping the
           real column in the expression is what lets a definition written for
@@ -5931,6 +6074,29 @@ function TaskReadView({ data, contributors, canEdit, notify }) {
       <ReadField label="Expected End"
                  value={data.expected_end || data.effective_expected_end} />
       {!!data.end_from_steps && <div className="gov-hint">From the latest subtask</div>}
+      {/* Shown as Yes/No rather than only when true: "no" is a fact somebody
+          recorded about this work, and a row that appears only sometimes reads
+          as a field that is missing. */}
+      <ReadField label="Automated Task"
+                 value={data.is_automated ? 'Yes' : 'No'} />
+      {/* Hand-written rather than a ReadField: this is a list, and like the
+          people and the parent it has no single column for a definition or
+          for field hiding to resolve against. Each row names the dependency
+          and says where it stands, because "waiting on two things" is only
+          useful once you know which two and whether they have moved. */}
+      {(data.dependencies || []).length > 0 && (
+        <div className="field-row">
+          <span className="field-label">Depends on</span>
+          <div className="field-value">
+            {data.dependencies.map(d => (
+              <div key={d.task_id}>
+                {d.name} ({d.task_id}){' \u2014 '}
+                {taskStatusLabel(d.status) || 'no status recorded'}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <ReadField label="Status" value={taskStatusLabel(data.status)} />
       {!!data.status_from_steps &&
         <div className="gov-hint">Determined based on subtasks</div>}
@@ -5948,10 +6114,10 @@ function TaskReadView({ data, contributors, canEdit, notify }) {
     </CollapsibleSection>
     {(data.steps || []).length > 0 && (
       <CollapsibleSection title={`Subtasks (${data.steps.length})`} defaultOpen>
-        {/* One labelled block per subtask, numbered, with a rule between them.
+        {/* One labeled block per subtask, numbered, with a rule between them.
             The first version put the description in a value column and crammed
-            status, person and dates into one grey line underneath — which read
-            as a jumble, left most of the values unlabelled, and made a missing
+            status, person and dates into one gray line underneath — which read
+            as a jumble, left most of the values unlabeled, and made a missing
             one impossible to tell from a value nobody had entered.
 
             These are NOT `ReadField`s, deliberately. `ReadField` resolves
@@ -5996,7 +6162,7 @@ function TaskReadView({ data, contributors, canEdit, notify }) {
 }
 
 function TaskEditView({ form, set, onParent, original, missing, contributors,
-                        systems, flows, taskTypes, inScenario }) {
+                        systems, flows, taskTypes, inScenario, allTasks }) {
   const fromSteps = (form.steps || []).length > 0;
   const types = (taskTypes || []).map(t => t.type_name);
   return (<>
@@ -6062,6 +6228,14 @@ function TaskEditView({ form, set, onParent, original, missing, contributors,
           Using {original.derived_end}, the latest subtask end. Enter a date to
           override it.
         </div>}
+      {/* Under the dates rather than between them. Ben asked for the automated
+          checkbox directly above the dependency one, and the two of them
+          wedged between Expected Start and Expected End split a pair of dates
+          that reads as a pair. Below both, the reason dependencies sit here at
+          all still holds: a dependency does nothing until a start date passes,
+          and with no date anywhere the dependencies stand in for one. */}
+      <TaskExtras form={form} set={set} selfId={original && original.task_id}
+                  allTasks={allTasks} />
       {fromSteps
         /* Shown as a value, not a control: with steps present the server
            recomputes this on every save, so an editable box would accept a
@@ -6144,7 +6318,7 @@ function TaskPeople({ value, contributors, onChange, variant }) {
                              label: contributorLabel(c.contributor_id, contributors) }))]} />
       </Row>))}
     <Row label={chosen.length ? 'Add another' : 'Person Responsible'}>
-      {/* The empty choice is the invitation, in grey italics, rather than a
+      {/* The empty choice is the invitation, in gray italics, rather than a
           dash: a dropdown whose first line reads "— none —" says what is
           selected, not what to do with it. */}
       <Combo value="" ariaLabel="Add a person responsible"
@@ -6155,6 +6329,138 @@ function TaskPeople({ value, contributors, onChange, variant }) {
                          .map(c => ({ value: c.contributor_id,
                            label: contributorLabel(c.contributor_id, contributors) }))]} />
     </Row>
+  </>);
+}
+
+// The automated flag and the dependency block, in that order, as one
+// component used by BOTH the flyout and the Add window.
+//
+// Ben asked for both in both places, and two copies of a control with this
+// much behavior in it is how one of them quietly stops matching the other —
+// the Proposed checkbox was missing from the Add window for a whole release
+// for exactly that reason, and `is_automated` was missing from the flyout's
+// save payload for about an hour of this one.
+//
+// `modal` picks the surrounding markup rather than a second component. The two
+// windows have different field families — the flyout is a 140px label column
+// (`edit-field-row`), the Add window is `form-group` with the label above the
+// control — and a control that brings the wrong one with it looks like a bug
+// even though it works. That is the reused-CSS lesson in CLAUDE.md, met head
+// on instead of walked into.
+function TaskExtras({ form, set, selfId, allTasks, modal }) {
+  return (<>
+    {modal
+      ? <div style={{marginBottom:12}}>
+          <ModalCheck entity="task" col="is_automated" label="Automated task"
+                      checked={form.is_automated}
+                      onChange={v=>set('is_automated', v ? 1 : 0)} />
+        </div>
+      : <EditField label="Automated task" type="checkbox"
+                   value={form.is_automated}
+                   onChange={v=>set('is_automated', v)} />}
+    <TaskDependencies form={form} set={set} selfId={selfId}
+                      allTasks={allTasks} modal={modal} />
+  </>);
+}
+
+// What a task waits on. A checkbox that reveals the pickers, as Ben asked for,
+// because most tasks have no dependencies and an always-present empty picker
+// would be a question asked of everyone to serve a few.
+//
+// **Unchecking it clears the list**, and says so before it does. The
+// alternative — hiding dependencies that are still in force — would leave a
+// task drawn blocked on the diagram with nothing in its own panel explaining
+// why, which is the worst of both. Hiding a thing is not the same as not
+// having it, and a checkbox that means two different things depending on what
+// is behind it is the kind of control people stop trusting.
+//
+// Only tasks in the same view are offered: a dependency across the boundary
+// is refused by the server (`check_task_dependencies`) for the same reason a
+// parent is, so offering one would be offering a save that cannot succeed.
+function TaskDependencies({ form, set, selfId, allTasks, modal }) {
+  const chosen = form.dependency_ids || [];
+  const [open, setOpen] = useState(chosen.length > 0);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  // Everything except this task itself. The server also refuses a loop; this
+  // only removes the one case that is certain without a graph walk, because a
+  // picker that offers an option guaranteed to fail is worse than a short list.
+  const options = (allTasks || [])
+    .filter(t => t.task_id !== selfId)
+    .map(t => ({ value: t.task_id,
+                 label: `${t.name} (${t.task_id})` }));
+
+  const setAt = (i, id) => {
+    const next = [...chosen];
+    if (!id) next.splice(i, 1); else next[i] = id;
+    set('dependency_ids', next);
+  };
+  const taken = new Set(chosen);
+
+  // One row, in whichever field family the surrounding window uses.
+  const Row = ({ label, children }) => modal
+    ? <div className="form-group"><label>{label}</label>{children}</div>
+    : <div className="edit-field-row">
+        <span className="field-label">{label}</span>
+        <div style={{flex:1, minWidth:0}}>{children}</div>
+      </div>;
+
+  const toggle = (
+    <label className="check-inline" style={modal ? undefined : {margin:0}}>
+      <input type="checkbox" checked={open}
+             onChange={e => {
+               if (!e.target.checked && chosen.length) {
+                 setConfirmClear(true);   // ask before discarding them
+                 return;
+               }
+               setOpen(e.target.checked);
+             }} />
+      Add Dependencies
+    </label>
+  );
+
+  return (<>
+    {modal
+      ? <div style={{marginBottom: open ? 12 : 0}}>{toggle}</div>
+      : <div className="edit-field-row">
+          <span className="field-label">Dependencies</span>
+          <div style={{flex:1}}>{toggle}</div>
+        </div>}
+    {open && (<>
+      {chosen.map((id, i) => (
+        <Row label="Depends on" key={id + i}>
+          <Combo value={id} ariaLabel="Depends on"
+                 onChange={v => setAt(i, v)}
+                 options={[{ value: '', label: '\u2014 remove \u2014' },
+                           ...options.filter(o => o.value === id
+                                                  || !taken.has(o.value))]} />
+        </Row>
+      ))}
+      <Row label={chosen.length ? 'Add another' : 'Depends on'}>
+        <Combo value="" ariaLabel="Add a dependency"
+               onChange={v => { if (v) set('dependency_ids', [...chosen, v]); }}
+               options={[{ value: '', label: 'Add Dependency', hint: true },
+                         ...options.filter(o => !taken.has(o.value))]} />
+      </Row>
+      {!form.expected_start && !(form.steps || []).some(x => x.expected_start) &&
+        <div className="gov-hint">
+          With no start date set here or on a subtask, this task counts as
+          ready to start once every dependency is completed.
+        </div>}
+    </>)}
+    {confirmClear && <ConfirmDialog
+      title="Remove the dependencies?"
+      message={`This task waits on ${chosen.length} other ` +
+               `${chosen.length === 1 ? 'task' : 'tasks'}.`}
+      detail={<div className="gov-hint">
+        Unchecking the box removes those links. The diagram will stop showing
+        this task as blocked.
+      </div>}
+      confirmLabel="Remove them"
+      danger
+      onConfirm={() => { set('dependency_ids', []); setOpen(false);
+                         setConfirmClear(false); }}
+      onCancel={() => setConfirmClear(false)} />}
   </>);
 }
 
@@ -6302,11 +6608,13 @@ function TasksTable({ tasks, onSelect }) {
 }
 
 function AddTaskModal({ onClose, onSave, systems, flows, contributors, taskTypes,
-                        inScenario }) {
+                        inScenario, allTasks }) {
   const [form, setForm] = useState({
     name: '', task_type: '', task_type_other: '', description: '', parent: '',
     expected_start: '', expected_end: '', notes: '',
     contributor_ids: [], steps: [], proposed: false,
+    // Both new in 0.8.0, and both wanted here as well as in the flyout.
+    is_automated: false, dependency_ids: [],
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const bodyRef = useRef(null);
@@ -6391,6 +6699,8 @@ function AddTaskModal({ onClose, onSave, systems, flows, contributors, taskTypes
                       onChange={v=>set('expected_end',v)}
                       min={form.expected_start} />
         </div>
+        <TaskExtras form={form} set={set} selfId={null}
+                    allTasks={allTasks} modal />
         {/* Directly under the dates, with no heading and no panel: one
             contributor row did not justify either, and it belongs beside the
             dates it is answerable for. */}
@@ -6423,7 +6733,7 @@ function AddTaskModal({ onClose, onSave, systems, flows, contributors, taskTypes
 }
 
 // ===== Confirm dialog =====
-// The details panel's own type names versus the catalogue's. The catalogue is
+// The details panel's own type names versus the catalog's. The catalog is
 // keyed on database tables, so "flow" and "element" need translating; schema
 // tables and columns map to nothing, which is how they end up with no markers.
 const PANEL_ENTITY = { system: 'system', flow: 'data_flow',
@@ -6442,9 +6752,9 @@ const PANEL_ENTITY = { system: 'system', flow: 'data_flow',
 // the provider, and together those are enough to look a definition up.
 //
 // The lookup is keyed "entity|label" and resolved on the server. The same
-// column is labelled differently in different views — "Encrypt at Rest" in the
+// column is labeled differently in different views — "Encrypt at Rest" in the
 // edit view, "Encryption at Rest" in the read view — so the server emits the
-// definition under every spelling the catalogue knows. A browser-side key
+// definition under every spelling the catalog knows. A browser-side key
 // would have attached a definition to one view and missed the other.
 //
 // The same context carries **field hiding**, because every component that
@@ -6455,7 +6765,7 @@ const PANEL_ENTITY = { system: 'system', flow: 'data_flow',
 // from a label because 81 call sites pass nothing else; the newer components
 // declare their column outright, and the server sends a label-to-column map so
 // the older ones resolve the same way. Keying hiding on text would mean a
-// field relabelled in one view quietly reappearing there.
+// field relabeled in one view quietly reappearing there.
 const FieldDefs = React.createContext(
   { entity: null, defs: {}, hidden: {}, columns: {} });
 
@@ -6465,7 +6775,7 @@ function definitionFor(ctx, label) {
 }
 
 // The Add windows mark required fields with a trailing asterisk in the label
-// text itself. The catalogue stores the label without it, so strip it before
+// text itself. The catalog stores the label without it, so strip it before
 // any lookup — otherwise "Name *" never matches the field called "Name".
 function cleanLabel(label) {
   return String(label || '').replace(/\s*\*\s*$/, '');
@@ -7241,7 +7551,7 @@ function AddContributorModal({ onClose, onSave, pickableUsers }) {
                      ...(pickableUsers || []).map(u => ({
                        value: u.user_id,
                        // Already-linked accounts stay in the list, disabled,
-                       // which is what the browser did for a greyed <option>.
+                       // which is what the browser did for a grayed <option>.
                        // Removing them would leave someone hunting for a
                        // colleague who is simply absent.
                        disabled: !!u.linked_contributor_id,
@@ -7253,7 +7563,7 @@ function AddContributorModal({ onClose, onSave, pickableUsers }) {
             <div className="gov-hint">
               Picking someone fills in their name and attaches this contributor
               to their account, so you are not retyping details that already
-              exist. Greyed-out names already have a contributor record.
+              exist. Grayed-out names already have a contributor record.
             </div>
             {chosen && (
               <div style={{marginTop:8}}>
@@ -7515,7 +7825,7 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
   // Hiding is its own endpoint and its own table, and is saved on the click
   // rather than with the definition: the two are independent answers about a
   // field — what it means, and whether this department uses it — and making
-  // one wait on the other would mean ticking a box did nothing visible.
+  // one wait on the other would mean checking a box did nothing visible.
   const setHidden = async (hide) => {
     if (!current) return;
     setBusy(true);
@@ -7551,7 +7861,7 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
 
   const defined = fields.filter(f => f.definition);
   // Grouped for the dropdown; insertion order is the render order from the
-  // catalogue, which the browser preserves for string keys.
+  // catalog, which the browser preserves for string keys.
   const groups = {};
   fields.forEach(f => {
     const g = (entityLabels[f.entity] || f.entity) + ' → ' + f.section;
@@ -7574,7 +7884,7 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
           <label htmlFor="fd-pick">Field</label>
           {/* The longest list in the app — 80 fields — and the one Ben's
               request was really about. `group` carries what `<optgroup>` was
-              doing; the tick and the "not used" note are part of each label so
+              doing; the check and the "not used" note are part of each label so
               filtering finds them too. */}
           <Combo id="fd-pick" value={chosen} onChange={pick}
                  placeholder="Choose a field…" ariaLabel="Field"
@@ -7587,7 +7897,7 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
                               + (f.hidden ? ' \u2014 not used' : '') })),
                    ])]} />
           <div className="gov-hint">
-            A tick marks a field that already has a definition.
+            A check marks a field that already has a definition.
             {' '}{defined.length} of {fields.length} defined so far.
           </div>
         </div>
@@ -7661,7 +7971,7 @@ function FieldDefinitionsEditor({ notify, onChanged }) {
               )}
               {current.aliases.length > 0 && (
                 <div className="gov-hint">
-                  Labelled{' '}
+                  Labeled{' '}
                   {current.aliases.map((a, i) => (
                     <React.Fragment key={a}>
                       {i > 0 && ' and '}<strong>{a}</strong>
@@ -7845,7 +8155,7 @@ function LogoEditor({ notify, logo, limits, pending, setPending,
           <div className="logo-hint">
             PNG or JPEG, up to {kb(maxBytes)} KB and {maxDim} pixels on a side.
             The sidebar is dark navy, so a PNG with a transparent background and
-            light-coloured marks will sit best on it.
+            light-colored marks will sit best on it.
             {' '}<b>Nothing here changes until you click Save preferences</b>,
             including the position and the option to hide the title.
           </div>
@@ -7922,7 +8232,7 @@ function SystemTypesEditor({ notify, onChanged }) {
     <div className="pref-group">
       <h3>System Types</h3>
       <div style={{ padding: '10px 16px', fontSize: 12, color: '#6b6b6b' }}>
-        These appear on the diagram key and in the Type dropdown. Colours are drawn
+        These appear on the diagram key and in the Type dropdown. Colors are drawn
         from a palette checked for contrast.
         <button className="btn" style={{ marginLeft: 10 }}
                 onClick={() => { setForm({ type_name: '', description: '', palette: 'slate' });
@@ -7968,8 +8278,8 @@ function SystemTypesEditor({ notify, onChanged }) {
               <textarea id="st-desc" value={form.description}
                         onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                         placeholder="Explain when someone should choose this type" /></div>
-            <div className="form-group"><label htmlFor="st-colour">Colour</label>
-              <select id="st-colour" value={form.palette}
+            <div className="form-group"><label htmlFor="st-color">Color</label>
+              <select id="st-color" value={form.palette}
                       onChange={e => setForm(f => ({ ...f, palette: e.target.value }))}>
                 {Object.entries(palette).map(([k, v]) =>
                   <option key={k} value={k}>{v.label}</option>)}
@@ -8011,8 +8321,8 @@ function SystemTypesEditor({ notify, onChanged }) {
 
 // ===== Task types (SuperAdmin, shown on the Preferences screen) =====
 // The same shape as SystemTypesEditor, and deliberately simpler: a task type
-// has a name and a description but no colour, because a task's circle is
-// coloured by its *status* rather than by its type. Two colour schemes on the
+// has a name and a description but no color, because a task's circle is
+// colored by its *status* rather than by its type. Two color schemes on the
 // same shape would be unreadable, and status is the thing anybody is scanning
 // the diagram for.
 function TaskTypesEditor({ notify, onChanged }) {
@@ -8651,7 +8961,7 @@ function ExportModal({ defaultName, viewName, onExport, onPrint, onClose, notify
         {/* Both headings are plain `.form-group label`s so they match each
             other and every other form in the app; the option labels inherit
             the body size. Using `.field-label` for one of them made it a
-            different size, weight and colour from the other, and that class
+            different size, weight and color from the other, and that class
             is 140px wide, which pushed things about as well. */}
         <div className="form-group" style={{marginBottom:18}}>
           <label>Format</label>
@@ -8750,7 +9060,7 @@ const scenarioLabel = (s) => s ? `${s.name} (Scenario)` : LIVE_LABEL;
 const SCENARIO_STATUSES = ['Draft', 'Under review', 'Approved', 'Archived'];
 
 // How a record differs from the live diagram. Every one of these is shown as
-// text as well as styling, so none of it depends on sight of a colour.
+// text as well as styling, so none of it depends on sight of a color.
 const CHANGE_LABEL = {
   proposed: 'Proposed', modified: 'Modified', removed: 'Being retired',
   unchanged: '',
@@ -9120,7 +9430,7 @@ function AddScenarioModal({ scenarios, users, currentUserId, onClose, onSave }) 
   const parent = scenarios.find(s => String(s.scenario_id) === String(form.source_scenario_id));
 
   useEffect(() => {
-    // Anything ticked belonged to the previous source, so it cannot carry over.
+    // Anything checked belonged to the previous source, so it cannot carry over.
     setFocus([]);
     if (form.start_from === 'blank') { setSourceSystems([]); return; }
     if (form.start_from === 'scenario' && !form.source_scenario_id) {
@@ -9402,11 +9712,30 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
       .catch(e => notify(e.message, true));
   }, [scenarioId, refresh, notify]);
 
+  // Asked before, not after. Hiding is how somebody focuses a scenario on the
+  // part they are explaining, and that selection can represent a lot of
+  // deliberate clicks. Nothing records what was hidden, so there is no undo:
+  // once everything is back, rebuilding the focus means doing it again from
+  // memory. A confirmation is cheap against that.
+  const [confirmUnhide, setConfirmUnhide] = useState(false);
+
   const showEverything = useCallback(() => {
     if (scenarioId === null) return;
     return api.post(`/api/scenarios/${scenarioId}/visibility`, { all: true, hidden: false })
-      .then(() => { refresh(); notify('Everything in this scenario is visible again.'); })
-      .catch(e => notify(e.message, true));
+      .then((r) => {
+        setConfirmUnhide(false);
+        refresh();
+        // Report what actually came back rather than a flat sentence. The
+        // confirmation could not name a number — with "Show hidden items" off
+        // the browser never received the hidden rows — so this is the first
+        // point at which the real count is known.
+        const c = (r && r.changed) || {};
+        const n = (c.system || 0) + (c.data_flow || 0);
+        notify(n
+          ? `${n} item(s) are visible again.`
+          : 'Nothing was hidden in this scenario.');
+      })
+      .catch(e => { setConfirmUnhide(false); notify(e.message, true); });
   }, [scenarioId, refresh, notify]);
 
   const toggleHidden = useCallback(() => {
@@ -9479,7 +9808,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
       .catch(() => {});   // a missing definition is cosmetic, never fatal
   }, []);
 
-  // System types drive both the dropdowns and the diagram colours.
+  // System types drive both the dropdowns and the diagram colors.
   // Task types are configuration rather than data, so they are fetched once
   // and not re-read per view: the same list applies in every scenario.
   const loadTaskTypes = useCallback(() => {
@@ -9806,7 +10135,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
             </label>
             {canEditHere && (
               <button className="btn" style={{padding:'2px 8px',fontSize:12}}
-                      onClick={showEverything}>Un-hide everything</button>
+                      onClick={()=>setConfirmUnhide(true)}>Un-hide everything</button>
             )}
             {scenario && scenario.can_manage && (
               <button className="btn" style={{padding:'2px 8px',fontSize:12}}
@@ -9926,6 +10255,7 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
                          onDelete={deleteRecord} onRetire={retireRecord}
                          fieldMeta={fieldMeta}
                          systems={systems} flows={flows} taskTypes={taskTypes}
+                         tasks={tasks}
                          onCopyTask={copyTask}
                          onDrill={drillIntoSchema} canEdit={canEditHere}
                          inScenario={inScenario} onSetHidden={setRecordsHidden}
@@ -9959,7 +10289,20 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
                                                  pickableUsers={pickableUsers} />}
       {showAddTask && <AddTaskModal onClose={()=>setShowAddTask(false)} onSave={addTask}
                                    systems={systems} flows={flows} inScenario={inScenario}
-                                   contributors={contributors} taskTypes={taskTypes} />}
+                                   contributors={contributors} taskTypes={taskTypes}
+                                   allTasks={tasks} />}
+      {confirmUnhide && <ConfirmDialog
+        title="Un-hide everything in this scenario?"
+        confirmLabel="Un-hide everything"
+        message="Every system and data flow hidden here becomes visible again, on the diagram and in the catalogs."
+        detail={<div className="gov-hint">
+          Nothing is deleted and no record changes &mdash; hiding only affects
+          what this scenario shows. But there is no undo: nothing records which
+          items were hidden, so focusing the scenario again means picking them
+          out by hand.
+        </div>}
+        onConfirm={showEverything}
+        onCancel={()=>setConfirmUnhide(false)} />}
       {whatsNew.length > 0 && <WhatsNewModal releases={whatsNew}
         onLater={() => setWhatsNew([])} onAcknowledge={acknowledgeReleases} />}
       {whatsNew.length === 0 && alerts.length > 0 && <NotificationsModal items={alerts}

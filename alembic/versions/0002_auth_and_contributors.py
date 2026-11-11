@@ -142,7 +142,7 @@ def upgrade():
         sa.Column("event_id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("occurred_at", sa.Text(), nullable=False),
         sa.Column("actor_user_id", sa.Integer()),
-        # Denormalised on purpose: history stays readable if an account changes.
+        # Denormalized on purpose: history stays readable if an account changes.
         sa.Column("actor_email", sa.Text()),
         sa.Column("action", sa.Text(), nullable=False),
         sa.Column("entity_type", sa.Text()),

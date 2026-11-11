@@ -53,7 +53,7 @@ def columns(body, collect_pk=None):
             frag += " DEFAULT ''"
         elif plain:
             # A bare string default, as in server_default="0". Only sa.text()
-            # was recognised, so these were dropped silently: harmless in a
+            # was recognized, so these were dropped silently: harmless in a
             # CREATE TABLE, where SQLite allows NOT NULL without a default,
             # but fatal in an ALTER TABLE ADD COLUMN — which is how migration
             # 0013 broke the whole harness schema with "Cannot add a NOT NULL
@@ -118,7 +118,7 @@ def relax(table, frags):
             frag = frag.replace(" NOT NULL", "")
             # The default goes too: 0019 drops it alongside the constraint, and
             # a default left behind would keep filling the column, which is the
-            # behaviour being removed.
+            # behavior being removed.
             frag = re.sub(r" DEFAULT (?:'[^']*'|[^ ]+)", "", frag)
         out.append(frag)
     return out

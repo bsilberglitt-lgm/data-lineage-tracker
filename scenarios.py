@@ -553,6 +553,10 @@ def clone_into(conn, scenario_id, source_scenario_id=None):
     # with it, exactly as the flow was.
     task_cols = _columns(conn, "task")
     tasks, dropped = 0, 0
+    # Also tracked as a list: `id_map` holds the systems, flows and elements
+    # copied earlier too, and the dependency pass below must ask about
+    # tasks only.
+    copied_tasks = []
     for row in conn.execute(
             f"SELECT * FROM task WHERE {src_where}", src_params).fetchall():
         row = dict(row)
@@ -563,6 +567,10 @@ def clone_into(conn, scenario_id, source_scenario_id=None):
         old_id = row["task_id"]
         new_id = scoped_id(scenario_id, base_id(old_id))
         id_map[old_id] = new_id
+        # Tracked separately as well: `id_map` also holds the systems, flows
+        # and elements copied earlier, and the dependency pass below must ask
+        # about tasks only.
+        copied_tasks.append((old_id, new_id))
         row["task_id"] = new_id
         row["anchor_id"] = new_anchor
         row["scenario_id"] = scenario_id
@@ -601,7 +609,44 @@ def clone_into(conn, scenario_id, source_scenario_id=None):
                 f"VALUES ({','.join('?' for _ in cols)})",
                 tuple(tc[c] for c in cols))
         tasks += 1
+
+    # Dependencies are copied in a SECOND pass, for the same reason a task's
+    # anchor could only be remapped after the systems and flows: a dependency
+    # points at another task, and on the first pass the task it points at may
+    # not have been given its scenario id yet. One pass would quietly drop
+    # every forward reference — half the links, depending on id order, which
+    # is the sort of bug that looks like "sometimes it works".
+    #
+    # A dependency whose target was NOT copied is dropped rather than left
+    # pointing across the boundary. That mirrors how a task whose parent was
+    # not copied is dropped: a scenario must not reference the live view, and
+    # a link to a task the viewer cannot see would show as permanently
+    # unfinished and draw the dependent task blocked forever.
+    dep_rows = 0
+    dep_dropped = 0
+    for old_id, new_id in copied_tasks:
+        for td in conn.execute(
+                "SELECT * FROM task_dependency WHERE task_id=?",
+                (old_id,)).fetchall():
+            td = dict(td)
+            target = id_map.get(td["depends_on_task_id"])
+            if not target:
+                dep_dropped += 1
+                continue
+            td["task_id"] = new_id
+            td["depends_on_task_id"] = target
+            cols = list(td.keys())
+            conn.execute(
+                f"INSERT INTO task_dependency ({','.join(cols)}) "
+                f"VALUES ({','.join('?' for _ in cols)})",
+                tuple(td[c] for c in cols))
+            dep_rows += 1
+
     counts["task"] = tasks
+    if dep_rows:
+        counts["task_dependency"] = dep_rows
+    if dep_dropped:
+        counts["task_dependency_dropped"] = dep_dropped
     if dropped:
         counts["task_dropped"] = dropped
     return counts

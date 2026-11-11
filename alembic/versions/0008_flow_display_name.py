@@ -2,7 +2,7 @@
 
 The diagram labels each arrow with its identifier (``PL-003``), which is
 unambiguous but says nothing. ``display_name`` lets a flow carry a short human
-label — "Nightly enrolment" — that is shown instead when it is set.
+label — "Nightly enrollment" — that is shown instead when it is set.
 
 Deliberately separate from ``name``: the full name is often a sentence, far too
 long to sit on an arrow, and shortening it would lose information the catalog
