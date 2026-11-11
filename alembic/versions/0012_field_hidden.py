@@ -1,4 +1,4 @@
-"""Fields an organisation does not use, hidden from both surfaces.
+"""Fields an organization does not use, hidden from both surfaces.
 
 The app offers eighty fields per record because it was built to cover what any
 state education agency might need to record. No single department uses all of
@@ -20,11 +20,11 @@ the same wherever it appears. Whether a field is *used* is a different
 question, answered per record type: a department might record Data Standards on
 data flows and never on systems. Allowing "*" here would also mean every
 hiding check had to resolve a two-level override, and a field vanishing from
-three screens because of one tick is a worse surprise than three ticks.
+three screens because of one check is a worse surprise than three checks.
 
 **Required fields can never be hidden.** The Add window cannot be submitted
 without them, so hiding one would make the record impossible to create. The
-catalogue records which fields are required and the API refuses those; the
+catalog records which fields are required and the API refuses those; the
 frontend declines to draw the toggle as well.
 
 No foreign key, for the same reason as `field_definition`: these describe the

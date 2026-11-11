@@ -14,7 +14,7 @@ Seventeen of the seventy-seven fields have more than one spelling. If the
 server emitted a definition under only one of them, it would appear in the edit
 view and silently vanish in the read view — a bug that looks like the feature
 half-working and would be very hard to attribute. So: write once, and assert it
-comes back under *every* spelling the catalogue knows.
+comes back under *every* spelling the catalog knows.
 
 Also covered: only a SuperAdmin may write, everyone may read, unknown fields
 are refused rather than stored, an empty definition deletes rather than storing
@@ -98,10 +98,10 @@ def ck(l, c, d=""):
 
 boss = sign_in()
 
-print("-- the catalogue --")
+print("-- the catalog --")
 st, cat = rq(boss, "GET", "/api/field-catalog")
-ck("the catalogue is served", st == 200 and len(cat.get("fields", [])) > 0, str(st))
-ck("it matches the generated catalogue exactly",
+ck("the catalog is served", st == 200 and len(cat.get("fields", [])) > 0, str(st))
+ck("it matches the generated catalog exactly",
    len(cat["fields"]) == len(field_catalog.FIELDS),
    f"{len(cat['fields'])} vs {len(field_catalog.FIELDS)}")
 ck("every entry carries a section, so the picker can group it",
@@ -139,7 +139,7 @@ if extra:
 print("\n-- one definition, found under every spelling --")
 multi = [f for f in field_catalog.FIELDS
          if len({f["label"], f.get("read_label"), f.get("modal_label")} - {None}) > 1]
-ck("the catalogue has fields with more than one spelling", len(multi) > 0,
+ck("the catalog has fields with more than one spelling", len(multi) > 0,
    "if this fails the next checks prove nothing")
 target = next(f for f in multi if f["entity"] == "system")
 spellings = {target["label"], target.get("read_label"), target.get("modal_label")} - {None}
@@ -194,7 +194,7 @@ st, r = rq(boss, "PUT", "/api/field-catalog",
 ck("an unknown column is refused", st == 400, f"{st} {str(r)[:90]}")
 st, r = rq(boss, "PUT", "/api/field-catalog",
            {"entity": "preference", "column": "app_title", "definition": "x"})
-ck("a record type outside the catalogue is refused", st == 400, f"{st} {str(r)[:90]}")
+ck("a record type outside the catalog is refused", st == 400, f"{st} {str(r)[:90]}")
 st, r = rq(boss, "PUT", "/api/field-catalog",
            {"entity": target["entity"], "column": target["column"],
             "definition": "x" * 2000})
@@ -226,7 +226,7 @@ if st == 200:
     ck("an Editor can read definitions, since they describe fields they can see",
        st == 200 and len(d.get("definitions", {})) > 0, f"{st}")
     st, r = rq(ed, "GET", "/api/field-catalog")
-    ck("but cannot see the editor's catalogue", st == 403, str(st))
+    ck("but cannot see the editor's catalog", st == 403, str(st))
     st, r = rq(ed, "PUT", "/api/field-catalog",
                {"entity": target["entity"], "column": target["column"],
                 "definition": "sneaky"})
@@ -255,11 +255,11 @@ ck("removing one is audited too", any("Removed" in s for s in summaries),
 print("\n-- the fields the generator used to miss --")
 # Data Steward and Owner are drawn by ContributorSelect / ContributorField
 # rather than EditField, so the first version of the generator skipped them
-# silently: six fields absent from the catalogue with no error anywhere.
+# silently: six fields absent from the catalog with no error anywhere.
 by_col = {(f["entity"], f["column"]) for f in field_catalog.FIELDS}
 for ent, col in [("system", "data_steward_id"), ("data_flow", "data_steward_id"),
                  ("data_flow", "owner_id"), ("data_element", "data_owner_id")]:
-    ck(f"{ent}.{col} is in the catalogue", (ent, col) in by_col,
+    ck(f"{ent}.{col} is in the catalog", (ent, col) in by_col,
        "rendered by a component the generator has to know about")
 st, cat = rq(boss, "GET", "/api/field-catalog")
 steward = [f for f in cat["fields"] if f["column"] == "data_steward_id"]
@@ -280,7 +280,7 @@ for ent in ("system", "data_flow", "data_element"):
        "one edit should cover all three")
 st, cat = rq(boss, "GET", "/api/field-catalog")
 steward = [f for f in cat["fields"] if f["column"] == "data_steward_id"]
-ck("the catalogue reports it as inherited rather than written here",
+ck("the catalog reports it as inherited rather than written here",
    all(f["inherited"] and not f["own_definition"] for f in steward),
    str([(f["entity"], f["inherited"], f["own_definition"]) for f in steward]))
 
@@ -305,11 +305,11 @@ ck("the override wins for that record type",
 ck("and the others still show the shared text",
    d["definitions"].get("system|Data Steward") == AGAIN and
    d["definitions"].get("data_element|Data Steward") == AGAIN,
-   "an override must not disturb its neighbours")
+   "an override must not disturb its neighbors")
 st, cat = rq(boss, "GET", "/api/field-catalog")
 flow = next(f for f in cat["fields"]
             if f["entity"] == "data_flow" and f["column"] == "data_steward_id")
-ck("the catalogue shows it as its own, not inherited",
+ck("the catalog shows it as its own, not inherited",
    flow["own_definition"] == OWN and not flow["inherited"],
    str((flow["own_definition"][:30], flow["inherited"])))
 

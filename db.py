@@ -37,7 +37,7 @@ def get_database_url():
     """Return the configured database URL.
 
     Render (and Heroku) historically expose ``postgres://`` URLs, which newer
-    drivers reject; normalise those to ``postgresql://``.
+    drivers reject; normalize those to ``postgresql://``.
     """
     url = os.environ.get("DATABASE_URL", "").strip()
     if not url:

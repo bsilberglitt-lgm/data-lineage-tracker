@@ -11,8 +11,8 @@ user cannot get out of without a SuperAdmin, so it is refused on write *and*
 filtered on read — a row could predate a field becoming required.
 
 **No shared scope.** Definitions accept ``entity_type = "*"``; hiding must not.
-Whether a field is *used* is a per-record-type question, and one tick emptying
-three screens is a worse surprise than three ticks. The same endpoint shape
+Whether a field is *used* is a per-record-type question, and one check emptying
+three screens is a worse surprise than three checks. The same endpoint shape
 accepting "*" silently would mean a single click hiding Data Steward from
 systems, data flows and data elements at once.
 
@@ -54,11 +54,11 @@ def ck(l, c, d=""):
 
 boss = sign_in()
 
-# ---------------------------------------------------------------- catalogue
-print("-- the catalogue reports hiding and required-ness --")
+# ---------------------------------------------------------------- catalog
+print("-- the catalog reports hiding and required-ness --")
 st, cat = rq(boss, "GET", "/api/field-catalog")
 fields = cat.get("fields", [])
-ck("the catalogue is served", st == 200 and len(fields) == len(field_catalog.FIELDS),
+ck("the catalog is served", st == 200 and len(fields) == len(field_catalog.FIELDS),
    f"{st} {len(fields)}")
 ck("every field says whether it is hidden",
    all("hidden" in f for f in fields))
@@ -69,16 +69,16 @@ ck("every field says whether it is required",
 # local app, where he had hidden a field in Preferences while testing the
 # feature — a correct setting of his, reported as a test failure.
 #
-# What is worth asserting is the invariant: the catalogue and
+# What is worth asserting is the invariant: the catalog and
 # /api/field-definitions must agree about what is hidden. They are keyed
-# differently — the catalogue by (entity, column), the lookup by
+# differently — the catalog by (entity, column), the lookup by
 # "entity|column" — and a disagreement between them is a real fault, which is
 # the thing the original check was reaching for.
 ORIGINALLY_HIDDEN = {(f["entity"], f["column"]) for f in fields if f["hidden"]}
 st, look0 = rq(boss, "GET", "/api/field-definitions")
-ck("the catalogue and the lookup agree about what is hidden",
+ck("the catalog and the lookup agree about what is hidden",
    {tuple(k.split("|", 1)) for k in look0.get("hidden", [])} == ORIGINALLY_HIDDEN,
-   f"catalogue {sorted(ORIGINALLY_HIDDEN)} vs lookup {sorted(look0.get('hidden', []))}")
+   f"catalog {sorted(ORIGINALLY_HIDDEN)} vs lookup {sorted(look0.get('hidden', []))}")
 if ORIGINALLY_HIDDEN:
     print(f"     (note: {len(ORIGINALLY_HIDDEN)} field(s) already hidden on this "
           f"database — left exactly as found)")
@@ -115,7 +115,7 @@ ck("a SuperAdmin can hide a field", st == 200 and r.get("hidden") is True, str(s
 
 st, cat = rq(boss, "GET", "/api/field-catalog")
 now = {(f["entity"], f["column"]): f["hidden"] for f in cat["fields"]}
-ck("the catalogue reports it hidden", now[(VE, VC)] is True)
+ck("the catalog reports it hidden", now[(VE, VC)] is True)
 ck("the same column on another record type is untouched",
    now.get(("data_flow", "organization")) is False)
 
@@ -230,7 +230,7 @@ if st == 200:
     ck("a Viewer may read the hidden set, since it decides what they see",
        st == 200 and "hidden" in look, str(st))
     st, _ = rq(viewer, "GET", "/api/field-catalog")
-    ck("a Viewer may not read the whole catalogue", st == 403, str(st))
+    ck("a Viewer may not read the whole catalog", st == 403, str(st))
     st, _ = rq(viewer, "PUT", "/api/field-visibility",
                {"entity": "system", "column": "notes", "hidden": True})
     ck("a Viewer may not hide a field", st == 403, str(st))

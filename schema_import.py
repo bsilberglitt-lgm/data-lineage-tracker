@@ -159,7 +159,7 @@ def parse_tsql(sql_text, per_row=8, col_gap=290, row_gap=360,
     if not columns:
         raise SchemaParseError(
             "Tables were found but no columns could be read. The script may use "
-            "a format this importer doesn't recognise.")
+            "a format this importer doesn't recognize.")
 
     return {
         "tables": tables,

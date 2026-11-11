@@ -1,6 +1,6 @@
 """Connection points and bend points for data flow arrows.
 
-Until now an arrow was drawn centre-to-centre between two systems, which meant
+Until now an arrow was drawn center-to-center between two systems, which meant
 two flows between the same pair sat exactly on top of each other — unreadable
 for the common case of a bidirectional pair recorded as two flows.
 

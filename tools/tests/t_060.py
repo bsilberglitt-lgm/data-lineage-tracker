@@ -216,11 +216,11 @@ robin = next(u for u in listed if u["email"] == HALE)
 ck("the list now reports them as linked",
    robin["linked_contributor_id"] == made.get("contributor_id"),
    repr(robin["linked_contributor_id"]))
-ck("and names the contributor, for the greyed-out note",
+ck("and names the contributor, for the grayed-out note",
    robin["linked_contributor_name"] == "Robin Hale",
    repr(robin["linked_contributor_name"]))
 
-# The window greys them out, but the window is a snapshot — two people could
+# The window grays them out, but the window is a snapshot — two people could
 # be adding contributors at once, so the server has to refuse as well.
 st, r = rq(boss, "POST", "/api/contributors",
            {"name": "Robin Hale Again", "link_user_id": robin["user_id"]})

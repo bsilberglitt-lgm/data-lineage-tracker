@@ -28,7 +28,7 @@ SUITES=(
   tools/tests/t_taskpos.js    # where a task's circle sits, and dragging it
   tools/tests/t_labelpos.js   # where a data flow's label sits
   tools/tests/t_autoname.js   # the auto-filled flow name
-  tools/tests/t_tasksignal.js  # which colour a task's circle takes
+  tools/tests/t_tasksignal.js  # which color a task's circle takes
 )
 
 echo "Running the geometry suites in Docker (no local Node needed)…"

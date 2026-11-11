@@ -44,7 +44,7 @@ depends_on = None
 def upgrade():
     # Dropping the server default as well as the NOT NULL: a default of
     # 'not_started' would go on filling the column for anything that does not
-    # name it, which is the behaviour being removed.
+    # name it, which is the behavior being removed.
     op.alter_column("task", "status", existing_type=sa.Text(),
                     nullable=True, server_default=None)
     op.alter_column("task_step", "status", existing_type=sa.Text(),

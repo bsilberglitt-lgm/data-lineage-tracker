@@ -26,7 +26,7 @@ Three consequences of that choice, all deliberate:
   except on a record that already names them — where removing the current
   value from its own dropdown would make it impossible to see what it says.
 
-Deactivated contributors are visible only to a SuperAdmin, greyed, and
+Deactivated contributors are visible only to a SuperAdmin, grayed, and
 reactivated by editing them.
 
 INTEGER 0/1 rather than BOOLEAN, per the convention in CLAUDE.md. `app_user`

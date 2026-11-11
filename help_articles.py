@@ -37,6 +37,7 @@ import permissions
 
 # Screens an article can be tagged with. These match the frontend's view names.
 SCREENS = ["diagram", "schema", "systems", "flows", "elements", "contributors",
+           "tasks",
            "audit", "users", "preferences", "releases", "scenario"]
 
 
@@ -58,7 +59,7 @@ ARTICLES = [
         "screens": [],
         "min_role": permissions.VIEWER,
         "keywords": ["about", "purpose", "why", "introduction", "open source",
-                     "licence", "license", "backup", "hosting", "architecture",
+                     "license", "license", "backup", "hosting", "architecture",
                      "portable", "vendor", "contract", "procurement", "CEDS",
                      "SLDS", "EDUcore", "standards", "documentation",
                      "Maine", "Department of Education"],
@@ -163,7 +164,7 @@ ready-made as "<source> to <destination>" — overwrite it if you want something
 else.
 
 **Data elements** are the individual pieces of information that travel along
-those flows — a student identifier, an enrolment date. They are defined once
+those flows — a student identifier, an enrollment date. They are defined once
 and referenced everywhere, so a definition does not drift between systems.
 
 **Contributors** are the people and units responsible for all of the above.
@@ -183,21 +184,21 @@ Clicking anything in either place opens the same details panel on the right.
     {
         "id": "reading-the-diagram",
         "title": "Lineage diagram: the basics",
-        "summary": "Node colours, arrows, dragging versus clicking, zooming, "
+        "summary": "Node colors, arrows, dragging versus clicking, zooming, "
                    "and opening a database schema.",
         "screens": ["diagram"],
         "min_role": permissions.VIEWER,
         "keywords": ["map", "picture", "nodes", "arrows", "zoom", "drag", "key",
-                     "legend", "colours", "colors", "bend", "connect",
+                     "legend", "colors", "colors", "bend", "connect",
                      "connection point", "anchor", "route", "overlap",
                      "bidirectional", "crossing"],
         "body": """\
-Each box is a system. Its colour shows its **type** — Source, Destination, Data
+Each box is a system. Its color shows its **type** — Source, Destination, Data
 Store, Manual Entry — and the key in the corner lists them. The information
-button beside the key explains what each type means. Colour is never the only
+button beside the key explains what each type means. Color is never the only
 signal: the type is also printed inside the box and shown in the details panel.
 
-Arrows are data flows, drawn from source to destination. Each is labelled with
+Arrows are data flows, drawn from source to destination. Each is labeled with
 its identifier, or with a short **display name** if the flow has one. Click the
 label to open that flow.
 
@@ -255,6 +256,149 @@ audit log — it changes how the diagram reads, not what the data flow is.
 A system with a mapped database schema shows a small **SCHEMA** tag. Click it,
 or double-click the box, to open the schema drill-down, where you can see every
 table and field and set governance at either level.
+""",
+    },
+    {
+        "id": "tasks",
+        "title": "Tasks: the work a flow depends on",
+        "summary": "Attaching work to a flow or a data store, subtasks, the "
+                   "colored circles on the diagram, automated tasks, and "
+                   "dependencies between tasks.",
+        "screens": ["tasks", "diagram"],
+        "min_role": permissions.VIEWER,
+        "keywords": ["task", "tasks", "subtask", "subtasks", "step", "steps",
+                     "dependency", "dependencies", "depends", "blocked",
+                     "waiting", "due", "overdue", "late", "start date",
+                     "end date", "status", "circle", "color", "legend",
+                     "checklist", "manual", "validation", "schedule",
+                     "person responsible", "owner", "automated", "automation",
+                     "automatic", "scheduled job", "by hand", "recurring",
+                     "copy"],
+        "body": """\
+A **task** is the work that a data flow or a data store depends on: validation
+steps, stored procedures, file downloads and uploads, etc. Every task is
+attached to exactly one data flow or one system.
+
+## How to Add
+
+**+ Add Task** sits beside the counts at the top of the Tasks catalog and on
+the lineage diagram. You need edit rights.
+
+A task needs a name, a **type**, and something to attach to. The **Attached
+to** box lists every system and data flow — start typing to narrow the list.
+
+Task types are a controlled list that a SuperAdmin keeps in Preferences (note
+that **Other** is always available).
+
+## Subtasks
+
+A task can hold **subtasks**: an ordered list, each with its own description,
+person responsible, status and dates.
+
+**Once a task has subtasks, it no longer sets its own status.** The task's
+status is worked out from them: all completed means completed, any started
+means in progress, and none of them set means the task is not set either.
+
+## Dates
+
+A task has an expected start and an expected end, and so does each subtask. If
+you leave the task's dates blank, it shows the span its subtasks cover — the
+earliest subtask start and the latest subtask end, with a note saying so. Fill
+a date in and it takes precedence.
+
+## The circles on the diagram
+
+A task appears on the diagram as a small circle: on the line for a task
+attached to a data flow, inside the box for one attached to a system. Hover for
+its name, status and dates. Press and drag to move it; press and release
+without moving to open it. A circle on a flow stays **on** the line and slides
+along it.
+
+## Color coding
+
+Each circle is colored based on where its work stands, and every color also
+carries a mark inside the circle so the diagram can be read in black and white,
+printed, or by someone who does not distinguish those hues.
+
+* **Completed** — green and a check.
+* **Past its end date** — red and an exclamation mark. The end date has gone by
+  and nothing says the work is finished.
+* **Blocked** — red and an "x". It is past its start date and something it
+  waits on has not finished. See dependencies below.
+* **In progress** — yellow and a half-filled circle.
+* **Not started, past its start date** — orange and an "o".
+* **Automated, nothing recorded yet** — blue and a triangle. See automated
+  tasks below.
+* **Nothing recorded yet** — gray with no mark at all.
+
+A subtask's dates and status count towards the color as well as the task's own,
+so a task running late shows it even when the task itself has no dates. A task
+finished after its end date still says completed (not late).
+
+The key in the corner of the diagram only lists the colors once something on
+that diagram is actually color-coded. Until then it shows a single gray circle
+labeled Task.
+
+## Automated tasks
+
+Check **Automated task** on any task that a machine does — a scheduled load, a
+stored procedure that runs on a timer or trigger, a transfer that does not
+require manual intervention. The circle turns **blue**, so the diagram answers
+"which of these tasks needs a person" at a glance. Automated tasks with start
+and/or end dates set will still change color & symbol based on status and
+dates.
+
+If automation is the only thing recorded on a diagram, the key lists just Task
+and Automated task — so the automated/manual distinction can be looked at on
+its own, without the status colors.
+
+## Dependencies
+
+A task can depend on other tasks. Check **Add Dependencies** — in the Add Task
+window, or on an existing task below its dates — and choose the task it waits
+on. Use **Add another** for more than one. (Unchecking the box removes the
+dependencies.)
+
+Dependencies change what the colors mean:
+
+* **Before the start date**, nothing is reported. Waiting is what the plan says
+  should be happening, so the circle stays gray.
+* **After the start date**, if anything it waits on is unfinished, the task is
+  **Blocked** — red, with an "x".
+* **After the start date**, if everything it waits on is finished, the task is
+  **Not started, past its start date**.
+* **With no start date anywhere** — none on the task, none on any subtask — the
+  dependencies stand in for one. The task stays gray until the last thing it
+  waits on is completed, and then takes the same orange "o" with the hover card
+  reading **Not started, dependencies completed**, since there is no start date
+  for it to be past.
+
+A task cannot depend on itself, it cannot depend on a task in a different view,
+and it cannot be given a dependency that would close a loop (so A waiting on B
+waiting on C waiting on A is not allowed).
+
+## Recurring tasks
+
+There is no recurrence setting. A quarterly job would be set as four tasks,
+which can be created more easily with **Copy**. Copy brings across the type,
+the parent, the description, the notes, the people and the whole checklist, and
+leaves the dates blank with every subtask reset to Not started.
+
+## Resources
+
+A task can hold documents and links, in the same way a system or a data flow
+can.
+
+## Tasks in scenarios
+
+A scenario gets its own copy of every task, including the dependencies between
+them — remapped to point at the scenario's own tasks, never back at the live
+ones. Inside a scenario you can check **Proposed** on a task to mark it as
+something the scenario adds.
+
+Tasks have no separate hidden setting. A task is drawn on its parent, so when
+you hide a system or a flow to focus a scenario, its tasks go with it and come
+back with it.
 """,
     },
     {
@@ -374,7 +518,7 @@ added, how many disappeared, and how many governance values were carried over.
 Every upload snapshots the previous schema first, so a SuperAdmin can put it
 back. Reverting is itself snapshotted, so it too can be undone.
 
-An upload records **one** audit entry summarising the change rather than one per
+An upload records **one** audit entry summarizing the change rather than one per
 field — a schema of a few thousand fields would otherwise bury everything else
 in the log.
 """,
@@ -503,7 +647,7 @@ Select rows in the Systems or Data Flows table and use the bar that appears, or
 use the button in the details panel. **Show hidden items** on the scenario bar
 reveals everything temporarily; **Un-hide everything** puts it back for good.
 
-Two behaviours worth knowing:
+Two behaviors worth knowing:
 
 * Hiding a system also hides the flows attached to it — a line drawn to nothing
   is worse than no line. Showing it again brings back only the flows whose other
@@ -633,7 +777,7 @@ details panel and the Add window.
 
 ## Switching one off
 
-**Preferences → General → Field definitions.** Choose the field, then tick
+**Preferences → General → Field definitions.** Choose the field, then check
 **Do not use this field**. It takes effect immediately.
 
 ## What happens to anything already recorded
@@ -699,7 +843,7 @@ seventy-seven fields, *Classification* exists on both systems and data flows,
 and *Format* means different things in different sections.
 
 Write a sentence or two in the words someone filling the field in would use,
-and save. A tick in the list marks the fields that already have a definition,
+and save. A check in the list marks the fields that already have a definition,
 and the count beside it shows how many are done — the gaps are the point as
 much as the definitions.
 
@@ -710,8 +854,8 @@ To remove one, clear the box and save, or use **Remove definition**.
 Some fields exist on more than one kind of record. **Data Steward** is a field
 on systems, data flows and data elements; eleven fields are like this.
 
-When you pick one of those, there is a tick box: **use one definition
-everywhere this field appears**. Tick it and you are editing a single shared
+When you pick one of those, there is a check box: **use one definition
+everywhere this field appears**. Check it and you are editing a single shared
 definition — change it once and all three update. The list of definitions marks
 these as **shared**.
 
@@ -726,7 +870,7 @@ nothing is lost by trying it.
 
 ## One definition, every spelling
 
-A few fields are labelled slightly differently depending on where they appear:
+A few fields are labeled slightly differently depending on where they appear:
 a classification reads *Classification* in the details panel and *Data
 Classification* in the Add window. These are the same field — the application
 stores them in one place — so **one definition covers all of its labels**.
@@ -753,7 +897,7 @@ defined what and when.
         "keywords": ["logo", "brand", "branding", "image", "png", "jpg", "jpeg",
                      "upload", "title", "sidebar", "sign-in", "icon"],
         "body": """\
-A SuperAdmin can put an organisation's logo in the sidebar and on the sign-in
+A SuperAdmin can put an organization's logo in the sidebar and on the sign-in
 screen. It is in **Preferences**, under General, beside the title and subtitle
 it sits with.
 
@@ -764,7 +908,7 @@ Click **Upload logo** and choose a **PNG or JPEG** file, up to **512 KB** and
 its name, so renaming something to `.png` will not get it accepted.
 
 The preview beside the settings is a real sidebar header at its real width and
-colour, so it shows what you will actually get — including how a very wide or
+color, so it shows what you will actually get — including how a very wide or
 very tall image is scaled to fit.
 
 ## Where it can sit
@@ -785,7 +929,7 @@ thing that changes, and it is marked as not saved.
 
 The sidebar is dark navy. A logo drawn for white paper — dark marks on a white
 rectangle — will look like a sticker stuck onto it. What works best is a **PNG
-with a transparent background and light-coloured marks**.
+with a transparent background and light-colored marks**.
 
 Because it is displayed about 32 pixels tall, fine detail and small lettering
 will not survive. A simple mark reads better at that size than a detailed one.

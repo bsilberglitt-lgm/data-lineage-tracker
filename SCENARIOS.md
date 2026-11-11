@@ -62,7 +62,7 @@ alone — **copy-on-write**.
 `schema_snapshot` also stores the raw uploaded `.sql` file. Copying all of it
 per scenario would multiply the largest tables in the database — five scenarios
 would make the schema tables twenty times their current size — for data that
-almost nobody edits in a scenario. Copy-on-write gives the same behaviour: full
+almost nobody edits in a scenario. Copy-on-write gives the same behavior: full
 independence when you use it, nothing duplicated when you don't.
 
 **Verified:** in an empty scenario, all 33 data elements are visible. After
@@ -107,7 +107,7 @@ when nothing differs from live would misreport the change set.
 
 **The Proposed checkbox does not touch a retired record.** It used to write
 `change_state` unconditionally, so saving a retired system with the box clear
-quietly un-retired it, and with the box ticked claimed a live system had been
+quietly un-retired it, and with the box checked claimed a live system had been
 invented in the scenario.
 
 ---

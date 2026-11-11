@@ -15,7 +15,7 @@ What matters, in order:
      irreversible by design, and "Under Review" does not mean the same thing as
      "Deprecated" — a point raised before it was written. The audit trail is
      therefore the only record of what each value used to be, and the thing
-     that makes a mislabelled record recoverable by hand.
+     that makes a mislabeled record recoverable by hand.
   3. **Records that were already "Under Review" are left alone**, and not
      swept into the audit event as though they had been changed.
   4. **It is safe to run when there is nothing to convert**, which is the real

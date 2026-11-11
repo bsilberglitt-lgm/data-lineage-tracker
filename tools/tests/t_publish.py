@@ -6,7 +6,7 @@ never overwritten, and that the what's-new marker is left so the modal fires.
 **Everything version-specific is read out of ``SEED_RELEASES``, including
 whether the release is published.** Two earlier versions of this file hardcoded
 what the current release happened to look like, and both started failing on
-correct behaviour the moment the next release landed:
+correct behavior the moment the next release landed:
 
 * the first typed in one release's title and a phrase from its body;
 * the second assumed the current version was published, which is false for the

@@ -4,7 +4,7 @@ Everything needed to take a change from an idea to running in production, in
 order, with the exact commands. Written so someone who has never released this
 app can do it correctly.
 
-**This file is the source of truth.** A Word copy exists for ticking off by hand,
+**This file is the source of truth.** A Word copy exists for checking off by hand,
 but if the two ever disagree, believe this one.
 
 > **Where it says "Ask Claude"**, the exact wording changes each release (version
@@ -154,9 +154,9 @@ into the wrong group is how one ended up running after step 2.
   python3 tools/check_jsx.py
   ```
 
-- [ ] **1b. Field catalogue is current** — it is generated from the UI, so a
-  field added or relabelled since the last run leaves it stale, and a stale
-  catalogue means that field cannot be given a definition:
+- [ ] **1b. Field catalog is current** — it is generated from the UI, so a
+  field added or relabeled since the last run leaves it stale, and a stale
+  catalog means that field cannot be given a definition:
 
   ```bash
   python3 tools/gen_field_catalog.py --check
@@ -175,7 +175,7 @@ into the wrong group is how one ended up running after step 2.
   ```
 
 - [ ] **1b-iii. Diagram geometry** — alignment snapping, angle snapping, the
-  export extent, where a task's circle sits and which colour it takes are pure
+  export extent, where a task's circle sits and which color it takes are pure
   functions, so they can be checked without a browser. Nothing here proves the
   dragging *feels* right or that the status marks are legible; those are the
   click-through:
@@ -325,20 +325,20 @@ Sign in as a **SuperAdmin** and confirm each:
     above a modal rather than behind it
   - A long system name does not run underneath the little caret on the right
   - In the account picker on a contributor, accounts already linked to somebody
-    are **greyed and unselectable**, naming who has them
-- [ ] **Task colours** (0.7.1) — on the diagram, with the key open:
-  - **The key is not all grey.** Each of the five swatches shows its own
-    colour, matching the circles on the diagram. A stylesheet rule beats a
+    are **grayed and unselectable**, naming who has them
+- [ ] **Task colors** (0.7.1) — on the diagram, with the key open:
+  - **The key is not all gray.** Each of the five swatches shows its own
+    color, matching the circles on the diagram. A stylesheet rule beats a
     `fill` attribute, so this is the thing to look at first
-  - Each circle's colour matches the key, and each has its **mark** inside it
-    (a tick, an exclamation mark, a half-filled disc, a hollow ring, or nothing
+  - Each circle's color matches the key, and each has its **mark** inside it
+    (a check, an exclamation mark, a half-filled disc, a hollow ring, or nothing
     for a task with no status recorded)
   - **Check the marks are legible at 0.5x zoom.** They sit inside an 11px
     circle, and nothing automated can tell you whether they read — if one
     cannot be made out, say so; the answer is a bigger circle
   - A task whose end date has passed is red and its hover card says *Past its
     end date*, even when its status says In progress
-  - **A task whose only dates are on a subtask still colours.** Set a subtask
+  - **A task whose only dates are on a subtask still colors.** Set a subtask
     to In progress with an end date of yesterday, leave the task's own dates
     empty, and confirm the circle goes red rather than staying yellow
   - A task with no status and a start date in the past is **orange**
@@ -346,8 +346,8 @@ Sign in as a **SuperAdmin** and confirm each:
 - [ ] **The key earns its complexity** (0.7.1) — three states to check, which
   means looking at a view with no tasks as well as one with them:
   - A view with **no tasks**: no task entry in the key at all
-  - Tasks present but nothing colour-coded (no statuses, no dates past): a
-    single **grey circle labelled "Task"**, not the five-row key
+  - Tasks present but nothing color-coded (no statuses, no dates past): a
+    single **gray circle labeled "Task"**, not the five-row key
   - Set one status or let one date pass: the five-row key appears
 - [ ] **A task's window from its subtasks** (0.7.1) — the confusion this
   removes is subtask dates entered while the task itself still reads blank:
@@ -373,6 +373,29 @@ Sign in as a **SuperAdmin** and confirm each:
   - Same-day start and end is accepted
 - [ ] **Add Task window** (0.7.1) — in a scenario, the **Proposed** checkbox is
   above an **Overview** heading, matching Add System and Add Flow
+- [ ] **Dependencies** (0.8.0) — open a task, check **Add Dependencies** under
+  the expected start date:
+  - The picker lists every other task and can be typed into; the task itself
+    is not offered
+  - Add two, then remove one. Uncheck the box with dependencies still set and
+    confirm it **asks before discarding them**
+  - Set a start date in the **past** and leave a dependency unfinished: the
+    circle turns red with a **cross**, and the hover card names what it is
+    waiting on
+  - Complete that dependency: the circle becomes the orange hollow ring
+  - Set the start date in the **future** instead: the circle goes gray
+    whatever the dependencies say
+  - Clear every date on the task *and* its subtasks: gray until the last
+    dependency completes, then orange
+  - Try to make a loop (A waits on B, then B waits on A). It is refused with
+    a message, and the task is left as it was
+- [ ] **Dependencies in a scenario** (0.8.0) — with two linked tasks in the
+  live view, create a scenario. The copied task still has its dependency, and
+  it points at the scenario's **own** copy rather than the live task
+- [ ] **Un-hide everything** (0.8.0) — in a scenario, the button asks for
+  confirmation, and the message afterwards says how many items came back
+- [ ] **Help panel** (0.8.0) — on the Tasks screen, "For this screen" lists
+  the tasks article, and it opens
 - [ ] **Tasks** (0.7.0):
   - The sidebar shows a **Tasks** count; the catalog lists them with what each
     is attached to and, where there are steps, how many are done
@@ -391,9 +414,9 @@ Sign in as a **SuperAdmin** and confirm each:
     line reads "Add Status" rather than a value
   - Add two subtasks, assign one to somebody, give one a date range, and save;
     the flyout shows the status as **determined based on subtasks**, not as a
-    control, and each subtask's fields are labelled under its number
-  - Tick one of two subtasks: the task reads **In progress**, not Completed
-  - Tick every subtask; the task reads **Completed**. Untick one; it reads
+    control, and each subtask's fields are labeled under its number
+  - Check one of two subtasks: the task reads **In progress**, not Completed
+  - Check every subtask; the task reads **Completed**. Uncheck one; it reads
     **In progress**
   - **Copy task**: everything comes across except the dates and the progress,
     and the copy opens so the dates can be set
@@ -420,13 +443,13 @@ Sign in as a **SuperAdmin** and confirm each:
   - The hover card appears **immediately**, not after a pause
   - Clear a status back to "Add Status" and save: it stays cleared after a
     refresh
-  - "Add Status" and "Add Contributor" show grey and italic in the closed
+  - "Add Status" and "Add Contributor" show gray and italic in the closed
     dropdown
   - **Export** the diagram and confirm the circles are in the file
   - Inside a scenario: the tasks are the scenario's own copies, editing one
     marks it **Modified**, and Current Architecture is untouched
-  - A task's **Proposed** checkbox appears in a scenario, ticks and unticks,
-    and draws the circle with a dashed ring when ticked
+  - A task's **Proposed** checkbox appears in a scenario, checks and unchecks,
+    and draws the circle with a dashed ring when checked
 - [ ] With a details panel open, clicking the diagram closes it (and the first
   click does nothing else)
 - [ ] **Required fields**, in all three places a record can be edited — the Add
@@ -504,7 +527,7 @@ Sign in as a **SuperAdmin** and confirm each:
 - [ ] **Short upward data flow**: place two systems almost on top of each other
   with a flow from the lower to the upper, and confirm the label does not cover
   the arrowhead. Check a long flow and a sideways flow still look as they did
-- [ ] **Invite the same people**: branch a scenario that has collaborators, tick
+- [ ] **Invite the same people**: branch a scenario that has collaborators, check
   the box, and confirm they arrive with the roles they had. Try it with someone
   both carried over and separately invited — it should not error
 - [ ] **Status** no longer offers Deprecated, for systems or data flows
@@ -515,7 +538,7 @@ Sign in as a **SuperAdmin** and confirm each:
   field whose label differs by view — *Classification* on a system — and check
   the marker appears in both places from the single definition. Then clear it
   and confirm the marker disappears
-- [ ] **Shared definitions**: pick **Data Steward**, tick *use one definition
+- [ ] **Shared definitions**: pick **Data Steward**, check *use one definition
   everywhere this field appears*, and save. Confirm the marker shows the same
   text on a system, a data flow and a data element. Then write a different
   definition for the data flow alone and confirm it overrides there while the
@@ -523,7 +546,7 @@ Sign in as a **SuperAdmin** and confirm each:
   should reappear
 - [ ] **Person-picker fields appear in the list**: *Data Steward* under System →
   Data Management, and *Owner* and *Data Steward* under Data Flow → Ownership.
-  Those are drawn by a different component and were missing from the catalogue
+  Those are drawn by a different component and were missing from the catalog
   at first
 - [ ] Sign out, and confirm you are returned to the sign-in page
 
@@ -549,6 +572,20 @@ Finally:
 
 - [ ] **Ask Claude** to bump `version.py` and draft the release notes into
   `SEED_RELEASES` in `app.py` **as a draft** (`is_published = 0`).
+
+- [ ] **Knowledge base review.** Claude should offer this without being asked;
+  if it has not, ask. What you want is a short list: which existing help
+  articles this release makes wrong or incomplete, and anything new in the
+  release that has no article at all. "Nothing needs changing" is a valid
+  answer and should be said out loud rather than left silent. Say go ahead on
+  the ones you want and Claude drafts them. An article is what somebody reads
+  when they are already confused, which is why it is worth more care than the
+  release notes it accompanies.
+
+- [ ] **Read the help article drafts before they ship.** Help articles live in
+  the code, not the database, so there is no draft state to fall back on —
+  once the commit goes out, the article is what users read. This review is the
+  only one there is.
 
 - [ ] **Read the draft notes and edit them.** They are written for users, not
   developers. This is your review step and it is deliberate — publishing is
@@ -606,18 +643,25 @@ Finally:
   > it resets that password on *every* deploy. It is not normally set, so
   > there is nothing to do here unless you set it yourself.
 
-- [ ] **Commit and push.** Ask Claude for the commit message, or write one
-  summarising the release.
+- [ ] **Commit and push.** Claude writes the message to `COMMIT_MSG.txt` in the
+  project folder; these three lines are the whole thing to paste.
 
   ```bash
   git add -A
   git status                    # read this — nothing unexpected should be listed
-  git commit -m "<message>"
-  git push
+  git commit -F COMMIT_MSG.txt && git push
   ```
 
-  `.env`, `lineage.db`, `node_modules` and generated spreadsheets are
-  excluded by `.gitignore`. If `git status` shows any of them, stop and ask.
+  `-F` reads the message from the file, which is the only reliable way to get a
+  long one in. A message pasted straight into Terminal breaks on the first
+  quote, backtick or line that looks like a shell word, and `-m` strings or
+  heredocs both hit that — Ben lost a message to it. `COMMIT_MSG.txt` is
+  untracked, so it never lands in the commit it describes, and it is rewritten
+  every release.
+
+  `.env`, `lineage.db`, `node_modules`, generated spreadsheets and
+  `COMMIT_MSG.txt` are excluded by `.gitignore`. If `git status` shows any of
+  them, stop and ask.
 
 - [ ] **Watch the deploy.** Render → web service → **Logs**. You are looking
   for, in order:

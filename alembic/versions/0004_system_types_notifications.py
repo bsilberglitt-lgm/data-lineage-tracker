@@ -1,7 +1,7 @@
 """System types as data, resource descriptions, and notifications.
 
 * ``system_type`` — the list of system types becomes editable data rather than a
-  hard-coded list, with a description and a colour per type. Colours come from a
+  hard-coded list, with a description and a color per type. Colors come from a
   vetted palette; every combination meets WCAG 2.1 AA (see ACCESSIBILITY.md).
 * ``ETL Process`` and ``Internal`` are retired; systems using them become
   ``Data Store``.
@@ -69,7 +69,7 @@ def upgrade():
     # Store, which is what CONNECT (the only real case) actually is.
     op.execute("UPDATE system SET system_type = 'Data Store' "
                "WHERE system_type IN ('ETL Process', 'Internal')")
-    # Anything else unrecognised also lands somewhere valid rather than
+    # Anything else unrecognized also lands somewhere valid rather than
     # rendering as an unknown type on the diagram.
     op.execute("UPDATE system SET system_type = 'Data Store' "
                "WHERE system_type NOT IN "

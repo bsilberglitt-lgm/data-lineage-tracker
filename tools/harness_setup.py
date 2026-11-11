@@ -21,7 +21,7 @@ Run it after any sandbox reset, or after adding a migration:
 **The schema is generated from alembic/versions/, not written by hand**, so the
 harness cannot quietly disagree with production about a column. What it still
 cannot prove is anything PostgreSQL-specific: partial indexes, collation,
-concurrent access, and real foreign-key behaviour under load. Those need
+concurrent access, and real foreign-key behavior under load. Those need
 `docker compose up` and the click-through.
 """
 

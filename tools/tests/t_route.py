@@ -79,8 +79,8 @@ st,r=rq(boss,"PUT",f"/api/flows/{sfid}/route",{"source_anchor":"top:0"})
 ck("a scenario flow cannot be routed from Current Architecture", st==404, str(st))
 
 print("\n-- display name --")
-st,r=rq(boss,"PUT",f"/api/flows/{fid}",{"display_name":"Nightly enrolment"})
-ck("a display name is stored", st==200 and r["display_name"]=="Nightly enrolment",
+st,r=rq(boss,"PUT",f"/api/flows/{fid}",{"display_name":"Nightly enrollment"})
+ck("a display name is stored", st==200 and r["display_name"]=="Nightly enrollment",
    f"{st} {r.get('display_name')}")
 st,r=rq(boss,"PUT",f"/api/flows/{fid}",{"display_name":"x"*40})
 ck("it is capped at 20 characters", st==200 and len(r["display_name"])==20,
