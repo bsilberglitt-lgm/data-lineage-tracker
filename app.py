@@ -1258,8 +1258,37 @@ def seed_schema():
         system_id = data.get("system_id")
         if not system_id:
             continue
-        # Parent system must exist in this database
-        if not conn.execute("SELECT 1 FROM system WHERE system_id=?", (system_id,)).fetchone():
+        # Parent system must exist in this database, AND be the one this file
+        # was written for.
+        #
+        # **The name check is not belt-and-braces; it closes a real hole.**
+        # System ids are sequential (SYS-001, SYS-002, ...), so a seed file
+        # naming SYS-003 collides with whatever happens to be third in any
+        # other deployment. `sample_schema.json` names SYS-003, and in the
+        # Maine database SYS-003 is the real operational data store.
+        #
+        # Matching on the id alone, the only thing standing between a
+        # fictional schema and a real system was the "already has tables"
+        # check below — and clearing a system's schema to re-upload a fresh
+        # .sql is an ordinary maintenance action. The next restart would have
+        # injected four invented tables into a real system, where they would
+        # look mapped and could have governance attached to them.
+        #
+        # So the file has to agree about the name too. `sample_schema.json`
+        # says "Operational Data Store"; Maine's SYS-003 is "NEO (State
+        # Operational Data Store)". Different, so it can never be seeded
+        # there. A fresh installation's SYS-003 is exactly that name, so the
+        # sample still loads. A file with no `system_name` is refused rather
+        # than trusted, because an unnamed file is one that predates this
+        # check and cannot have been verified against anything.
+        row = conn.execute("SELECT name FROM system WHERE system_id=?",
+                           (system_id,)).fetchone()
+        if not row:
+            continue
+        expected = (data.get("system_name") or "").strip()
+        if not expected or row["name"].strip() != expected:
+            print(f"  Skipping schema seed {path.name}: {system_id} is "
+                  f"'{row['name']}' here, not '{expected or '(unnamed)'}'")
             continue
         # Per-system idempotency: skip if this system already has a schema
         if conn.execute("SELECT COUNT(*) FROM schema_table WHERE system_id=?",
