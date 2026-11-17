@@ -476,6 +476,34 @@ recording, arriving by a route nobody was watching.
 schema declares one, because the application does its own cascades on purpose,
 so emitting a guess would invent behavior the migrations do not describe.
 
+#### A schema seed must agree about the system's NAME, not just its id
+
+System ids are sequential — `SYS-001`, `SYS-002` — so a seed file naming
+`SYS-003` collides with whatever happens to be third in any other deployment.
+`sample_schema.json` names `SYS-003`, and in the Maine database `SYS-003` is
+the real operational data store.
+
+Matching on the id alone, the only thing between a fictional schema and a real
+system was the "already has tables" guard. **Clearing a system's schema to
+re-upload a fresh `.sql` is an ordinary maintenance action**, and the next
+restart would have injected four invented tables into a real system, where
+they would look mapped and could have governance attached to them. The guard
+held in practice and the hazard was one routine action from firing — the worst
+kind, because nothing is wrong until something ordinary happens.
+
+`seed_schema()` now requires the file's `system_name` to match the stored name.
+`sample_schema.json` says "Operational Data Store"; Maine's SYS-003 is "NEO
+(State Operational Data Store)". A file with **no** `system_name` is refused
+rather than trusted, because an unnamed file predates this check and cannot
+have been verified against anything. The skip prints which name it found and
+which it wanted, so a legitimate rename is diagnosable rather than silent.
+
+The general lesson, and it is new in this file: **a seed is a write into
+somebody else's database.** Every other guard here is about the harness
+disagreeing with production. This one was about shipped example data reaching a
+real system, which is a different failure and needs its own kind of check —
+identity, not idempotency.
+
 #### Schema seed files are globbed into the harness, not listed
 
 `seed_schema()` globs `*_schema.json`, so `harness_setup.py` globs them too. A
