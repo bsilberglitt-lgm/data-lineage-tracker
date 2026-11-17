@@ -75,6 +75,17 @@ hosts):
 | `BOOTSTRAP_SUPERADMIN_EMAIL` | First-run only: creates the initial SuperAdmin | — |
 | `BOOTSTRAP_SUPERADMIN_PASSWORD` | Optional; generated and logged once if omitted | — |
 | `SCRYPT_N` | Password hashing cost | `32768` |
+| `SMTP_PASSWORD` | SMTP credential, when email delivery is set to SMTP | — |
+| `RESEND_API_KEY` | Resend credential, when delivery is set to Resend | — |
+| `EMAIL_SINK_PATH` | **Testing only.** Writes mail to a file instead of sending it | — |
+
+Email is configured in two places on purpose. The host, port, from address and
+public address are set by a SuperAdmin under **Preferences → Email**, so
+setting mail up does not require access to the server; only the credential is
+an environment variable, because a secret in the database would travel in
+every nightly backup. **Preferences → Email status** reports whether the
+credential was found and has a *Send test message* button that gives the real
+reason for a failure.
 
 See `.env.example`.
 
@@ -197,7 +208,7 @@ thousands of per-column rows.
 Click any row to open its detail panel.
 
 ### Database Schema Drill-Down
-Systems that have a database schema mapped — currently **NEO** (State Operational Data Store) and **Federal Reporting (EDFacts)** — show a **SCHEMA** badge on their node and an **Explore Schema** button in their detail panel. Double-clicking the node also drills in.
+A system with a database schema mapped shows a **SCHEMA** badge on its node and an **Explore Schema** button in its detail panel. Double-clicking the node also drills in. In the sample data that is the Operational Data Store.
 
 Inside the schema view you can:
 - **Browse the entity-relationship diagram** of the system's tables — each card lists its columns with PK/FK markers and data types. Drag table headers to rearrange (positions are saved), scroll to zoom, and drag the background to pan. Foreign-key relationships are drawn as connectors that follow the cards.
@@ -230,11 +241,8 @@ data-lineage-tracker/
   alembic/
     env.py            Reads DATABASE_URL
     versions/         Versioned schema migrations
-  neo_schema.json          NEO database schema seed (tables, columns, foreign keys)
-  fedreporting_schema.json Federal Reporting (EDFacts) database schema seed
-  migrate_sqlite_to_postgres.py  One-time import from the old lineage.db
+  sample_schema.json       Sample database schema seed (tables, columns, foreign keys)
   selftest.py         End-to-end verification script
-  lineage.db          Legacy SQLite database (migration source only; no longer used at runtime)
   static/
     index.html        Frontend (React, runs in the browser)
   README.md           This file
@@ -279,33 +287,39 @@ The app stores these entity types:
 
 See the **Data_Lineage_Tracker_Data_Model.docx** for the full schema reference.
 
-## Seed Data
+## Sample Data
 
-The app comes pre-loaded with the SIF/CONNECT data flow based on the state's SIF 3.x profile:
+An **empty** database gets a small fictional district on first start, so there
+is something to look at before you have entered anything of your own:
 
-- **8 systems**: District SIS, CONNECT, NEO (ODS), LDS, EDFacts, Funding Calculations, Generate, District HR Systems
-- **7 data flows**: across collection, reporting, funding, and longitudinal storage
-- **33 data elements**: From the SIF profile (Student ID, enrollment, demographics, special ed, discipline, etc.)
-- **NEO database schema** (from `neo_schema.json`): 56 tables and 649 columns across the `Ceds` and `core` schemas, with foreign-key relationships
-- **Federal Reporting (EDFacts) schema** (from `fedreporting_schema.json`): 62 tables and ~2,650 columns across the `Assessment`, `NSC`, and `Reports` schemas
+- **8 systems** laid out from collection through to reporting — district source
+  systems, an integration platform, an operational store, a longitudinal
+  store, and three reporting destinations
+- **7 data flows**, including one carrying no PII and one on its own
+  collection calendar, so the diagram shows more than a single pipeline
+- **12 data elements** covering the cases the catalogs have to display: PII and
+  not, FERPA-protected and not, three classifications, a derived element and a
+  coded one
+- **A sample database schema** (`sample_schema.json`): two schemas, four
+  tables, three foreign keys — enough to show what the schema drill-down does
 
-Database schemas are seeded independently of the main seed data, one file per system (`*_schema.json`). Seeding is idempotent per system, so an existing deployment gains each schema on its next start without losing records or re-seeding ones already present. To map another system's schema, drop in a new `<name>_schema.json` declaring its `system_id`.
+**None of it describes a real organization.** Names are roles rather than
+products, so nothing here should be mistaken for a recommendation or for
+another agency's architecture. Delete it once you have seen what the features
+do; it is seeded only into a database with no systems in it, so it will not
+come back.
 
-## Migrating from the Old SQLite Database
+### Mapping your own schema
 
-A one-time script copies everything out of `lineage.db` into PostgreSQL. It only
-reads the SQLite file and never modifies it.
+Two routes. Upload a `.sql` file against a system from its details panel, which
+is the normal one and keeps a revertible snapshot. Or drop a
+`<name>_schema.json` file beside the application declaring the `system_id` it
+belongs to, which is how the sample is loaded.
 
-```bash
-docker compose up -d                                              # start the stack
-docker compose exec app python migrate_sqlite_to_postgres.py --dry-run   # preview
-docker compose exec app python migrate_sqlite_to_postgres.py --replace   # copy
-```
-
-The script copies tables parent-first so foreign keys are satisfied, matches
-columns by name, reports any column present in one database but not the other,
-and verifies row counts at the end. Without `--replace` it refuses to run if the
-target tables already contain data, so it can't silently duplicate records.
+Schema seeding is **idempotent per system**: a system is only seeded if it has
+no tables yet, and a system that does not exist is skipped entirely. So adding
+a file seeds just that system, an existing deployment is never re-seeded, and
+nothing is lost.
 
 ## Resetting the Database
 

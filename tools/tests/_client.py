@@ -6,7 +6,7 @@
 Every suite used to open with this, copied eleven times:
 
     st, b = rq(boss, "POST", "/api/auth/login",
-               {"email": "ben.silberglitt@maine.gov",
+               {"email": "ben.silberglitt@example.gov",
                 "password": "Bootstrap-Temp-7xQ!"})
     boss["t"] = b["csrf_token"]
     rq(boss, "POST", "/api/auth/change-password",
@@ -87,12 +87,20 @@ def session():
         urllib.request.HTTPCookieProcessor(cj)), "t": None, "base": None}
 
 
-def request(s, method, path, body=None):
-    """(status, parsed-body). The real status code, so 201 is visible."""
+def request(s, method, path, body=None, extra_headers=None):
+    """(status, parsed-body). The real status code, so 201 is visible.
+
+    `extra_headers` exists for one test that cannot be written without it:
+    proving a password reset link is built from the `app_base_url` setting
+    rather than from the request's Host header. Sending a forged Host is the
+    only way to assert that, and it has to go through the same helper as every
+    other call so the session and CSRF handling are identical.
+    """
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
     if s.get("t"):
         headers["X-CSRF-Token"] = s["t"]
+    headers.update(extra_headers or {})
     req = urllib.request.Request((s.get("base") or BASE) + path,
                                  data=data, method=method, headers=headers)
     try:
@@ -268,6 +276,21 @@ def ensure_account(boss, rq, email, first, last, role, temp, extra=None):
             reset = {"password": temp, "is_active": 1, "role": role}
             reset.update(extra or {})
             rq(boss, "PUT", f"/api/users/{uid}", reset)
+        else:
+            # Creation failed AND there is no account to fall back on, so
+            # everything after this is about a person who does not exist.
+            # Printed loudly rather than returned quietly, because the caller
+            # gets a plausible-looking password either way and the failures
+            # then point at the feature instead of at this.
+            #
+            # The way this happens in practice: the temporary password
+            # contains the first or last name being passed in, which the
+            # password policy refuses. `Temp-Pw-For-Reset-1!` for a person
+            # called Reset Me is refused with "Must not contain your name".
+            print(f"\n  !! could not create or find {email}: {st} {_short(_)}"
+                  f"\n  !! every later check about that account is meaningless."
+                  f"\n  !! if the message mentions the name, the temporary "
+                  f"password contains it.\n")
 
     s = session()
     s["base"] = BASE
@@ -289,8 +312,22 @@ def ensure_account(boss, rq, email, first, last, role, temp, extra=None):
     return st_in, s, held
 
 
-def unique_email(local, domain="maine.gov"):
+def _short(payload):
+    try:
+        return json.dumps(payload)[:200]
+    except Exception:
+        return str(payload)[:200]
+
+
+def unique_email(local, domain="example.gov"):
     """An address no earlier run can have used.
+
+    `example.gov` rather than a real domain, and that is a safety property
+    rather than tidiness: `example.gov` is IANA-reserved and can never receive
+    mail, so a misconfigured send cannot reach a real person. That began to
+    matter in 0.9.0, when the app gained a mailer. These were `maine.gov`
+    addresses until 0.9.1, which also read as real colleagues in a repository
+    about to be made public.
 
     `ensure_account` covers an account a suite reuses. It cannot help a check
     that needs an account **nobody has touched** — "a title given at creation

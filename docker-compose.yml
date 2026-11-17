@@ -75,6 +75,22 @@ services:
       BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE: ${BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE:-}
       # Emergency password reset. Normally unset; see RELEASE_CHECKLIST.md.
       BOOTSTRAP_SUPERADMIN_RESET: ${BOOTSTRAP_SUPERADMIN_RESET:-}
+      # Mail credentials, for testing email locally. Only the secret lives in
+      # the environment; everything else is in Preferences. See mailer.py.
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      # Test only: writes mail to a file instead of sending it, so t_email.py
+      # can read what "was sent". Point it INSIDE /app — the project directory
+      # is mounted there, so the file lands beside your checkout and the suite,
+      # running on the host, can read the same bytes the container wrote. A
+      # path outside /app would be written inside the container and invisible.
+      #
+      #     EMAIL_SINK_PATH=/app/.mail-test.jsonl docker compose up -d
+      #
+      # NEVER set this on a deployed environment: password reset would report
+      # success and deliver nothing. The app warns loudly at startup when it
+      # finds it, and Preferences -> Email status says so too.
+      EMAIL_SINK_PATH: ${EMAIL_SINK_PATH:-}
     ports:
       - "8765:8765"
     depends_on:

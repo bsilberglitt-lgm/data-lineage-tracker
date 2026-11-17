@@ -29,6 +29,7 @@ import audit  # noqa: E402
 import schema_import  # noqa: E402
 import scenarios  # noqa: E402
 import help_articles  # noqa: E402
+import mailer  # noqa: E402  (SMTP / Resend; stdlib only)
 import field_catalog  # noqa: E402  (generated; see tools/gen_field_catalog.py)
 from version import VERSION  # noqa: E402
 
@@ -879,6 +880,27 @@ def resolve_governance(system_row, table_row, column_row=None):
 # ---------------------------------------------------------------------------
 
 def seed_db():
+    """Put a small fictional district in an empty database, so a new
+    installation has something to look at.
+
+    **Everything here is invented.** Until 0.9.1 this was Maine DOE's actual
+    architecture — eight real systems, the real SIF/CONNECT pipeline, and 33
+    data elements from the state's SIF profile. That was right while this was a
+    one-department tool and wrong the moment it was shared: an adopter starting
+    from an empty database would watch another state's systems appear on first
+    run and have to work out which parts were examples and which were theirs.
+
+    So the names are **roles rather than products** — "Statewide Integration
+    Platform" rather than any particular vendor or state's name for one. The
+    shape is deliberately the same as a real deployment, because the point of a
+    seed is to demonstrate the features: layered systems from source to
+    reporting, flows that carry PII and flows that do not, elements with
+    different classifications, and two schemas to drill into. An adopter
+    deletes all of it once they have seen what it does.
+
+    Seeded only into a database with no systems, so it never reappears after
+    somebody clears it out.
+    """
     conn = get_db()
     # Only seed if no systems exist yet
     if conn.execute("SELECT COUNT(*) FROM system").fetchone()[0] > 0:
@@ -887,313 +909,332 @@ def seed_db():
 
     now = datetime.datetime.now().isoformat()
 
-    # Stakeholders
+    # Contributors. Role titles rather than invented people: a name in a seed
+    # is a name somebody has to recognise as fictional, and these records
+    # exist to show where governance accountability attaches, not to populate
+    # a staff directory. Email and phone stay NULL for the same reason.
     conn.execute("""INSERT INTO contributor (contributor_id,name,title,organization_unit,email,phone,
         role_type,notes,governance_role,governance_responsibilities,training_status,last_training_date,
         created_date,updated_date) VALUES
         ('CON-001','Data Integration Manager','Manager, Data Integration','Data Management Division',
-         NULL,NULL,'Data Owner','Primary contact for SIF/CONNECT data pipeline',
+         NULL,NULL,'Data Owner','Primary contact for the collection pipeline',
          'Data Owner','Oversees data collection policies, approves data sharing agreements, ensures compliance with FERPA and state regulations',
-         'Current','2025-09-15',?,?)""", (now, now))
+         'Current','2026-09-15',?,?)""", (now, now))
     conn.execute("""INSERT INTO contributor (contributor_id,name,title,organization_unit,email,phone,
         role_type,notes,governance_role,governance_responsibilities,training_status,last_training_date,
         created_date,updated_date) VALUES
-        ('CON-002','ODS Administrator','Database Administrator','IT Infrastructure',
-         NULL,NULL,'System Admin','Manages the Operational Data Store infrastructure',
-         'Data Steward','Day-to-day maintenance of ODS and LDS, data quality monitoring, backup and recovery operations',
-         'Current','2025-10-01',?,?)""", (now, now))
+        ('CON-002','Data Store Administrator','Database Administrator','IT Infrastructure',
+         NULL,NULL,'System Admin','Manages the operational data store infrastructure',
+         'Data Steward','Day-to-day maintenance of the operational and longitudinal stores, data quality monitoring, backup and recovery operations',
+         'Current','2026-10-01',?,?)""", (now, now))
 
-    # Systems (with new governance fields)
+    # Systems. Eight, laid out left to right from collection through to
+    # reporting, so the diagram opens on something legible.
     systems = [
         ("SYS-001", "District Student Information Systems",
-         "Student Information Systems operated by local school districts (e.g., PowerSchool, Infinite Campus, Tyler SIS). These are the primary source of student demographic, enrollment, and discipline data.",
-         "Source", "Various (PowerSchool, Infinite Campus, Tyler)", "SIS Platforms", "Production",
+         "Student information systems operated by local school districts. The primary source of student demographic, enrollment and discipline data.",
+         "Source", "Various", "SIS Platforms", "Production",
          "Local School Districts", "CON-001", "School Districts", 1, 1, "Active",
          "Multiple vendors across districts; data quality varies by district", 100, 250,
          "Confidential", "Varies by district", "Varies by vendor", "HTTPS/TLS 1.2", None, 0,
          None, "Per district policy", "Per district policy", "Varies", "Varies",
-         "SIF 3.x with state extensions", "District staff with SIS access", "FERPA restrictions apply"),
-        ("SYS-002", "CONNECT Integration Platform",
-         "SIF-based integration middleware that receives data from district SIS platforms and routes it to the state ODS. Performs initial validation and SIF XML processing.",
-         "Data Store", "SIF Association / State-developed", "SIF Agent / Middleware", "Production",
+         "Interoperability standard with state extensions", "District staff with SIS access",
+         "FERPA restrictions apply"),
+        ("SYS-002", "Statewide Integration Platform",
+         "Integration middleware that receives data from district systems and routes it to the operational data store. Performs initial validation.",
+         "Data Store", "State-developed", "Integration middleware", "Production",
          "Data Management Division", "CON-001", "Department of Education", 1, 1, "Active",
-         "Uses SIF 3.x data model with state-specific extensions", 400, 250,
-         "Confidential", "Role-based access", "AES-256", "TLS 1.2", "2025-06-15", 1,
+         "Carries the state interoperability profile and its extensions", 400, 250,
+         "Confidential", "Role-based access", "AES-256", "TLS 1.2", "2026-06-15", 1,
          "CON-001", "7 years per state policy", "Secure deletion", "Daily", "Documented",
-         "SIF 3.x", "Data Management Division staff", "No external sharing without agreement"),
-        ("SYS-003", "NEO (State Operational Data Store)",
-         "Central repository that receives validated data from CONNECT. Stores current-year operational data for all students, schools, and districts.",
-         "Data Store", "State-developed", "SQL Server", "Production",
+         "Interoperability standard", "Data Management Division staff",
+         "No external sharing without agreement"),
+        ("SYS-003", "Operational Data Store",
+         "Central repository receiving validated data from the integration platform. Holds current-year operational data for all students, schools and districts.",
+         "Data Store", "State-developed", "Relational database", "Production",
          "IT Infrastructure", "CON-002", "Department of Education", 1, 1, "Active",
-         "Primary source of truth for current-year student data", 700, 250,
-         "Confidential", "Role-based access with AD integration", "TDE (Transparent Data Encryption)", "TLS 1.2", "2025-08-01", 1,
-         "CON-002", "7 years per state policy", "Secure deletion with verification", "Daily incremental, weekly full", "Full DR plan with 4-hour RTO",
-         "State data model (derived from SIF/CEDS)", "Authorized DOE staff only", "Restricted to authorized personnel per FERPA"),
-        ("SYS-004", "Longitudinal Data System (LDS)",
-         "Long-term storage of historical student records spanning multiple years. Fed from the ODS after annual processing and validation.",
-         "Data Store", "State-developed", "SQL Server / Data Warehouse", "Production",
+         "Source of truth for current-year student data", 700, 250,
+         "Confidential", "Role-based access with directory integration",
+         "Transparent data encryption", "TLS 1.2", "2026-08-01", 1,
+         "CON-002", "7 years per state policy", "Secure deletion", "Nightly", "Documented",
+         "Interoperability standard", "Department analysts and administrators",
+         "Aggregate reporting only without an agreement"),
+        ("SYS-004", "Longitudinal Data System",
+         "Multi-year store built from annual snapshots of the operational data store. Supports cohort and trend analysis.",
+         "Data Store", "State-developed", "Relational database", "Production",
          "IT Infrastructure", "CON-002", "Department of Education", 1, 1, "Active",
-         "Contains historical records back to initial implementation", 700, 450,
-         "Confidential", "Role-based access with AD integration", "TDE (Transparent Data Encryption)", "TLS 1.2", "2025-08-01", 1,
-         "CON-002", "Permanent retention", "N/A - permanent archive", "Daily incremental, weekly full", "Full DR plan with 4-hour RTO",
-         "State longitudinal data model", "Authorized research and reporting staff", "Strict FERPA controls; data sharing requires agreement"),
-        ("SYS-005", "Federal Reporting (EDFacts)",
-         "Federal reporting system for required compliance submissions including enrollment counts, assessment results, and program participation.",
-         "Destination", "US Department of Education", "EDFacts Submission System (ESS)", "Production",
-         "Data Management Division", "CON-001", "Federal Government", 1, 1, "Active",
-         "Annual submissions required under ESEA/IDEA", 700, 50,
-         "Confidential", "Credential-based (ESS login)", "Federal standard", "HTTPS/TLS", None, 1,
-         None, "Per federal retention schedule", "Per federal policy", "N/A - federal system", "Federal DR",
-         "EDFacts file specifications", "Authorized submission staff", "Federal disclosure avoidance rules apply"),
-        ("SYS-006", "State Funding Calculations",
-         "System used to calculate state education funding allocations based on enrollment, demographics, and program participation data from the ODS.",
-         "Destination", "State-developed", "Custom Application", "Production",
-         "Finance Division", None, "Department of Education", 1, 1, "Active",
-         "Driven by state funding formula; uses ADM and program counts", 400, 450,
-         "Sensitive", "Role-based access", "AES-256", "TLS 1.2", "2025-05-01", 1,
-         None, "7 years per state policy", "Secure deletion", "Weekly", "Documented",
-         "State funding formula specifications", "Finance Division staff", "Internal use only; aggregate data may be published"),
-        ("SYS-007", "Generate",
-         "EdFi Alliance's Generate application used to produce and submit federal EDFacts reports. Receives data from the Federal Reporting pipeline.",
-         "Destination", "CIID / Ed-Fi Alliance", "Generate (Open Source)", "Production",
-         "Data Management Division", "CON-001", "Department of Education", 1, 1, "Active",
-         "Open-source tool for EDFacts file generation and submission", 950, 50,
-         "Confidential", "Role-based access", "AES-256", "HTTPS/TLS", None, 1,
-         None, "Per federal retention schedule", "Secure deletion", "N/A", "Documented",
-         "EDFacts file specifications, CEDS", "Authorized reporting staff", "Federal disclosure avoidance rules apply"),
-        ("SYS-008", "District HR Systems",
-         "Human Resources and staffing systems operated by local school districts (e.g., Munis, Tyler, Frontline). These are the primary source of staff demographic, certification, assignment, and employment data.",
-         "Source", "Various (Munis, Tyler, Frontline)", "HR/ERP Platforms", "Production",
-         "Local School Districts", None, "School Districts", 1, 1, "Active",
-         "Multiple vendors across districts; data includes staff demographics, credentials, assignments, and FTE", 100, 450,
-         "Confidential", "Varies by district", "Varies by vendor", "HTTPS/TLS", None, 0,
+         "Retains history the operational store does not", 700, 420,
+         "Confidential", "Role-based access", "Transparent data encryption", "TLS 1.2",
+         "2026-08-01", 1, "CON-002", "Indefinite for research", "Secure deletion",
+         "Nightly", "Documented", "Interoperability standard", "Research and policy staff",
+         "De-identified extracts only for external researchers"),
+        ("SYS-005", "Federal Reporting Extracts",
+         "Builds and submits the department's federal reporting files from operational data.",
+         "Destination", "State-developed", "Extract and submission tooling", "Production",
+         "Reporting Office", "CON-001", "Department of Education", 0, 0, "Active",
+         "Aggregate counts only; no student-level records leave here", 1000, 160,
+         "Public", "Role-based access", "AES-256", "TLS 1.2", "2026-07-01", 1,
+         "CON-001", "5 years", "Secure deletion", "Per submission", "Documented",
+         "Federal reporting specifications", "Reporting Office staff",
+         "Published after review"),
+        ("SYS-006", "Funding Calculations",
+         "Calculates district funding allocations from enrollment and program participation counts.",
+         "Destination", "State-developed", "Calculation engine", "Production",
+         "School Finance", "CON-001", "Department of Education", 0, 0, "Active",
+         "Allocations are published; the inputs are not", 1000, 300,
+         "Internal", "Role-based access", "AES-256", "TLS 1.2", "2026-07-01", 1,
+         "CON-001", "7 years", "Secure deletion", "Per cycle", "Documented",
+         "State funding formula", "School Finance staff", "Published after certification"),
+        ("SYS-007", "Public Reporting Portal",
+         "Public-facing dashboards and report cards built from suppressed, aggregated longitudinal data.",
+         "Destination", "Vendor-hosted", "Web application", "Production",
+         "Communications", "CON-001", "Department of Education", 0, 0, "Active",
+         "Small-cell suppression applied before anything reaches here", 1000, 440,
+         "Public", "Public", "Vendor-managed", "TLS 1.3", "2026-09-01", 1,
+         "CON-001", "Current and prior year", "Vendor deletion policy", "Vendor-managed",
+         "Vendor-managed", "Public reporting standard", "Public",
+         "Aggregates only; suppression rules applied"),
+        ("SYS-008", "District Human Resources Systems",
+         "District systems holding educator assignment and credential data, collected alongside student data.",
+         "Source", "Various", "HR Platforms", "Production",
+         "Local School Districts", "CON-001", "School Districts", 1, 0, "Active",
+         "Educator data rather than student data; separate collection calendar", 100, 420,
+         "Confidential", "Varies by district", "Varies by vendor", "HTTPS/TLS 1.2", None, 0,
          None, "Per district policy", "Per district policy", "Varies", "Varies",
-         "State staff data collection specifications", "District HR staff", "FERPA and personnel privacy restrictions apply"),
+         "Educator data standard", "District HR staff", "Personnel records restrictions apply"),
     ]
     for s in systems:
         conn.execute("""INSERT INTO system (system_id,name,description,system_type,vendor,technology,
             environment,managed_by,owner_id,organization,contains_pii,ferpa_protected,status,notes,
-            x_pos,y_pos,
-            data_classification,access_method,encryption_at_rest,encryption_in_transit,last_security_review,has_audit_trail,
-            data_steward_id,retention_schedule,destruction_method,backup_frequency,disaster_recovery,data_standards,
-            authorized_users,data_sharing_restrictions,
+            x_pos,y_pos,data_classification,access_method,encryption_at_rest,encryption_in_transit,
+            last_security_review,has_audit_trail,data_steward_id,retention_schedule,destruction_method,
+            backup_frequency,disaster_recovery,data_standards,authorized_users,data_sharing_restrictions,
             created_date,updated_date)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*s, now, now))
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            s + (now, now))
 
-    # Data Flows (with new governance fields)
+    # Data flows. Seven, including one that carries no PII (PL-006) and one on
+    # a separate collection calendar (PL-007), so the diagram shows more than a
+    # single straight pipeline.
     flows = [
-        ("PL-001", "District SIS to CONNECT (SIF Profile)",
-         "Primary data collection pipeline. Districts transmit student demographic, enrollment, and discipline data to the state via the SIF/CONNECT integration platform. Data conforms to the state SIF 3.x profile with state-specific extensions.",
-         "SYS-001", "SYS-002", "Inbound", "Daily", "SIF Agent (XML over HTTPS)", "SIF 3.x XML",
-         "1. District SIS extracts data per SIF profile\n2. SIF Agent packages as SIF XML messages\n3. CONNECT receives and validates against SIF schema\n4. Field-level validation (required fields, data types, code sets)\n5. Cross-reference validation (school IDs, district IDs)\n6. Accepted records queued for ODS loading",
-         "State-assigned IDs required (StateProvinceId for students, schools, LEAs)\nSIF extended elements carry state-specific data (ML program dates, special ed fields, truancy tracking)\nOptional fields become conditionally required based on program participation",
-         "SIF schema validation on all inbound messages\nRequired field checks per optionality column (M/O/C/MC)\nCharacter length enforcement per SIF profile\nCode set validation against state-defined value lists\nCross-object referential integrity (StudentPersonalRefId, SchoolInfoRefId)",
-         "SIF-level errors return error XML response to district agent\nField validation failures logged and flagged for district correction\nRecords with critical errors rejected; non-critical errors accepted with warnings",
-         1, 1, "FERPA, State data collection statute", None, "CON-001", "Active",
-         "Data quality varies significantly by district and SIS vendor\nSome districts still on older SIF 2.x format requiring translation",
-         # New governance fields
-         "Confidential", "TLS 1.2 (HTTPS)", "N/A - individual-level student data",
-         "SIF schema validation, required field checks, code set validation, cross-reference integrity checks",
-         "SIF 3.x with state extensions", "Per ODS retention schedule (7 years)",
-         "FERPA, State data collection statute"),
-        ("PL-002", "CONNECT to State ODS",
-         "Validated data from CONNECT loaded into the Operational Data Store. Includes transformation from SIF XML structure to relational database schema.",
-         "SYS-002", "SYS-003", "Inbound", "Daily", "Database ETL (SSIS)", "Relational (SQL Server)",
-         "1. Extract validated SIF XML from CONNECT queue\n2. Parse XML into staging tables\n3. Map SIF object hierarchy to flat relational structure\n4. Apply state business rules and derived fields\n5. Deduplication check against existing ODS records\n6. Merge/upsert into ODS production tables",
-         "Student deduplication using StateProvinceId as primary match key\nDerived fields calculated from raw data (e.g., age from BirthDate, enrollment duration)\nCode translations from SIF code sets to state reporting codes\nFiscal responsibility determined from ResidencyStatus",
-         "Referential integrity checks against ODS master tables\nDuplicate detection across districts\nBusiness rule validation (e.g., enrollment dates within school year)\nData completeness checks for required reporting fields",
-         "Staging table holds records pending review\nAutomated retry for transient failures\nManual review queue for business rule violations",
-         1, 1, "State data management policy", None, "CON-002", "Active",
-         "Deduplication logic needs refinement for students who transfer between districts mid-year",
-         "Confidential", "Internal network (encrypted)", "N/A - internal transfer",
-         "Deduplication checks, referential integrity, business rule validation, completeness checks",
-         "State data model (SIF-to-relational mapping)", "7 years per state policy",
-         "State data management policy"),
-        ("PL-003", "ODS to Longitudinal Data System",
-         "Annual load of validated, complete data from the ODS into the long-term longitudinal store.",
-         "SYS-005", "SYS-004", "Outbound", "Annually", "Database ETL (SSIS)", "Relational (SQL Server)",
-         "1. End-of-year snapshot from ODS\n2. Final validation and completeness checks\n3. Historical record matching and linking\n4. Load into LDS with school year tagging",
-         "Student records linked across years using StateProvinceId\nSchool year attribution for all records\nPoint-in-time snapshot preserves data as of year-end",
-         "Completeness checks for all required federal and state reporting fields\nHistorical consistency validation\nYear-over-year enrollment continuity checks",
-         "Incomplete records flagged for manual review before LDS load\nMissing data reported to districts for correction",
-         1, 1, "State statute, Federal longitudinal data requirements", None, "CON-002", "Active", None,
-         "Confidential", "Internal network (encrypted)", "N/A - internal archive transfer",
-         "Completeness checks, historical consistency, year-over-year continuity",
-         "State longitudinal data model", "Permanent retention",
-         "State statute, Federal longitudinal data requirements"),
-        ("PL-004", "ODS to Federal Reporting (EDFacts)",
-         "Extract and transform ODS data into required federal reporting formats for EDFacts submission.",
-         "SYS-003", "SYS-005", "Outbound", "Annually", "File Generation + ESS Upload", "Fixed-width / CSV per EDFacts specs",
-         "1. Extract relevant data from ODS\n2. Apply federal reporting business rules\n3. Aggregate to required reporting levels\n4. Generate EDFacts file specifications\n5. Validate against ESS edit checks\n6. Submit to EDFacts",
-         "Federal aggregation rules differ from state definitions in some cases\nSuppression rules for small cell sizes (FERPA)\nCross-file consistency required across EDFacts submissions",
-         "EDFacts edit checks (pre-submission)\nCross-file validation\nYear-over-year comparison for anomaly detection",
-         "Edit check failures require data correction and resubmission\nESS provides detailed error reports",
-         1, 1, "ESEA, IDEA, FERPA", None, "CON-001", "Active", "Tight federal submission deadlines; requires close coordination",
-         "Confidential", "HTTPS/TLS (ESS upload)", "Small cell suppression (n<10), complementary suppression",
-         "EDFacts edit checks, cross-file validation, year-over-year anomaly detection",
-         "EDFacts file specifications", "Per federal retention schedule",
-         "ESEA, IDEA, FERPA"),
-        ("PL-005", "ODS to State Funding Calculations",
-         "Enrollment and program participation data extracted from ODS for use in state funding formula calculations.",
-         "SYS-003", "SYS-006", "Outbound", "Annually", "Database view / ETL", "Relational",
-         "1. Extract ADM counts from ODS enrollment records\n2. Calculate weighted pupil counts per funding formula\n3. Apply program participation multipliers\n4. Generate funding calculation inputs",
-         "Average Daily Membership (ADM) calculation from enrollment records\nWeighted student counts based on program participation (Special Ed, EL, economically disadvantaged)\nFunding formula applies multipliers to base per-pupil amount",
-         "ADM counts reconciled against enrollment records\nProgram participation counts validated against eligibility data",
-         "Discrepancies flagged for district verification\nAppeals process for disputed counts",
-         1, 1, "State funding formula statute", None, "CON-001", "Active", None,
-         "Sensitive", "Internal network (encrypted)", "Aggregate counts only; no individual student data in output",
-         "ADM reconciliation, program participation validation",
-         "State funding formula specifications", "7 years per state policy",
-         "State funding formula statute"),
-        ("PL-006", "Federal Reporting to Generate",
-         "EDFacts data and file specifications passed to the Generate application for final file production, validation, and submission to the federal ESS system.",
-         "SYS-005", "SYS-007", "Outbound", "Annually", "File Transfer / Application Integration", "EDFacts file formats (fixed-width / CSV)",
-         "1. EDFacts reporting data prepared in federal reporting system\n2. Data transferred to Generate for file production\n3. Generate applies EDFacts file specifications\n4. Files validated against ESS edit checks\n5. Approved files submitted to federal ESS",
-         "EDFacts file specifications define required formats and aggregation levels\nGenerate applies CEDS-aligned business rules\nCross-file consistency enforced across submissions",
-         "ESS edit check validation prior to submission\nCross-file consistency checks\nYear-over-year trend analysis for anomaly detection",
-         "Validation failures returned for correction\nGenerate provides detailed error reports and resubmission workflow",
-         1, 1, "ESEA, IDEA, FERPA", None, "CON-001", "Active",
-         "Tight federal submission deadlines; Generate version updates require testing",
-         "Confidential", "HTTPS/TLS", "Small cell suppression per federal rules",
-         "ESS edit checks, cross-file validation, year-over-year anomaly detection",
-         "EDFacts file specifications, CEDS", "Per federal retention schedule",
-         "ESEA, IDEA, FERPA"),
-        ("PL-007", "District HR to NEO (Staff Data)",
-         "Staff demographic, certification, assignment, and employment data collected from district HR systems and loaded directly into the NEO Operational Data Store.",
-         "SYS-008", "SYS-003", "Inbound", "Daily", "Secure File Transfer (SFTP) / API", "CSV / Fixed-width",
-         "1. District HR system extracts staff data per state collection specs\n2. Files transmitted via SFTP or API to state infrastructure\n3. File format and schema validation\n4. Staff ID matching and deduplication\n5. Credential and certification cross-referencing\n6. Load into NEO staff tables",
-         "State-assigned Educator ID used as primary match key\nCertification records cross-referenced with state certification database\nFTE calculations based on assignment records\nMultiple assignments per staff member allowed",
-         "Schema validation on inbound files\nRequired field checks (name, DOB, Educator ID, assignment)\nCertification validation against state records\nFTE totals validated (should not exceed 1.0 without explanation)\nDuplicate detection across districts",
-         "Validation failures reported back to districts for correction\nRecords with critical errors rejected; warnings issued for non-critical issues\nDistricts given correction window before reporting deadlines",
-         1, 1, "State staff data collection statute, FERPA", None, "CON-001", "Active",
-         "Data quality varies by district; some districts submit manually via spreadsheet upload",
-         "Confidential", "SFTP / HTTPS", "N/A - individual staff records",
-         "Schema validation, required field checks, certification cross-reference, FTE validation, deduplication",
-         "State staff data collection specifications", "7 years per state policy",
-         "State staff data collection statute, FERPA"),
+        ("PL-001", "District Systems to Integration Platform",
+         "Primary collection pipeline. Districts transmit student demographic, enrollment and discipline data to the state.",
+         "SYS-001", "SYS-002", "Inbound", "Nightly", "API", "XML",
+         "Validated against the state profile; rejected records are returned to the district",
+         "Districts submit for their own students only",
+         "Schema validation, required-field checks, duplicate identifier detection",
+         "Rejected batches are reported back to the submitting district within the hour",
+         1, 1, "State reporting requirement", None, "CON-001", "Active",
+         "Late submissions from smaller districts are common at term boundaries",
+         "Confidential", "TLS 1.2", "None applied at this stage",
+         "Record counts reconciled against district totals",
+         "Interoperability standard", "7 years per state policy",
+         "State statute and FERPA"),
+        ("PL-002", "Integration Platform to Operational Data Store",
+         "Validated records are written into the operational store, where identifiers are resolved to the statewide student identifier.",
+         "SYS-002", "SYS-003", "Outbound", "Nightly", "Database", "Relational",
+         "Identifier resolution; district codes mapped to state codes; enrollment history assembled",
+         "A student may be enrolled in only one district at a time",
+         "Referential integrity, enrollment overlap detection",
+         "Conflicts are queued for manual resolution by the data steward",
+         1, 1, "State reporting requirement", None, "CON-002", "Active",
+         "Enrollment overlaps need manual resolution a few times each term",
+         "Confidential", "TLS 1.2", "None applied at this stage",
+         "Row counts and identifier match rates monitored nightly",
+         "Interoperability standard", "7 years per state policy",
+         "State statute and FERPA"),
+        ("PL-003", "Operational Store to Longitudinal Data System",
+         "Annual snapshot copied into the longitudinal store at the close of the school year.",
+         "SYS-003", "SYS-004", "Outbound", "Annually", "Database", "Relational",
+         "Snapshot tagged with the school year; prior years are never modified",
+         "Snapshots are taken after the certification deadline",
+         "Row count comparison against the certified operational totals",
+         "A failed snapshot is retried; the prior year remains the latest until it succeeds",
+         1, 1, "Longitudinal reporting", None, "CON-002", "Active", None,
+         "Confidential", "TLS 1.2", "None applied at this stage",
+         "Snapshot totals reconciled against certified counts",
+         "Interoperability standard", "Indefinite for research",
+         "State statute and FERPA"),
+        ("PL-004", "Operational Store to Federal Reporting Extracts",
+         "Aggregate counts built for federal submission. No student-level records cross this boundary.",
+         "SYS-003", "SYS-005", "Outbound", "Per submission", "File transfer", "CSV",
+         "Aggregated to the school and district level; small cells suppressed",
+         "Counts must match the certified operational totals",
+         "Totals reconciled against the certified counts before submission",
+         "A mismatch stops the submission and is raised with the Reporting Office",
+         0, 0, "Federal reporting requirement", None, "CON-001", "Active",
+         "Category definitions change between collection years",
+         "Public", "TLS 1.2", "Small-cell suppression applied",
+         "Totals reconciled against certified counts",
+         "Federal reporting specifications", "5 years",
+         "Federal reporting authority"),
+        ("PL-005", "Operational Store to Funding Calculations",
+         "Enrollment and program participation counts feeding the district funding formula.",
+         "SYS-003", "SYS-006", "Outbound", "Per cycle", "Database", "Relational",
+         "Counts taken as at the official enrollment date",
+         "Only enrollments active on the count date are included",
+         "Count-date totals compared against the prior cycle for unexplained movement",
+         "An unexplained change is reviewed with School Finance before the cycle closes",
+         0, 0, "State funding formula", None, "CON-001", "Active", None,
+         "Internal", "TLS 1.2", "Aggregated to district level",
+         "Compared against prior cycle",
+         "State funding formula", "7 years", "State statute"),
+        ("PL-006", "Longitudinal Store to Public Reporting Portal",
+         "Suppressed aggregates published as dashboards and report cards.",
+         "SYS-004", "SYS-007", "Outbound", "Annually", "API", "JSON",
+         "Aggregated, small cells suppressed, complementary suppression applied",
+         "No cell below the suppression threshold is published",
+         "Suppression rules verified before publication",
+         "A suppression failure blocks publication",
+         0, 0, "Public reporting requirement", None, "CON-001", "Active", None,
+         "Public", "TLS 1.3", "Small-cell and complementary suppression",
+         "Suppression verified before each publication",
+         "Public reporting standard", "Current and prior year",
+         "State statute"),
+        ("PL-007", "District HR Systems to Integration Platform",
+         "Educator assignment and credential data, collected on its own calendar.",
+         "SYS-008", "SYS-002", "Inbound", "Termly", "File transfer", "CSV",
+         "Credential numbers validated against the certification registry",
+         "An educator is reported by their primary assignment district",
+         "Credential validation, assignment overlap detection",
+         "Unmatched credentials are returned to the district for correction",
+         1, 0, "State reporting requirement", None, "CON-001", "Active",
+         "Credential numbers are sometimes entered inconsistently across districts",
+         "Confidential", "TLS 1.2", "None applied at this stage",
+         "Match rate against the certification registry monitored",
+         "Educator data standard", "7 years per state policy",
+         "State statute"),
     ]
     for f in flows:
-        conn.execute("""INSERT INTO data_flow (flow_id,name,description,source_system_id,destination_system_id,
-            direction,frequency,transfer_method,format,transformation_steps,business_rules,validations,
-            error_handling,contains_pii,ferpa_protected,regulatory_driver,agreement_id,owner_id,status,
-            known_issues,
-            data_classification,encryption_method,disclosure_avoidance,
-            data_quality_measures,data_standard,retention_at_destination,
-            legal_authority,
-            created_date,updated_date)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*f, now, now))
+        conn.execute("""INSERT INTO data_flow (flow_id,name,description,source_system_id,
+            destination_system_id,direction,frequency,transfer_method,format,transformation_steps,
+            business_rules,validations,error_handling,contains_pii,ferpa_protected,regulatory_driver,
+            agreement_id,owner_id,status,known_issues,data_classification,encryption_method,
+            disclosure_avoidance,data_quality_measures,data_standard,retention_at_destination,
+            legal_authority,created_date,updated_date)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            f + (now, now))
 
-    # Data Elements (seeded from SIF Profile)
+    # Data elements. Twelve rather than the thirty-three this used to carry:
+    # enough to cover every case the catalog has to display — PII and not,
+    # FERPA and not, three classifications, a derived element and a coded one —
+    # and few enough that somebody can read the whole list while deciding what
+    # their own elements should look like.
     elements = [
-        ("DE-001", "State Student ID (StateProvinceId)", "SASID, SSID, State ID", "Unique student identifier assigned by the state student information system. 9 or 10 characters.", "varchar(10)", "9-10 digit numeric", 1, 1, "SYS-001", "Primary key for student matching across systems; appears in StudentPersonal object",
-         "Confidential", "SIF 3.x / CEDS", "The primary identifier used to uniquely track a student across all state education systems, districts, and reporting periods", "CON-001", "CON-002"),
-        ("DE-002", "Local Student ID (LocalId)", "School Student ID, District ID", "School or district-level student identification number. Up to 25 characters.", "varchar(25)", "Alphanumeric, 0-25 chars", 1, 0, "SYS-001", "District-assigned; may not be unique across districts",
-         "Sensitive", "SIF 3.x", "A district-assigned identifier for internal tracking; not guaranteed unique across districts", None, None),
-        ("DE-003", "Student Name (First/Middle/Last)", "FirstName, MiddleName, LastName", "Legal name components of the student including first, middle, last, preferred name, and suffix.", "varchar(50) each", "Alpha, 2-50 chars for first/last", 1, 1, "SYS-001", "No aliases or suffixes in first/last name fields",
-         "Confidential", "SIF 3.x", "The legal name of the student as recorded in district systems", None, None),
-        ("DE-004", "Date of Birth (BirthDate)", "DOB, Birthday", "Student date of birth in ISO format.", "date", "YYYY-MM-DD format", 1, 1, "SYS-001", "Mandatory in StudentPersonal Demographics",
-         "Confidential", "SIF 3.x", "Student date of birth; used for age calculations and grade placement verification", None, None),
-        ("DE-005", "Gender", None, "Student gender as reported in demographics.", "char(1)", "State-defined code set", 1, 1, "SYS-001", "Mandatory in StudentPersonal Demographics",
-         "Confidential", "SIF 3.x", "Demographic gender classification for reporting purposes", None, None),
-        ("DE-006", "Race/Ethnicity", "RaceList, HispanicLatino", "Student race and Hispanic/Latino indicator. Multiple races may be reported.", "varchar", "Federal race/ethnicity categories", 1, 1, "SYS-001", "Two fields: Race code(s) and Hispanic/Latino indicator; both mandatory",
-         "Confidential", "SIF 3.x / Federal categories", "Federal race and ethnicity categories used for civil rights and equity reporting", None, None),
-        ("DE-007", "Physical Address", "Street, City, State, Zip", "Student physical (residential) address. Address type 0765.", "composite", "Standard US address format", 1, 1, "SYS-001", "PO Box not accepted for physical address; zip code numbers only, no dashes",
-         "Confidential", "SIF 3.x", "Student residential address used for district assignment and geographic reporting", None, None),
-        ("DE-008", "Mailing Address", "Mail Address", "Student mailing address if different from physical. Address type 0123.", "composite", "Standard US address format", 1, 0, "SYS-001", "Optional; defaults to physical if not provided",
-         "Confidential", "SIF 3.x", "Optional mailing address when different from physical address", None, None),
-        ("DE-009", "LEA StateProvinceId", "SAU ID, District ID, LEA ID", "NEO Organization ID for the attending School Administrative Unit. 1-4 characters.", "varchar(4)", "1-4 digit numeric", 0, 0, "SYS-001", "Links student to their LEA/SAU; from LEAInfo object",
-         "Internal", "SIF 3.x", "State-assigned district identifier linking students to their school administrative unit", None, None),
-        ("DE-010", "School StateProvinceId", "School ID, School Code", "State-assigned school identifier. Used in SchoolInfo object.", "varchar(4)", "1-4 digit numeric", 0, 0, "SYS-001", "Links enrollment to specific school",
-         "Internal", "SIF 3.x", "State-assigned school code linking enrollment records to specific schools", None, None),
-        ("DE-011", "School Name", None, "Official name of the school.", "varchar", "Free text", 0, 0, "SYS-001", "From SchoolInfo object",
-         "Public", "SIF 3.x", "Official school name as registered with the state", None, None),
-        ("DE-012", "Enrollment Entry Date", "EntryDate, Start Date", "Date student enrolled at the school.", "date", "YYYY-MM-DD", 1, 1, "SYS-001", "Mandatory in StudentSchoolEnrollment",
-         "Confidential", "SIF 3.x", "The date a student begins enrollment at a school; critical for ADM calculations", None, None),
-        ("DE-013", "Enrollment Entry Type", "EntryType, Entry Code", "Code indicating the type of enrollment entry. Includes state-specific OtherCodeList.", "varchar(5)", "State-defined 5-digit code set", 0, 1, "SYS-001", "Uses OtherCodeList with StateProvince codeset",
-         "Sensitive", "SIF 3.x / State codes", "Classification of how the student entered the school (transfer, new enrollment, etc.)", None, None),
-        ("DE-014", "Grade Level", "GradeLevel, Grade", "Student grade level at the enrolled school.", "varchar(2)", "State-defined grade codes", 0, 1, "SYS-001", "Mandatory in StudentSchoolEnrollment",
-         "Sensitive", "SIF 3.x", "Student grade placement; used for cohort tracking and reporting", None, None),
-        ("DE-015", "Enrollment Exit Date", "ExitDate, End Date, Withdrawal Date", "Date student exited/withdrew from the school.", "date", "YYYY-MM-DD or empty", 1, 1, "SYS-001", "Conditional: required when student exits",
-         "Confidential", "SIF 3.x", "Date a student leaves a school; triggers exit-related reporting", None, None),
-        ("DE-016", "Enrollment Exit Type", "ExitType, Exit Code, Withdrawal Code", "Code indicating the reason for enrollment exit.", "varchar(5)", "State-defined 5-digit code set", 0, 1, "SYS-001", "Uses OtherCodeList with StateProvince codeset",
-         "Sensitive", "SIF 3.x / State codes", "Reason for student departure (graduated, transferred, dropped out, etc.)", None, None),
-        ("DE-017", "Full-Time/Part-Time Status (FTPTStatus)", "FTE Status", "Indicates whether the student is enrolled full-time or part-time.", "char(1)", "0 or 1", 0, 1, "SYS-001", "Mandatory in StudentSchoolEnrollment; legacy SIF2 users can use extended element",
-         "Sensitive", "SIF 3.x", "Full-time equivalency status affecting funding calculations", None, None),
-        ("DE-018", "Residency/Fiscal Responsibility", "ResidencyStatus", "Indicates the student fiscal responsibility status.", "char(1)", "R and other state codes", 0, 1, "SYS-001", "Uses OtherCodeList; determines funding responsibility",
-         "Sensitive", "SIF 3.x / State codes", "Determines which district is fiscally responsible for the student", None, None),
-        ("DE-019", "Special Education Status", "SPED, IEP, SpecialEd fields", "Collection of special education fields: start date, exit date, exit reason, setting, disability code, and alternate assessment flag.", "composite", "Various per field", 1, 1, "SYS-001", "Six related SIF_ExtendedElements; conditional on student having IEP",
-         "Confidential", "SIF 3.x / IDEA", "Special education program participation data required for IDEA compliance reporting", "CON-001", None),
-        ("DE-020", "Economic Disadvantage Status", "EconomicStatus, FRL, Free/Reduced Lunch", "Student economic disadvantage eligibility status including type, start date, and end date.", "composite", "State-defined eligibility codes", 1, 1, "SYS-001", "Three related SIF_ExtendedElements; conditional on eligibility",
-         "Confidential", "SIF 3.x / State codes", "Economic disadvantage indicators used for Title I eligibility and funding calculations", None, None),
-        ("DE-021", "English Learner / ML Program", "EL, ML, ELL, Bilingual, ESL", "Multilingual Learner program participation fields including ML start date, first US school entry date, native language(s), interpreter needs, and specific program types.", "composite", "Various per field", 1, 1, "SYS-001", "Multiple SIF_ExtendedElements covering 5 language slots; program types include Transitional Bilingual, Dual Language, ESL/ELD, Content Classes, Newcomer",
-         "Confidential", "SIF 3.x / State codes", "Multilingual learner program participation data for Title III compliance and services tracking", "CON-001", None),
-        ("DE-022", "Homeless Status", "McKinney-Vento, Homeless", "Homeless indicators including nighttime residence code and unaccompanied youth status.", "composite", "State-defined homeless codes", 1, 1, "SYS-001", "Two SIF_ExtendedElements; conditional on student being identified as homeless",
-         "Confidential", "SIF 3.x / McKinney-Vento", "McKinney-Vento homeless status indicators for federal compliance reporting", None, None),
-        ("DE-023", "Title I-A Eligibility", "Title1A, Title I", "Title I-A eligibility flags for Math and ELA.", "char(1) each", "NULL/N/Y", 1, 1, "SYS-001", "Two separate flags: Title1AFlagMath and Title1AFlagELA",
-         "Confidential", "SIF 3.x / ESEA", "Title I-A program eligibility for federal funding and reporting", None, None),
-        ("DE-024", "Military Connected Student", "MilitaryConnected", "Indicates if student has parent(s) in uniformed services.", "varchar", "ActiveDuty, NationalGuard, etc.", 0, 1, "SYS-001", "Mandatory in StudentSchoolEnrollment; based on annual parent survey",
-         "Sensitive", "SIF 3.x / Federal", "Military family connection status for federal impact aid reporting", None, None),
-        ("DE-025", "Discipline Incident", "Incident, Behavior", "Discipline incident record including incident number, date, category, weapon type, offender info, actions taken, duration, and description.", "composite", "Various per field", 1, 1, "SYS-001", "From DisciplineIncident SIF object; links to students via OffenderList",
-         "Confidential", "SIF 3.x / CRDC", "Discipline event data required for Civil Rights Data Collection and school safety reporting", "CON-001", None),
-        ("DE-026", "Truancy Data", "Truancy, Attendance", "Truancy tracking fields including type, superintendent notification date, intervention plan date, parent notification, board notification, parent meeting, law enforcement referral, and additional interventions.", "composite", "Various per field", 1, 1, "SYS-001", "Eight SIF_ExtendedElements on StudentSchoolEnrollment; conditional on incident category 1240",
-         "Confidential", "SIF 3.x / State law", "State-mandated truancy tracking for compliance with attendance laws", None, None),
-        ("DE-027", "Section 504 Status", "504, Chapter504", "Indicates if student participates in a Chapter 504 program.", "char(1)", "NULL/N/Y", 1, 1, "SYS-001", "Conditional SIF_ExtendedElement",
-         "Confidential", "SIF 3.x / Section 504", "Section 504 accommodation plan status for civil rights compliance", None, None),
-        ("DE-028", "Gifted and Talented", "GT, Gifted", "Indicates student participation in Gifted and Talented programs, both Academic and Artistic.", "char(1) each", "NULL/N/Y", 0, 1, "SYS-001", "Two separate flags: GiftedTalentedAcademic and GiftedTalentedArtistic",
-         "Sensitive", "SIF 3.x / State", "Gifted and talented program participation for state reporting", None, None),
-        ("DE-029", "Resident Town (GeoCode)", "ResidentTown, TownCode", "ID of the town the student resides in.", "varchar(5)", "5-digit town code", 0, 0, "SYS-001", "Mandatory in StudentSchoolEnrollment; uses state geo code lookup",
-         "Sensitive", "SIF 3.x / State codes", "Geographic code for student residence; used for district assignment and geographic analysis", None, None),
-        ("DE-030", "Parent/Guardian Names", "Parent, Guardian", "First and last names of up to two parents or guardians.", "varchar(50) each", "Alpha, up to 50 chars", 1, 1, "SYS-001", "Four SIF_ExtendedElements; ampersand not accepted; first/last are paired (one requires the other)",
-         "Confidential", "SIF 3.x", "Parent/guardian contact information for family engagement and emergency contact", None, None),
-        ("DE-031", "Immigrant Status", "Immigrant", "Indicates whether the student is an immigrant.", "char(1)", "NULL/N/Y", 1, 1, "SYS-001", "Optional field on StudentPersonal",
-         "Confidential", "SIF 3.x / Federal", "Immigration status indicator for Title III immigrant student reporting", None, None),
-        ("DE-032", "Home Instruction Flag", "HomeInstruction, Home School", "Indicates students who are home instructed and attend local school part time or receive only Special Education services.", "char(1)", "NULL/N/Y", 0, 1, "SYS-001", "If yes, FTE value may be required",
-         "Sensitive", "SIF 3.x / State", "Home instruction status affecting enrollment counting and FTE calculations", None, None),
-        ("DE-033", "Membership Type", "MembershipType, Primary/Secondary", "Indicates whether the enrollment is the student primary or secondary enrollment.", "char(1)", "P or S", 0, 1, "SYS-001", "Attribute on StudentSchoolEnrollment object",
-         "Sensitive", "SIF 3.x", "Primary vs secondary enrollment designation affecting ADM calculations and reporting", None, None),
+        ("DE-001", "State Student Identifier", "SASID, SSID, State ID",
+         "Unique student identifier assigned by the state. Stable across districts and school years.",
+         "varchar(10)", "10 digits", 1, 1, "SYS-003",
+         "The join key for every student-level flow", "Confidential",
+         "Interoperability standard",
+         "Lets a student be followed between districts without using their name",
+         "CON-001", "CON-002"),
+        ("DE-002", "Local Student Identifier", "District ID, Local ID",
+         "Identifier assigned by the enrolling district. Unique within a district, not across the state.",
+         "varchar(20)", None, 1, 1, "SYS-001",
+         "Districts use this in their own reporting", "Confidential",
+         "Interoperability standard",
+         "How a district recognises the record as theirs", "CON-001", "CON-002"),
+        ("DE-003", "Legal Last Name", "Surname, Family Name",
+         "The student's legal last name as recorded by the enrolling district.",
+         "varchar(60)", None, 1, 1, "SYS-001", None, "Confidential",
+         "Interoperability standard",
+         "Used for identity resolution when an identifier is missing",
+         "CON-001", "CON-002"),
+        ("DE-004", "Legal First Name", "Given Name",
+         "The student's legal first name as recorded by the enrolling district.",
+         "varchar(60)", None, 1, 1, "SYS-001", None, "Confidential",
+         "Interoperability standard",
+         "Used for identity resolution when an identifier is missing",
+         "CON-001", "CON-002"),
+        ("DE-005", "Date of Birth", "DOB, Birth Date",
+         "The student's date of birth.",
+         "date", None, 1, 1, "SYS-001",
+         "Also used to derive age as at the enrollment count date", "Confidential",
+         "Interoperability standard",
+         "Determines age-based eligibility and grade placement", "CON-001", "CON-002"),
+        ("DE-006", "Grade Level", "Grade, Year Level",
+         "The grade in which the student is enrolled.",
+         "varchar(2)", "PK, KG, 01-12", 0, 1, "SYS-001", None, "Confidential",
+         "Interoperability standard",
+         "Drives most reporting breakdowns and the funding formula",
+         "CON-001", "CON-002"),
+        ("DE-007", "Enrollment Entry Date", "Entry Date, Start Date",
+         "The date the student's current enrollment began.",
+         "date", None, 0, 1, "SYS-001",
+         "An enrollment with no exit date is treated as active", "Confidential",
+         "Interoperability standard",
+         "Decides whether a student counts on the official count date",
+         "CON-001", "CON-002"),
+        ("DE-008", "Enrollment Exit Date", "Exit Date, Withdrawal Date",
+         "The date the student's enrollment ended. Empty while the enrollment is active.",
+         "date", None, 0, 1, "SYS-001",
+         "Overlapping enrollments are the most common reason a record is queued for manual resolution",
+         "Confidential", "Interoperability standard",
+         "Distinguishes a transfer from a dropout when read with the exit reason",
+         "CON-001", "CON-002"),
+        ("DE-009", "Exit Reason Code", "Withdrawal Code",
+         "Coded reason the enrollment ended.",
+         "varchar(4)", "Transfer, Graduate, Dropout, Deceased, Other", 0, 1, "SYS-001",
+         None, "Confidential", "Interoperability standard",
+         "The basis of the graduation and dropout rates", "CON-001", "CON-002"),
+        ("DE-010", "Program Participation Flags", "Program Indicators",
+         "Whether the student participates in programs that affect funding or reporting, such as special education, English learner services or free and reduced-price meals.",
+         "varchar(120)", "Comma-separated program codes", 1, 1, "SYS-003",
+         "Assembled in the operational store rather than submitted as one field",
+         "Confidential", "Interoperability standard",
+         "Drives weighted funding and most federal subgroup reporting",
+         "CON-001", "CON-002"),
+        ("DE-011", "Attendance Rate", "ADA, Attendance Percentage",
+         "Proportion of enrolled days the student was present, calculated over the reporting period.",
+         "decimal(5,2)", "0.00-100.00", 0, 1, "SYS-003",
+         "Derived rather than submitted; districts send daily attendance",
+         "Confidential", "Interoperability standard",
+         "Chronic absenteeism reporting is built on this", "CON-001", "CON-002"),
+        ("DE-012", "Educator Credential Number", "Certificate Number, License Number",
+         "Identifier of the educator's state teaching credential.",
+         "varchar(20)", None, 1, 0, "SYS-008",
+         "Educator data rather than student data; not FERPA-protected",
+         "Confidential", "Educator data standard",
+         "Links an assignment to a credential, which is what makes out-of-field teaching visible",
+         "CON-001", "CON-002"),
     ]
     for e in elements:
         conn.execute("""INSERT INTO data_element (element_id,name,aliases,definition,data_type,
-            valid_values,is_pii,ferpa_protected,source_of_truth,notes,
-            data_classification,data_standard,business_meaning,data_owner_id,data_steward_id,
-            created_date,updated_date)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*e, now, now))
+            valid_values,is_pii,ferpa_protected,source_of_truth,notes,data_classification,
+            data_standard,business_meaning,data_owner_id,data_steward_id,created_date,updated_date)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", e + (now, now))
 
-    # Flow-Element junction (PL-001 carries all elements into CONNECT)
-    for i in range(1, 34):
-        eid = f"DE-{i:03d}"
-        transformed = 1 if i in (19, 20, 21, 25, 26) else 0
-        note = None
-        if i == 1:
-            note = "Used as primary matching key"
-        elif i == 19:
-            note = "Six sub-fields combined into composite special education record"
-        elif i == 21:
-            note = "Multiple language/interpreter fields consolidated"
-        elif i == 25:
-            note = "Hierarchical incident structure flattened"
-        conn.execute("""INSERT INTO flow_element (flow_id, element_id, is_transformed, transformation_note)
-            VALUES (?, ?, ?, ?)""", ("PL-001", eid, transformed, note))
-
-    # PL-002 carries most elements too (CONNECT to ODS), with more transformations
-    for i in range(1, 34):
-        eid = f"DE-{i:03d}"
-        conn.execute("""INSERT INTO flow_element (flow_id, element_id, is_transformed, transformation_note)
-            VALUES (?, ?, ?, ?)""", ("PL-002", eid, 1, "SIF XML hierarchy mapped to relational database columns"))
+    # Which elements travel on which flow. The student elements ride the two
+    # collection flows; the educator credential rides the HR flow only, which
+    # is what makes a field list worth looking at rather than a formality.
+    student_elements = [f"DE-{n:03d}" for n in range(1, 12)]
+    for eid in student_elements:
+        conn.execute("""INSERT INTO flow_element (flow_id, element_id, is_transformed,
+            transformation_note) VALUES ('PL-001', ?, 0, NULL)""", (eid,))
+    for eid in student_elements:
+        note = ("Local identifier resolved to the state identifier"
+                if eid == "DE-002" else None)
+        conn.execute("""INSERT INTO flow_element (flow_id, element_id, is_transformed,
+            transformation_note) VALUES ('PL-002', ?, ?, ?)""",
+            (eid, 1 if note else 0, note))
+    conn.execute("""INSERT INTO flow_element (flow_id, element_id, is_transformed,
+        transformation_note) VALUES ('PL-007', 'DE-012', 0, NULL)""")
 
     conn.commit()
     conn.close()
-    print("Database seeded with baseline systems, flows, and data elements")
+    print(f"  Seeded a sample district: {len(systems)} systems, {len(flows)} flows, "
+          f"{len(elements)} data elements")
+
 
 # ---------------------------------------------------------------------------
-# Schema drill-down seeding (loads neo_schema.json into schema_table/column)
+# Schema drill-down seeding (loads *_schema.json into schema_table/column)
 # ---------------------------------------------------------------------------
 
 def seed_schema():
     """Populate schema_table / schema_column from any *_schema.json seed files.
 
-    Each seed file declares the system_id it belongs to (e.g. neo_schema.json ->
-    SYS-003, fedreporting_schema.json -> SYS-005). Runs independently of
+    Each seed file declares the system_id it belongs to (e.g.
+    sample_schema.json -> SYS-003). Runs independently of
     seed_db() so an already-seeded deployed database still gains schemas.
 
     Idempotency is per-system: a system is only seeded if it has no schema_table
@@ -1278,7 +1319,7 @@ DEFAULT_PREFERENCES = [
 
     ("allowed_email_domains", "", "string", "Allowed email domains",
      "Comma-separated list of domains permitted for new accounts "
-     "(e.g. maine.gov, k12.me.us). Leave blank to allow any domain.",
+     "(e.g. example.gov, k12.example.us). Leave blank to allow any domain.",
      "Accounts", 1, 30),
     ("default_role", permissions.VIEWER, "role", "Default role for new users",
      "Pre-selected when an administrator creates an account.", "Accounts", 1, 40),
@@ -1303,14 +1344,56 @@ DEFAULT_PREFERENCES = [
      "the default. Changing this does not delete anything on its own.",
      "Security", 1, 105),
 
-    # Phase 2 — the plumbing is in place; the flows are not built yet, so these
-    # are shown but locked off.
+    # Email (0.9.0). The settings live here so that setting this up does not
+    # require access to the infrastructure the app runs on — in a state agency
+    # the person who knows the mail relay is usually not the person who can
+    # redeploy a container. The **credential deliberately is not here**: it
+    # comes from SMTP_PASSWORD or RESEND_API_KEY in the environment, because a
+    # secret in this table travels in all 45 retained nightly backups. See the
+    # header of `mailer.py`.
+    ("email_transport", "none", "email_transport", "Email delivery",
+     "How this app sends mail. Needed for self-service password reset. "
+     "SMTP works with any mail relay, including Microsoft 365, Google "
+     "Workspace and Resend; the Resend option uses their web API instead, for "
+     "hosts that will not allow an outbound SMTP connection.", "Email", 1, 200),
+    ("email_from_address", "", "string", "From address",
+     "The address mail appears to come from. Most relays will only accept an "
+     "address on a domain they handle.", "Email", 1, 210),
+    ("email_from_name", "", "string", "From name",
+     "Shown beside the address in a mail client, e.g. Data Lineage Tracker. "
+     "Optional.", "Email", 1, 220),
+    ("app_base_url", "", "string", "Public address of this app",
+     "e.g. https://lineage.example.gov \u2014 used to build the link in a "
+     "password reset email. Required for reset email to work, and read from "
+     "this setting rather than from the browser's request on purpose, so that "
+     "a forged request cannot send somebody a reset link pointing somewhere "
+     "else.", "Email", 1, 230),
+    ("smtp_host", "", "string", "SMTP host",
+     "e.g. smtp.example.gov. Only used when delivery is set to SMTP.",
+     "Email", 1, 240),
+    ("smtp_port", "587", "number", "SMTP port",
+     "587 for STARTTLS, which is the usual choice; 465 for SSL.",
+     "Email", 1, 250),
+    ("smtp_security", "starttls", "smtp_security", "SMTP encryption",
+     "STARTTLS upgrades a plain connection and is what most relays want on "
+     "port 587. SSL is encrypted from the first byte, usually on port 465.",
+     "Email", 1, 260),
+    ("smtp_username", "", "string", "SMTP username",
+     "The account used to authenticate. Its password comes from the "
+     "SMTP_PASSWORD environment variable, never from this screen.",
+     "Email", 1, 270),
+
+    ("enable_self_service_reset", "false", "boolean",
+     "Allow self-service password reset",
+     "Lets anyone who has forgotten their password request a reset link by "
+     "email. Requires email delivery above to be working \u2014 the link on the "
+     "sign-in screen stays hidden until it is, so it cannot offer something "
+     "that quietly fails.", "Email", 1, 280),
+
+    # Phase 2 — the plumbing is in place; the flow is not built yet, so this
+    # is shown but locked off.
     ("require_2fa", "false", "boolean", "Require two-factor authentication",
-     "Not yet available. Requires email delivery to be configured.",
-     "Coming soon", 0, 110),
-    ("enable_self_service_reset", "false", "boolean", "Allow self-service password reset",
-     "Not yet available. Requires email delivery to be configured.",
-     "Coming soon", 0, 120),
+     "Not yet available.", "Coming soon", 0, 310),
 ]
 
 _PREF_CACHE = {"values": None, "loaded_at": 0}
@@ -1482,7 +1565,8 @@ SEED_RELEASES = [
 
 **Improvements to System Types**
 
-* *ETL Process* and *Internal* have been retired. CONNECT is now a Data Store.
+* *ETL Process* and *Internal* have been retired; systems that used them are
+  now Data Stores.
 * A SuperAdmin can edit the list of system types, their descriptions, and their
   colors in Preferences.
 * The diagram key has an information button explaining what each type means.
@@ -1917,7 +2001,7 @@ SEED_RELEASES = [
     # Reviewed and approved by Ben, 11 November 2026, so published. A published
     # release is never re-seeded: further wording changes are made in the app,
     # not here.
-    (VERSION, "Task dependencies and automated tasks", None, 1, 1800, """\
+    ("0.8.0", "Task dependencies and automated tasks", None, 1, 1800, """\
 ## What's new in this release
 
 **Tasks can wait on other tasks**
@@ -1947,6 +2031,29 @@ SEED_RELEASES = [
   nothing records which items were hidden.
 * A help article on tasks is in the help panel, covering subtasks, dates, the
   diagram colors, automated tasks and dependencies.
+"""),
+    # DRAFT — not published. `ensure_releases` re-seeds a draft from here on
+    # every start, so edit the wording in this file, not in the app.
+    (VERSION, "Password reset by email", None, 0, 1900, """\
+## What's new in this release
+
+**Forgotten passwords**
+
+* Anyone who has forgotten their password can now request a reset link by
+  email, instead of asking an administrator for a temporary one.
+* The link works once and stops working after an hour.
+* Setting a new password this way signs the account out everywhere else.
+
+**Setting up email**
+
+* **Preferences \u2192 Email** holds the mail settings: SMTP for your own relay,
+  or Resend if an outbound SMTP connection is not available.
+* The password or API key is set in the server's environment rather than on
+  this screen, so it is never stored in the database or carried in a backup.
+* **Email status** says whether the credential was found and has a **Send test
+  message** button that reports exactly what went wrong.
+* The link on the sign-in screen stays hidden until email is working, so it
+  cannot offer something that quietly fails.
 """),
 ]
 
@@ -4685,6 +4792,12 @@ if HAS_TORNADO:
             "logo_position": position if position in LOGO_POSITIONS else "left",
             "hide_app_title": str(prefs.get("hide_app_title", "false")).lower() == "true",
             "password_policy": auth.describe_password_policy(prefs),
+            # Whether to draw "Forgot your password?" on the sign-in screen.
+            # Resolved here rather than in the browser because it depends on
+            # the mail configuration, which must not be sent to an anonymous
+            # caller — the answer is one boolean, and the host, port and
+            # username behind it are nobody's business before sign-in.
+            "self_service_reset": reset_enabled(conn),
         }
 
     class AuthLoginHandler(BaseAPIHandler):
@@ -4859,6 +4972,238 @@ if HAS_TORNADO:
             finally:
                 conn.close()
             self.write_json({"ok": True})
+
+    # -----------------------------------------------------------------------
+    # Self-service password reset (0.9.0)
+    # -----------------------------------------------------------------------
+
+    def email_config(conn):
+        return mailer.config_from_preferences(get_preferences(conn))
+
+    def reset_enabled(conn):
+        """Both switches, because either alone would be a trap.
+
+        The preference is the organization's decision; a working transport is
+        whether that decision can be honored. Offering the link with the
+        preference on and no mail configured would send somebody to a screen
+        that promises an email and delivers nothing, which is worse than not
+        offering it — they would sit and wait rather than ask an administrator.
+        """
+        prefs = get_preferences(conn)
+        on = str(prefs.get("enable_self_service_reset", "false")).lower() == "true"
+        cfg = mailer.config_from_preferences(prefs)
+        return on and mailer.is_configured(cfg) and bool(
+            (prefs.get("app_base_url") or "").strip())
+
+    RESET_EMAIL_SUBJECT = "Reset your Data Lineage Tracker password"
+
+    def reset_email_body(first_name, link, minutes):
+        who = f"Hello {first_name}," if first_name else "Hello,"
+        return (
+            f"{who}\n\n"
+            f"Somebody asked to reset the password for this address. If that "
+            f"was you, open the link below within {minutes} minutes:\n\n"
+            f"{link}\n\n"
+            f"The link can only be used once.\n\n"
+            f"If it was not you, you can ignore this message \u2014 nothing has "
+            f"changed and your current password still works.\n")
+
+    class ForgotPasswordHandler(BaseAPIHandler):
+        """Ask for a reset link.
+
+        **The answer never says whether the address exists.** Same body, same
+        status, same timing-insensitive path for an address with an account, an
+        address without one, and a deactivated account. A forgot-password
+        endpoint that distinguishes them is a free list of who works here,
+        which for a state agency is a phishing target list.
+
+        That is also why a send failure is not reported to the caller: "we
+        could not send to that address" tells an attacker the address was real.
+        It is logged for the administrator instead.
+        """
+        requires_auth = False
+
+        def post(self):
+            data = self.get_json_body() or {}
+            email = auth.normalize_email(data.get("email"))
+            conn = get_db()
+            try:
+                if not reset_enabled(conn):
+                    # Not an error the browser can act on: the sign-in screen
+                    # does not show the link unless this is on, so arriving
+                    # here means a crafted request.
+                    return self.fail(404, "Self-service password reset is not "
+                                          "enabled on this deployment.")
+                prefs = get_preferences(conn)
+                row = conn.execute(
+                    "SELECT * FROM app_user WHERE email=?", (email,)).fetchone()
+                now = utcnow()
+                if row and row["is_active"]:
+                    window = iso(now - datetime.timedelta(
+                        minutes=auth.RESET_RATE_WINDOW_MINUTES))
+                    recent = conn.execute(
+                        "SELECT COUNT(*) FROM password_reset_token "
+                        "WHERE user_id=? AND created_date>=?",
+                        (row["user_id"], window)).fetchone()[0]
+                    if recent < auth.RESET_RATE_LIMIT:
+                        raw, token_hash = auth.new_reset_token()
+                        conn.execute(
+                            """INSERT INTO password_reset_token
+                                 (token_hash, user_id, created_date,
+                                  expires_date, requested_ip)
+                               VALUES (?,?,?,?,?)""",
+                            (token_hash, row["user_id"], iso(now),
+                             iso(now + datetime.timedelta(
+                                 minutes=auth.RESET_TOKEN_MINUTES)),
+                             self.client_ip()))
+                        audit.record_event(
+                            conn, None, audit.PASSWORD_RESET_REQUESTED,
+                            "user", row["user_id"],
+                            summary=f"Reset link requested for {row['email']}",
+                            ip_address=self.client_ip(),
+                            user_agent=self.user_agent())
+                        conn.commit()
+                        link = auth.reset_link(
+                            (prefs.get("app_base_url") or "").strip(), raw)
+                        ok, detail = mailer.send(
+                            mailer.config_from_preferences(prefs),
+                            row["email"], RESET_EMAIL_SUBJECT,
+                            reset_email_body(row["first_name"], link,
+                                             auth.RESET_TOKEN_MINUTES))
+                        if not ok:
+                            # The address is deliberately absent from this
+                            # line: a log is not the place to pair a real
+                            # address with a failure, and the administrator
+                            # needs the reason rather than the recipient.
+                            print(f"  reset email failed: {detail}",
+                                  file=sys.stderr, flush=True)
+            finally:
+                conn.close()
+            # One answer, always.
+            self.write_json({"ok": True})
+
+    class ResetPasswordHandler(BaseAPIHandler):
+        """Spend a reset token and set a new password.
+
+        Everything `ChangePasswordHandler` does on the way out — the policy
+        check, revoking the other sessions, the audit entry — happens here too,
+        because a reset is a password change that simply proved who it was a
+        different way. The one thing it does **not** do is ask for the current
+        password, which is the whole point.
+        """
+        requires_auth = False
+
+        def post(self):
+            data = self.get_json_body() or {}
+            raw = (data.get("token") or "").strip()
+            new = data.get("new_password") or ""
+            # The same sentence for a token that never existed, one that has
+            # expired and one already spent is tempting and wrong: a person who
+            # clicked a link from an hour ago needs to know to ask for another,
+            # and "expired" is not information an attacker can use — they
+            # already hold the token in either case.
+            conn = get_db()
+            try:
+                if not reset_enabled(conn):
+                    return self.fail(404, "Self-service password reset is not "
+                                          "enabled on this deployment.")
+                token_hash = auth.hash_reset_token(raw)
+                tok = conn.execute(
+                    "SELECT * FROM password_reset_token WHERE token_hash=?",
+                    (token_hash,)).fetchone()
+                if not tok:
+                    return self.fail(400, "This reset link is not valid. Ask "
+                                          "for a new one.")
+                if tok["used_date"]:
+                    return self.fail(400, "This reset link has already been "
+                                          "used. Ask for a new one.")
+                if iso(utcnow()) > tok["expires_date"]:
+                    return self.fail(400, "This reset link has expired. Ask "
+                                          "for a new one.")
+                row = conn.execute("SELECT * FROM app_user WHERE user_id=?",
+                                   (tok["user_id"],)).fetchone()
+                if not row or not row["is_active"]:
+                    return self.fail(400, "This account is not active. Ask an "
+                                          "administrator.")
+                prefs = get_preferences(conn)
+                problems = auth.check_password_policy(
+                    new, prefs, email=row["email"],
+                    first_name=row["first_name"], last_name=row["last_name"])
+                if problems:
+                    return self.fail(400, "Password does not meet requirements.",
+                                     problems=problems)
+                now = iso(utcnow())
+                conn.execute(
+                    """UPDATE app_user SET password_hash=?, must_change_password=0,
+                           password_changed_at=?, updated_date=?, updated_by=?
+                       WHERE user_id=?""",
+                    (auth.hash_password(new), now, now, row["user_id"],
+                     row["user_id"]))
+                # Spent. Written before the commit so the row and the new
+                # password land together: a crash between them would otherwise
+                # leave a usable token for a password that had already changed.
+                conn.execute(
+                    "UPDATE password_reset_token SET used_date=? WHERE token_hash=?",
+                    (now, token_hash))
+                # Every other outstanding link for this account goes too. They
+                # were all requested by whoever was locked out, and leaving a
+                # second one live after the first was spent would mean a
+                # forwarded email still worked.
+                conn.execute(
+                    "UPDATE password_reset_token SET used_date=? "
+                    "WHERE user_id=? AND used_date IS NULL",
+                    (now, row["user_id"]))
+                # Every session, with no exception for "this one" — unlike a
+                # change-password, nobody is signed in here, so an unrevoked
+                # session would be somebody else's.
+                conn.execute(
+                    "UPDATE user_session SET revoked_at=? WHERE user_id=? "
+                    "AND revoked_at IS NULL", (now, row["user_id"]))
+                audit.record_event(
+                    conn, None, audit.PASSWORD_RESET, "user", row["user_id"],
+                    summary=f"Password reset by email link for {row['email']}",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"ok": True})
+
+    class EmailTestHandler(BaseAPIHandler):
+        """Send one message to the signed-in SuperAdmin, and report what happened.
+
+        This exists because every other path deliberately hides its failures:
+        a reset request must not say whether an address exists, so an
+        administrator configuring mail has no way to find out that the port is
+        wrong. Here the real reason is the whole point of the response, and it
+        is safe because the recipient is the person asking.
+        """
+        READ_ROLE = permissions.SUPERADMIN
+        WRITE_ROLE = permissions.SUPERADMIN
+
+        def get(self):
+            conn = get_db()
+            try:
+                self.write_json(mailer.describe(email_config(conn)))
+            finally:
+                conn.close()
+
+        def post(self):
+            conn = get_db()
+            try:
+                cfg = email_config(conn)
+                prefs = get_preferences(conn)
+            finally:
+                conn.close()
+            to = self.current_user["email"]
+            base = (prefs.get("app_base_url") or "").strip()
+            ok, detail = mailer.send(
+                cfg, to, "Data Lineage Tracker test message",
+                "This is a test message from the Data Lineage Tracker.\n\n"
+                "If you are reading it, email delivery is working.\n"
+                + (f"\nThe public address is set to {base}\n" if base else
+                   "\nThe public address of this app is not set yet, so "
+                   "password reset links cannot be built.\n"))
+            self.write_json({"ok": ok, "detail": detail, "sent_to": to})
 
     # -----------------------------------------------------------------------
     # User administration
@@ -5249,6 +5594,28 @@ if HAS_TORNADO:
                         return self.fail(
                             400, "Logo position must be one of: "
                                  + ", ".join(LOGO_POSITIONS) + ".")
+                    # Same reasoning as logo_position: these two choose a code
+                    # path at send time, so a junk value would be discovered by
+                    # a password reset failing rather than by a save failing.
+                    if (key == "email_transport"
+                            and new_value not in mailer.TRANSPORTS):
+                        return self.fail(
+                            400, "Email delivery must be one of: "
+                                 + ", ".join(mailer.TRANSPORTS) + ".")
+                    if (key == "smtp_security"
+                            and new_value not in mailer.SMTP_SECURITY):
+                        return self.fail(
+                            400, "SMTP encryption must be one of: "
+                                 + ", ".join(mailer.SMTP_SECURITY) + ".")
+                    # A base URL that is not absolute produces a reset link
+                    # nobody can click, and the failure shows up in somebody
+                    # else's inbox rather than here.
+                    if key == "app_base_url" and new_value.strip():
+                        if not new_value.strip().lower().startswith(
+                                ("http://", "https://")):
+                            return self.fail(
+                                400, "The public address must start with "
+                                     "http:// or https://.")
                     if new_value != (pref["value"] or ""):
                         changes[key] = (pref["value"], new_value)
                         conn.execute(
@@ -5847,9 +6214,20 @@ if HAS_TORNADO:
                 s = public_settings(conn)
             finally:
                 conn.close()
+            # An explicit whitelist, not the whole of public_settings: this
+            # endpoint answers an anonymous caller, so every key added to it is
+            # a deliberate decision to make something public.
+            #
+            # `self_service_reset` is one boolean and it has to be here,
+            # because the sign-in screen is the one place the "Forgot your
+            # password?" link belongs and it has no session to ask with. What
+            # it does NOT expose is anything about the mail configuration
+            # behind that boolean — the host, port and username are nobody's
+            # business before sign-in.
             self.write_json({k: s[k] for k in
                              ("app_title", "app_subtitle", "logo_etag",
-                              "logo_position", "hide_app_title")})
+                              "logo_position", "hide_app_title",
+                              "self_service_reset", "password_policy")})
 
     class BrandingLogoHandler(BaseAPIHandler):
         """The logo image itself.
@@ -7741,6 +8119,9 @@ if HAS_TORNADO:
             (r"/api/auth/profile", ProfileHandler),
             (r"/api/users/pickable", PickableUsersHandler),
             (r"/api/auth/change-password", ChangePasswordHandler),
+            (r"/api/auth/forgot-password", ForgotPasswordHandler),
+            (r"/api/auth/reset-password", ResetPasswordHandler),
+            (r"/api/email/test", EmailTestHandler),
             # Administration
             (r"/api/users", UsersHandler),
             (r"/api/users/([^/]+)", UserHandler),
@@ -7811,6 +8192,19 @@ if HAS_TORNADO:
             (r"/api/contributors/([^/]+)/references", ContributorReferencesHandler),
             (r"/api/contributors/([^/]+)", ContributorHandler),
             (r"/api/agreements", AgreementsHandler),
+            # The one non-root page in the app. A reset link has to point at a
+            # path rather than at "/" so that the token is not sitting in the
+            # address bar of the ordinary diagram, and `AppStaticFileHandler`
+            # would 404 it: there is no reset-password.html, the whole app is
+            # one index.html. So this serves that index and the browser decides
+            # what to draw from the path — the SPA arrangement, used exactly
+            # once rather than generally, because a catch-all that returned the
+            # app for every unknown path would turn a mistyped API route into a
+            # page of HTML instead of an error.
+            (r"/(reset-password)", AppStaticFileHandler, {
+                "path": str(STATIC_DIR),
+                "default_filename": "index.html",
+            }),
             (r"/(.*)", AppStaticFileHandler, {
                 "path": str(STATIC_DIR),
                 "default_filename": "index.html"
@@ -7846,6 +8240,16 @@ if __name__ == "__main__":
     bootstrap_superadmin()
 
     port = int(os.environ.get("PORT", 8765))
+
+    # The test sink swallows every outgoing message. It exists so a test suite
+    # can never mail a real person, and it is a hole if it is ever set on a
+    # real deployment: password reset would report success and deliver nothing.
+    # So it announces itself loudly at every start rather than being something
+    # somebody discovers from a user who never got their email.
+    if mailer.sink_path():
+        print(f"\n  *** {mailer.SINK_ENV} is set. NO EMAIL WILL BE SENT. ***"
+              f"\n  *** Messages are being written to {mailer.sink_path()}"
+              f"\n  *** Unset it unless this is a test environment.\n")
 
     app = make_app()
     app.listen(port)

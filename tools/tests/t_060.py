@@ -46,7 +46,7 @@ TEMP = "Thistle-Quay-52#k"
 # the second time and the sign-in that follows then fails with 401, which is
 # reported as the profile endpoint being broken. See _client.
 st, viewer, REAL = ensure_account(
-    boss, rq, "p.lowell@maine.gov", "Pat", "Lowell", "Viewer", TEMP)
+    boss, rq, "p.lowell@example.gov", "Pat", "Lowell", "Viewer", TEMP)
 ck("the Viewer can sign in", bool(viewer["t"]), f"login {st}")
 
 # --------------------------------------------------------- what they may do
@@ -71,7 +71,7 @@ rq(viewer, "PUT", "/api/auth/profile", {"title": "Records Analyst"})
 
 # ----------------------------------------------------- what they may not do
 print("-- and nothing else --")
-for field, value in [("role", "SuperAdmin"), ("email", "someone.else@maine.gov"),
+for field, value in [("role", "SuperAdmin"), ("email", "someone.else@example.gov"),
                      ("is_active", 0), ("password", "Whatever-9xQ!"),
                      ("contributor_id", "CON-001"),
                      ("must_change_password", 0)]:
@@ -84,7 +84,7 @@ for field, value in [("role", "SuperAdmin"), ("email", "someone.else@maine.gov")
 st, who = rq(viewer, "GET", "/api/auth/me")
 ck("the Viewer is still a Viewer", who["user"]["role"] == "Viewer",
    who["user"]["role"])
-ck("with their original email", who["user"]["email"] == "p.lowell@maine.gov",
+ck("with their original email", who["user"]["email"] == "p.lowell@example.gov",
    who["user"]["email"])
 
 # A mixture must be refused whole rather than partly applied.
@@ -115,7 +115,7 @@ ck("and reports no account title", not row.get("account_title"),
    repr(row.get("account_title")))
 
 st, users = rq(boss, "GET", "/api/users")
-uid = next(u["user_id"] for u in users if u["email"] == "p.lowell@maine.gov")
+uid = next(u["user_id"] for u in users if u["email"] == "p.lowell@example.gov")
 st, _ = rq(boss, "PUT", f"/api/users/{uid}", {"contributor_id": cid})
 ck("the account can be linked to the contributor", st == 200, str(st))
 
@@ -155,7 +155,7 @@ mine = [e for e in events
         if e.get("entity_type") == "user" and str(e.get("entity_id")) == str(uid)]
 ck("the profile change is in the audit trail", len(mine) > 0, str(len(mine)))
 ck("attributed to the person themselves",
-   any((e.get("actor_email") or "") == "p.lowell@maine.gov" for e in mine),
+   any((e.get("actor_email") or "") == "p.lowell@example.gov" for e in mine),
    "; ".join(sorted({(e.get("actor_email") or "?") for e in mine})))
 
 # ------------------------------------- a contributor made from an account
@@ -278,7 +278,7 @@ else:
 # genuinely dead, and reusing it would test a 401 rather than a 403.
 vw = S()
 st, vwb = rq(vw, "POST", "/api/auth/login",
-             {"email": "p.lowell@maine.gov", "password": REAL})
+             {"email": "p.lowell@example.gov", "password": REAL})
 ck("the Viewer can sign in again after reactivation", st == 200, str(st))
 if st == 200:
     vw["t"] = vwb["csrf_token"]

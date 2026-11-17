@@ -235,6 +235,54 @@ def new_csrf_token():
 
 
 # ---------------------------------------------------------------------------
+# Password reset tokens
+# ---------------------------------------------------------------------------
+
+# How long a reset link works for. Short enough that a link left in an inbox
+# stops being a key fairly quickly, long enough to survive somebody asking for
+# it, going to a meeting, and coming back.
+RESET_TOKEN_MINUTES = 60
+
+# How many links one account may ask for in RESET_RATE_WINDOW_MINUTES.
+# Counted per **account**, not per IP: the thing being prevented is somebody
+# else's inbox being flooded, and an attacker doing that will not keep the same
+# address. A legitimate person asking twice because the first mail was slow
+# must not be stopped, which is why this is not 1.
+RESET_RATE_LIMIT = 5
+RESET_RATE_WINDOW_MINUTES = 60
+
+
+def new_reset_token():
+    """Return (raw_token, token_hash). Only the hash is ever stored.
+
+    Same shape as `new_session_token`, and the same reasoning: the raw value is
+    a bearer credential, so the database holds only enough to recognize one
+    that is presented. SHA-256 rather than scrypt because 32 bytes of
+    `token_urlsafe` has nothing to brute-force — the slow hash a password needs
+    would buy nothing here and cost a comparison on every click.
+    """
+    raw = secrets.token_urlsafe(32)
+    return raw, hash_reset_token(raw)
+
+
+def hash_reset_token(raw):
+    return hashlib.sha256((raw or "").encode("utf-8")).hexdigest()
+
+
+def reset_link(base_url, raw_token):
+    """The URL that goes in the email.
+
+    `base_url` comes from the `app_base_url` setting and **never** from the
+    request's Host header. Building it from the header is the standard way
+    reset links get poisoned: an attacker sends a forgot-password request for
+    somebody else's address with a Host of their own choosing, and the victim
+    receives a real token pointing at the attacker's server. Reading it from
+    configuration means a forged request cannot change where the link goes.
+    """
+    return f"{(base_url or '').rstrip('/')}/reset-password?token={raw_token}"
+
+
+# ---------------------------------------------------------------------------
 # Login throttling
 # ---------------------------------------------------------------------------
 

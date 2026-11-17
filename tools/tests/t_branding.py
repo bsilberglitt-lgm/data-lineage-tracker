@@ -194,13 +194,31 @@ ck("the sign-in screen can read the branding", st == 200, str(st))
 ck("...including the title", pub.get("app_title") is not None, str(pub)[:80])
 ck("...and the logo etag and position",
    "logo_etag" in pub and "logo_position" in pub, str(sorted(pub))[:90])
-ck("but not the password policy", "password_policy" not in pub, str(sorted(pub))[:90])
+# This check used to be the opposite, and the reversal is deliberate rather
+# than drift. Before 0.9.0 nothing anonymous needed the password rules, so
+# keeping them out of a public endpoint was free. The reset screen is reached
+# from an emailed link with nobody signed in, and it has to state the rules
+# the new password must meet — without them somebody types a password, is
+# refused, and has to guess what is wanted. The rules are not a secret: every
+# signed-in user already sees them on the forced-change screen, and knowing
+# the minimum length narrows a brute-force by nothing that matters next to a
+# scrypt hash and a lockout. So it is public on purpose now.
+ck("and the password policy, which the reset screen needs",
+   pub.get("password_policy"), str(sorted(pub))[:90])
+# What stays out is the thing that would actually matter: the mail settings
+# behind the one boolean. A host, port and username are not for an anonymous
+# caller.
+ck("but no mail setting beyond whether reset is offered",
+   not [k for k in pub if k.startswith(("smtp", "email_"))],
+   str(sorted(pub))[:120])
+ck("and the reset flag is a boolean, not a configuration",
+   isinstance(pub.get("self_service_reset"), bool), str(sorted(pub))[:90])
 st, r = upload(anon, "/api/branding", "x.png", png(10, 10))
 ck("and a stranger cannot upload one", st in (401, 403), f"{st} {str(r)[:80]}")
 
 # The password must not contain the account holder's name — the policy
 # rejects that, and a "Viewer" named password fails for that reason alone.
-temp_email, temp_pass = "logo.reader@maine.gov", "Zephyr-Bright-52#q"
+temp_email, temp_pass = "logo.reader@example.gov", "Zephyr-Bright-52#q"
 st, existing, _ = rq(boss, "GET", "/api/users")
 found = next((u for u in existing if u["email"] == temp_email), None) \
     if isinstance(existing, list) else None

@@ -58,7 +58,7 @@ boss = sign_in()
 
 st, person = rq(boss, "POST", "/api/contributors",
                 {"name": "Dana Rowe", "title": "Data Governance Lead",
-                 "email": "dana.rowe@maine.gov"})
+                 "email": "dana.rowe@example.gov"})
 cid = person.get("contributor_id")
 # `in (200, 201)` because the shared client reports the real status code and
 # a creation answers 201. The suite-local helper this replaced flattened
@@ -185,7 +185,7 @@ ck("and every free-text field on a system comes back", not lost,
 # ------------------------------------------------ deactivating a contributor
 print("-- deactivating a contributor --")
 st, person2 = rq(boss, "POST", "/api/contributors",
-                 {"name": "Wren Abbott", "email": "wren.abbott@maine.gov"})
+                 {"name": "Wren Abbott", "email": "wren.abbott@example.gov"})
 cid2 = person2.get("contributor_id")
 
 # Make them the steward of a system and the owner of a flow, so the warning
@@ -208,7 +208,7 @@ TEMP = "Thistle-Quay-52#k"
 # A plain POST is a 409 the second time, and every later check about this
 # person then fails on a sign-in that never happened. See _client.
 st_in, abbott, REAL = ensure_account(
-    boss, rq, "w.abbott@maine.gov", "Wren", "Abbott", "Editor", TEMP,
+    boss, rq, "w.abbott@example.gov", "Wren", "Abbott", "Editor", TEMP,
     extra={"contributor_id": cid2})
 ck("a linked user account is available and signed in", bool(abbott["t"]),
    f"login {st_in}")
@@ -220,7 +220,7 @@ ck("it names the records rather than only counting",
    all(g["named"] and g["named"][0].get("label") for g in refs["records"]),
    json.dumps(refs.get("records"))[:160])
 ck("it reports the linked account by address",
-   (refs.get("linked_user") or {}).get("email") == "w.abbott@maine.gov",
+   (refs.get("linked_user") or {}).get("email") == "w.abbott@example.gov",
    json.dumps(refs.get("linked_user")))
 
 st, r = rq(boss, "PUT", f"/api/contributors/{cid2}", {"is_active": 0})
@@ -257,10 +257,10 @@ if ed["t"]:
     # Deactivating a contributor is not deactivating a sign-in.
     chk = S()
     st, _ = rq(chk, "POST", "/api/auth/login",
-               {"email": "w.abbott@maine.gov", "password": REAL})
+               {"email": "w.abbott@example.gov", "password": REAL})
     ck("their user account still signs in", st == 200, str(st))
     st, users = rq(boss, "GET", "/api/users")
-    linked = next((u for u in users if u["email"] == "w.abbott@maine.gov"), None)
+    linked = next((u for u in users if u["email"] == "w.abbott@example.gov"), None)
     ck("and is still linked to the contributor",
        linked and linked.get("contributor_id") == cid2,
        repr(linked and linked.get("contributor_id")))

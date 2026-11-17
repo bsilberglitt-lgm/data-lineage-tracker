@@ -24,7 +24,7 @@ lives.
 **Cascades are the application's job, as they are for `task_step` and
 `task_contributor`.** Deleting a task has to clear the rows that name it in
 *either* column — a dangling `depends_on_task_id` would leave a task waiting
-forever on something that no longer exists, and the colour coding would read
+forever on something that no longer exists, and the color coding would read
 that as "not complete" and show it blocked. `delete_tasks_for` and the single
 task DELETE both do this.
 

@@ -384,7 +384,7 @@ ck("and the catalog does not list it",
 
 # ------------------------------------------------------------- permissions
 print("-- who may do what --")
-viewer = borrow_account("v.task@maine.gov", "Val", "Reed", "Viewer",
+viewer = borrow_account("v.task@example.gov", "Val", "Reed", "Viewer",
                         "Thistle-Quay-52#k")
 
 st, _ = rq(viewer, "GET", "/api/tasks")
@@ -398,7 +398,7 @@ ck("a Viewer cannot edit one", st == 403, str(st))
 st, _ = rq(viewer, "DELETE", f"/api/tasks/{T1}")
 ck("a Viewer cannot delete one", st == 403, str(st))
 
-editor = borrow_account("e.task@maine.gov", "Eli", "Crane", "Editor",
+editor = borrow_account("e.task@example.gov", "Eli", "Crane", "Editor",
                         "Fathom-Lantern-30#r")
 
 st, et = rq(editor, "POST", "/api/tasks",

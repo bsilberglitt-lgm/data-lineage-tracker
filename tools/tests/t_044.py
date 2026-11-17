@@ -97,8 +97,8 @@ boss = sign_in_with(S(), rq)
 
 # Two colleagues, so membership can actually be carried.
 people = []
-for first, last, email in [("Dana", "Reed", "dana.reed@maine.gov"),
-                           ("Mel", "Okafor", "mel.okafor@maine.gov")]:
+for first, last, email in [("Dana", "Reed", "dana.reed@example.gov"),
+                           ("Mel", "Okafor", "mel.okafor@example.gov")]:
     st, existing = rq(boss, "GET", "/api/users")
     found = next((u for u in existing if u["email"] == email), None) \
         if isinstance(existing, list) else None
