@@ -205,7 +205,7 @@ ck("each resolves to one column from every spelling", not bad, str(bad[:4]))
 
 # --------------------------------------------------------------- permissions
 print("-- permissions --")
-email, pw = "hide.reader@maine.gov", "Thistle-Harbor-52#k"
+email, pw = "hide.reader@example.gov", "Thistle-Harbor-52#k"
 st, existing = rq(boss, "GET", "/api/users")
 found = next((u for u in existing if u["email"] == email), None) \
     if isinstance(existing, list) else None

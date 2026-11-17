@@ -201,7 +201,7 @@ st, r = rq(boss, "PUT", "/api/field-catalog",
 ck("an over-long definition is refused", st == 400, f"{st} {str(r)[:90]}")
 
 print("\n-- who may do what --")
-email, pw = "defs.reader@maine.gov", "Juniper-Vault-37#p"
+email, pw = "defs.reader@example.gov", "Juniper-Vault-37#p"
 st, existing = rq(boss, "GET", "/api/users")
 found = next((u for u in existing if u["email"] == email), None) \
     if isinstance(existing, list) else None

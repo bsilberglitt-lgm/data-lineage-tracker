@@ -74,8 +74,8 @@ diagram or as searchable catalogs, drill into a mapped database schema field by
 field, attach supporting documents, and model a proposed change privately in a
 scenario before anything is built.
 
-It is being developed for the Maine Department of Education. The intention is to
-release it under an open source license, so that other states and agencies can
+It was originally developed by the Maine Department of Education. It has been
+released under an open source license, so that other states and agencies can
 run their own copy.
 
 ## How it works
@@ -722,6 +722,23 @@ trail. A deactivated account cannot sign in and can be reactivated.
 
 New accounts get a temporary password and must change it at first sign-in.
 
+## Forgotten passwords
+
+If email is set up on this deployment, the sign-in screen offers **Forgot your
+password?**. Entering an address sends a link to set a new one; the link works
+once and stops working after an hour, and using it signs the account out
+everywhere else.
+
+The screen says the same thing whether or not the address has an account here.
+That is deliberate: an answer that distinguished them would let anyone outside
+the department find out who works here, one address at a time. So if nothing
+arrives, check the spam folder, and then ask an administrator \u2014 the address
+may simply not have an account.
+
+**If the link is not offered, email is not set up yet** and an administrator
+has to issue a temporary password instead. A SuperAdmin can turn it on under
+Preferences; see the article on setting up email.
+
 ## What the audit log records
 
 Every create, update and delete, field by field, with the old and new values,
@@ -760,6 +777,109 @@ Work inside a scenario is recorded in that scenario's log, reached with the same
 picker. Current Architecture's log stays clean apart from scenario lifecycle
 events — created, deleted, membership changed — so an administrator can see what
 is being planned without opening each one.
+""",
+    },
+    {
+        "id": "email-setup",
+        "title": "Setting up email",
+        "summary": "Connecting the tracker to your own mail server or Resend, "
+                   "where the password goes, and how to test it.",
+        "screens": ["preferences"],
+        "min_role": permissions.SUPERADMIN,
+        "keywords": ["email", "mail", "smtp", "resend", "relay", "password "
+                     "reset", "forgot password", "from address", "port", "587",
+                     "465", "starttls", "ssl", "credential", "api key",
+                     "setup", "configure", "test message", "deliverability"],
+        "body": """\
+The tracker sends email for one thing at present: a link that lets somebody
+who has forgotten their password set a new one. Until this is configured, a
+forgotten password means an administrator issuing a temporary one by hand,
+which works but does not scale past a handful of people.
+
+Only a SuperAdmin can see or change any of this.
+
+## It is configured in two places, on purpose
+
+Everything except the password or API key is on the **Preferences \u2192 Email**
+screen, so you do not need access to the server to set mail up.
+
+**The credential is the exception.** It comes from an environment variable
+where the application runs, never from this screen. This prevents passwords
+from being stored in the nightly database backups.
+
+## Choosing a transport
+
+**SMTP** works with your organization's own mail relay, and also with
+Microsoft 365, Google Workspace, Resend and SendGrid. You will need:
+
+* the host, e.g. `smtp.example.gov`
+* the port \u2014 **587** with STARTTLS is the usual pairing; **465** goes with SSL
+* a username
+* the matching password, set as `SMTP_PASSWORD` in the environment
+
+**Resend** uses their web API instead of an SMTP connection. Choose it if the
+place you are hosting will not allow outbound SMTP, which some platforms
+block. You will need a Resend account with your sending domain verified, and
+the API key set as `RESEND_API_KEY`.
+
+Either way, set the variable and then **restart the application** \u2014 it reads
+its environment at startup.
+
+## The other settings
+
+**From address** is the address mail appears to come from. Most relays will
+only accept an address on a domain they handle, so a mismatch here is the most
+common reason a correctly configured server still refuses to send.
+
+**From name** is what a mail client shows beside the address. Optional.
+
+**Public address of this app** is the address people use to reach the tracker,
+e.g. `https://lineage.example.gov`. It has to be set, because it is what the
+reset link is built from. It is taken from this setting rather than from
+whatever address the request arrived on, so that nobody can cause a reset link
+to point somewhere else.
+
+## Checking it works
+
+**Preferences \u2192 Email status** sits under the settings and reports:
+
+* whether the credential was found, and the name of the variable to set if not
+* anything else still missing, listed all at once
+* a **Send test message** button
+
+The test message goes to your own address and tells you exactly what happened,
+including the mail server's reason for a refusal. Save your changes before
+pressing it \u2014 it tests what the server currently has, not what is on screen.
+
+This button exists because nothing else will tell you. A reset request
+deliberately reveals nothing about whether it worked, so a wrong port is
+invisible from the sign-in screen.
+
+## Turning reset on
+
+Set **Allow self-service password reset** to On. The link appears on the
+sign-in screen only once email is actually working, so it can never offer
+something that quietly fails \u2014 if you have switched it on and the link is not
+there, look at Email status.
+
+## If mail is not arriving
+
+Work down these in order:
+
+1. **Email status says the credential is missing.** Set the variable and
+   restart the application.
+2. **The test message fails with a refusal from the server.** Read the reason
+   it gives. "Sender refused" almost always means the from address is on a
+   domain your relay does not handle.
+3. **The test message fails with a connection or TLS error.** The port and the
+   encryption setting disagree. Try 587 with STARTTLS, or 465 with SSL.
+4. **The test succeeds but nothing arrives.** It is now a delivery question
+   rather than a configuration one: check spam, and check with whoever runs
+   your mail that this sender is allowed. Mail from a new address is often
+   quarantined for a while.
+5. **Email status shows "Test sink is active".** The application is running
+   with a testing variable set that writes mail to a file instead of sending
+   it. It should never be set on a real deployment.
 """,
     },
     {

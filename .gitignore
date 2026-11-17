@@ -1,14 +1,23 @@
 # Secrets / local configuration
 .env
 
-# Legacy SQLite database (the app now uses PostgreSQL). Kept on disk as a
-# historical backup and as the source for migrate_sqlite_to_postgres.py, but
-# deliberately untracked — otherwise `git add -A` would re-add it.
+# The legacy SQLite database. It was Maine DOE's pre-auth data and the seed
+# for the test harness, and was removed from the repository in 0.9.1 before
+# the project was shared: it held one department's real schema, 118 tables and
+# 3,304 column names. The harness now builds from the migrations alone.
+#
+# Still listed so that a copy sitting in a working directory cannot be re-added
+# by `git add -A`.
 lineage.db
 lineage.db-journal
 lineage.db-wal
 lineage.db-shm
 *.bak
+
+# The local email test sink. t_email.py needs the app started with
+# EMAIL_SINK_PATH pointing inside /app so the suite on the host can read what
+# the container wrote; this is where the checklist tells you to put it.
+.mail-test.jsonl
 
 # Generated exports
 *.xlsx

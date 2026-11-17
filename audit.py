@@ -24,6 +24,12 @@ LOGOUT = "logout"
 LOGIN_FAILED = "login_failed"
 PERMISSION_DENIED = "permission_denied"
 PASSWORD_CHANGED = "password_changed"
+# A reset is told apart from an ordinary change on purpose: it is the one
+# password event that happens with nobody signed in, so "who did this" is a
+# token from an inbox rather than a session. Reading the audit log, that is the
+# distinction worth being able to see.
+PASSWORD_RESET_REQUESTED = "password_reset_requested"
+PASSWORD_RESET = "password_reset"
 BACKFILL = "backfill"
 
 # Values that should never be written into the audit log, even though they

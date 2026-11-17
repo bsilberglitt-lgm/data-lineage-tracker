@@ -5458,6 +5458,118 @@ function ModalCheck({ entity, col, label, checked, onChange }) {
   );
 }
 
+// ===== Email status and test send =====
+// Every other path in the email feature hides its failures on purpose: a
+// forgot-password request must answer the same way whether or not the address
+// exists, so an administrator who has typed the wrong port has no way to find
+// out. This is the one place that reports the real reason, and it is safe
+// because the test message goes to the person who pressed the button.
+//
+// It reads from the server rather than from the Preferences draft beside it,
+// because the thing that most often stops mail working — the credential — is
+// an environment variable, so the answer is not on this screen at all. Which
+// is also why it says to save first: pressing Send straight after typing a
+// host would test the host the server still has.
+function EmailStatus({ notify }) {
+  const [info, setInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const load = useCallback(() => {
+    api.get('/api/email/test').then(setInfo).catch(() => setInfo(null));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const send = async () => {
+    setBusy(true); setResult(null);
+    try {
+      const r = await api.post('/api/email/test', {});
+      setResult(r);
+      if (r.ok) notify(`Test message sent to ${r.sent_to}.`);
+      else notify('The test message could not be sent.', true);
+    } catch (err) {
+      notify(err.message, true);
+    } finally { setBusy(false); load(); }
+  };
+
+  if (!info) return null;
+  return (
+    <div className="pref-group">
+      <h3>Email status</h3>
+      <div className="pref-row">
+        <div className="pref-label">
+          <b>Credential</b>
+          <span>
+            {info.transport === 'none'
+              ? 'No transport is selected, so no credential is needed.'
+              : info.secret_present
+                ? `Found in ${info.secret_env_var}.`
+                : `Not found. Set ${info.secret_env_var} in the environment ` +
+                  `where this app runs, then restart it. It is deliberately ` +
+                  `not set from this screen, so it is never stored in the ` +
+                  `database or carried in a backup.`}
+          </span>
+        </div>
+        <div className="pref-control">
+          {info.transport === 'none' ? '—'
+            : info.secret_present ? 'Present' : 'Missing'}
+        </div>
+      </div>
+      {info.problems && info.problems.length > 0 && (
+        <div className="pref-row">
+          <div className="pref-label">
+            <b>Not ready to send</b>
+            <span>
+              <ul style={{margin:'4px 0 0 16px'}}>
+                {info.problems.map((x, i) => <li key={i}>{x}</li>)}
+              </ul>
+            </span>
+          </div>
+          <div className="pref-control">&nbsp;</div>
+        </div>
+      )}
+      {!!info.sink_active && (
+        <div className="pref-row">
+          <div className="pref-label">
+            <b>Test sink is active</b>
+            <span>
+              EMAIL_SINK_PATH is set in this environment, so messages are
+              written to a file and nothing is actually delivered. This should
+              only ever be set in a test environment.
+            </span>
+          </div>
+          <div className="pref-control">On</div>
+        </div>
+      )}
+      <div className="pref-row">
+        <div className="pref-label">
+          <b>Send a test message</b>
+          <span>
+            Sends one message to your own address and reports exactly what
+            happened. Save any changes above first &mdash; this tests the
+            settings the server currently has, not what is typed on screen.
+          </span>
+        </div>
+        <div className="pref-control">
+          <button className="btn" onClick={send}
+                  disabled={busy || !info.configured}>
+            {busy ? 'Sending…' : 'Send test'}
+          </button>
+        </div>
+      </div>
+      {result && (
+        <div className="pref-row">
+          <div className="pref-label">
+            <b>{result.ok ? 'Sent' : 'Failed'}</b>
+            <span>{result.detail}</span>
+          </div>
+          <div className="pref-control">&nbsp;</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===== Version badge =====
 function VersionBadge({ version, onClick }) {
   if (!version) return null;
@@ -7703,6 +7815,18 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onTaskTypes
       return <select value={v || 'Viewer'} onChange={e => setVal(p.key, e.target.value)}>
         {(roles || []).map(r => <option key={r} value={r}>{r}</option>)}</select>;
     }
+    if (p.value_type === 'email_transport') {
+      return <select value={v || 'none'} onChange={e => setVal(p.key, e.target.value)}>
+        <option value="none">Off — no email is sent</option>
+        <option value="smtp">SMTP</option>
+        <option value="resend">Resend (web API)</option></select>;
+    }
+    if (p.value_type === 'smtp_security') {
+      return <select value={v || 'starttls'} onChange={e => setVal(p.key, e.target.value)}>
+        <option value="starttls">STARTTLS (usually port 587)</option>
+        <option value="ssl">SSL (usually port 465)</option>
+        <option value="none">None — unencrypted</option></select>;
+    }
     if (p.value_type === 'logo_position') {
       return <select value={LOGO_POSITIONS.indexOf(v) >= 0 ? v : 'left'}
                      onChange={e => setVal(p.key, e.target.value)}>
@@ -7748,6 +7872,11 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onTaskTypes
           <SystemTypesEditor notify={notify} onChanged={onTypesChanged} />}
         {cat === 'Password policy' &&
           <TaskTypesEditor notify={notify} onChanged={onTaskTypesChanged} />}
+        {/* Under the settings it reports on. The status has to be read from
+            the server rather than worked out from the draft above, because
+            the one thing that decides whether any of this can send — the
+            credential — lives in the environment and is not on this screen. */}
+        {cat === 'Email' && <EmailStatus notify={notify} />}
       </React.Fragment>
     ))}
     {/* Fallback: if the password category is ever renamed, still show the editor. */}
@@ -8620,7 +8749,7 @@ function AuditScreen({ notify }) {
 }
 
 // ===== Login Screen =====
-function LoginScreen({ onSignedIn, settings }) {
+function LoginScreen({ onSignedIn, settings, onForgot }) {
   const [version, setVersion] = useState(null);
   useEffect(() => { api.get('/api/version').then(v => setVersion(v.version)).catch(() => {}); }, []);
   const [email, setEmail] = useState('');
@@ -8663,12 +8792,167 @@ function LoginScreen({ onSignedIn, settings }) {
         <button type="submit" className="login-btn" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign In'}
         </button>
-        <div className="login-sub">
-          Accounts are created by an administrator. If you've forgotten your
-          password, ask an administrator to issue a new temporary one.
-        </div>
+        {/* Shown only when the server says self-service reset is both
+            switched on AND actually able to send — one boolean from
+            /api/branding/public, resolved there because the sign-in screen
+            has no session to ask the mail settings with. A link that promises
+            an email and delivers nothing is worse than no link: somebody
+            waits instead of asking an administrator. */}
+        {settings && settings.self_service_reset
+          ? <div className="login-sub">
+              <a href="#" onClick={e => { e.preventDefault(); onForgot(); }}>
+                Forgot your password?
+              </a>
+              <div style={{marginTop:6}}>
+                Accounts are created by an administrator.
+              </div>
+            </div>
+          : <div className="login-sub">
+              Accounts are created by an administrator. If you've forgotten your
+              password, ask an administrator to issue a new temporary one.
+            </div>}
       </form>
       <VersionBadge version={version} />
+    </div>
+  );
+}
+
+// ===== Forgot password =====
+// Asks for an address and says the same thing whatever happens, because the
+// server does: it will not reveal whether an address has an account, so there
+// is nothing here to report but "we have sent one if it exists". Phrasing that
+// without sounding evasive is the whole design problem of this screen.
+function ForgotPasswordScreen({ settings, onBack }) {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (ev) => {
+    ev.preventDefault();
+    setBusy(true); setError('');
+    try {
+      await api.post('/api/auth/forgot-password', { email });
+      setSent(true);
+    } catch (err) {
+      // Only reached when the whole feature is switched off, which the
+      // sign-in screen already checked — so this is a crafted request or a
+      // setting changed mid-session, not something to explain at length.
+      setError(err.message || 'Could not send a reset link.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="login-screen">
+      <form className="login-box" onSubmit={submit}>
+        <LoginLogo settings={settings} />
+        <h1>{(settings && settings.app_title) || 'Data Lineage Tracker'}</h1>
+        {sent ? (<>
+          <p>Check your email</p>
+          <div className="login-sub" style={{textAlign:'left'}}>
+            If there is an account for that address, a link to set a new
+            password is on its way. It can only be used once, and it stops
+            working after an hour.
+            <div style={{marginTop:10}}>
+              Nothing arrived? Check the spam folder, then ask an administrator
+              &mdash; the address may not have an account on this system.
+            </div>
+          </div>
+          <button type="button" className="login-btn" style={{marginTop:14}}
+                  onClick={onBack}>Back to sign in</button>
+        </>) : (<>
+          <p>Reset your password</p>
+          {error && <div className="login-error">{error}</div>}
+          <div className="field">
+            <label htmlFor="forgot-email">Email</label>
+            <input id="forgot-email" type="email" autoComplete="username"
+                   value={email} autoFocus
+                   onChange={e => { setEmail(e.target.value); setError(''); }} />
+          </div>
+          <button type="submit" className="login-btn" disabled={busy || !email}>
+            {busy ? 'Sending…' : 'Send a reset link'}
+          </button>
+          <div className="login-sub">
+            <a href="#" onClick={e => { e.preventDefault(); onBack(); }}>
+              Back to sign in
+            </a>
+          </div>
+        </>)}
+      </form>
+    </div>
+  );
+}
+
+// ===== Set a new password from an emailed link =====
+// Reached at /reset-password?token=..., which is the only place the raw token
+// exists outside the email — the database holds a hash. Nobody is signed in
+// here, so there is no current password to ask for; the token is what proved
+// who this is.
+function ResetPasswordScreen({ settings, token, onDone, onBack }) {
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [problems, setProblems] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const submit = async (ev) => {
+    ev.preventDefault();
+    setError(''); setProblems(null);
+    if (next !== confirm) { setError('The two passwords do not match.'); return; }
+    setBusy(true);
+    try {
+      await api.post('/api/auth/reset-password',
+                     { token: token, new_password: next });
+      setDone(true);
+    } catch (err) {
+      setError(err.message);
+      setProblems(err.problems);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="login-screen">
+      <form className="login-box" onSubmit={submit}>
+        <LoginLogo settings={settings} />
+        <h1>{(settings && settings.app_title) || 'Data Lineage Tracker'}</h1>
+        {done ? (<>
+          <p>Your password is set</p>
+          <div className="login-sub" style={{textAlign:'left'}}>
+            Any other device that was signed in to this account has been
+            signed out.
+          </div>
+          <button type="button" className="login-btn" style={{marginTop:14}}
+                  onClick={onDone}>Sign in</button>
+        </>) : (<>
+          <p>Choose a new password</p>
+          {error && <div className="login-error">{error}</div>}
+          {problems && <ul className="policy-list">
+            {problems.map((x, i) => <li key={i}>{x}</li>)}</ul>}
+          <div className="field">
+            <label htmlFor="reset-new">New password</label>
+            <input id="reset-new" type="password" autoComplete="new-password"
+                   value={next} autoFocus
+                   onChange={e => { setNext(e.target.value); setError(''); }} />
+          </div>
+          <div className="field">
+            <label htmlFor="reset-confirm">Confirm new password</label>
+            <input id="reset-confirm" type="password" autoComplete="new-password"
+                   value={confirm}
+                   onChange={e => { setConfirm(e.target.value); setError(''); }} />
+          </div>
+          <button type="submit" className="login-btn"
+                  disabled={busy || !next || !confirm}>
+            {busy ? 'Saving…' : 'Set password'}
+          </button>
+          <div className="login-sub">{(settings && settings.password_policy) || ''}</div>
+          <div className="login-sub">
+            <a href="#" onClick={e => { e.preventDefault(); onBack(); }}>
+              Back to sign in
+            </a>
+          </div>
+        </>)}
+      </form>
     </div>
   );
 }
@@ -9001,6 +9285,21 @@ function ExportModal({ defaultName, viewName, onExport, onPrint, onClose, notify
 // ===== Main App Wrapper =====
 function AppWrapper() {
   const [state, setState] = useState({ status: 'loading', user: null, settings: {} });
+  // Whether the sign-in screen is showing the forgot-password form.
+  const [forgot, setForgot] = useState(false);
+  // The token out of an emailed link. Read ONCE on mount rather than on every
+  // render, and the query string is cleared from the address bar immediately:
+  // a reset token in a URL ends up in browser history, and `history.replaceState`
+  // is what keeps it out. The token itself stays in React state for the one
+  // request that spends it.
+  const [resetToken, setResetToken] = useState(() => {
+    try {
+      if (window.location.pathname !== '/reset-password') return null;
+      const t = new URLSearchParams(window.location.search).get('token');
+      if (t) window.history.replaceState({}, '', '/reset-password');
+      return t || '';
+    } catch (e) { return null; }
+  });
 
   const loadSession = useCallback(async () => {
     try {
@@ -9036,8 +9335,25 @@ function AppWrapper() {
   if (state.status === 'loading') {
     return <div className="login-screen"><div className="login-box"><p>Loading…</p></div></div>;
   }
+  // Before the sign-in screen, because somebody following a link from their
+  // inbox is not trying to sign in — and they cannot, which is the reason
+  // they are here.
+  if (resetToken !== null) {
+    const leave = () => {
+      setResetToken(null);
+      try { window.history.replaceState({}, '', '/'); } catch (e) { /* ignore */ }
+    };
+    return <ResetPasswordScreen settings={state.settings} token={resetToken}
+                                onDone={leave} onBack={leave} />;
+  }
+  if (state.status === 'signed-out' && forgot) {
+    return <ForgotPasswordScreen settings={state.settings}
+                                 onBack={() => setForgot(false)} />;
+  }
   if (state.status === 'signed-out') {
-    return <LoginScreen settings={state.settings} onSignedIn={(result) => {
+    return <LoginScreen settings={state.settings}
+                        onForgot={() => setForgot(true)}
+                        onSignedIn={(result) => {
       setState({ status: result.user.must_change_password ? 'must-change' : 'ready',
                  user: result.user, settings: result.settings || {} });
     }} />;

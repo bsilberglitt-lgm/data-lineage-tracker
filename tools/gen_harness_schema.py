@@ -44,6 +44,27 @@ def columns(body, collect_pk=None):
             else:
                 collect_pk.append((name, t, "autoincrement=True" in arg))
         if "nullable=False" in arg: frag += " NOT NULL"
+        # REFERENCES, which this used to drop entirely.
+        #
+        # It did not matter while migration 0001 was excluded from generation:
+        # the harness copied `lineage.db`, whose tables real Alembic had
+        # created, so they carried their foreign keys. Generating 0001 in
+        # 0.9.1 lost them, and the harness enables `PRAGMA foreign_keys=ON` —
+        # so a constraint that production enforces stopped being enforced in
+        # the one place the suites can see. `t_052` caught it: a free-text
+        # system name in a data element's Source of Truth was stored instead of
+        # refused, which is a 500 in production and a silent success here.
+        #
+        # ON DELETE is deliberately not translated. Nothing in the schema
+        # declares one — the application does its own cascades, by design (see
+        # CLAUDE.md on task deletion) — so emitting a guess would be inventing
+        # behavior the migrations do not describe.
+        fkm = re.search(r'sa\.ForeignKey\(\s*"([\w.]+)"', arg)
+        if fkm:
+            ref = fkm.group(1)
+            if "." in ref:
+                tbl, col = ref.rsplit(".", 1)
+                frag += f" REFERENCES {tbl}({col})"
         sd = re.search(r'server_default=sa\.text\(\s*"([^"]+)"\s*\)', arg)
         plain = re.search(r'server_default="([^"]*)"', arg)
         if sd:

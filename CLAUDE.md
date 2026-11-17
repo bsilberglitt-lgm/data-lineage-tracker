@@ -419,6 +419,76 @@ Two things close it:
 So: a new sub-component that draws fields fails the check rather than quietly
 shortening the catalog. Add it to `FIELD_GROUPS`.
 
+### The seed is a fictional district, and the harness builds from nothing
+
+Until 0.9.1 two things carried Maine DOE's own data, and both were wrong the
+moment the project was shared:
+
+* **`seed_db()` in `app.py`** held the department's real architecture — eight
+  systems, the real collection pipeline, 33 data elements from the state's
+  interoperability profile. An adopter starting from an empty database would
+  watch another state's systems appear on first run and have to work out which
+  parts were examples.
+* **`lineage.db`** was the harness seed. `tools/harness_setup.py` copied it to
+  get migration 0001's tables *and* some rows to test against, which is why
+  0001 was excluded from the generated DDL.
+
+Now: `seed_db()` creates an invented district with **role-based names**
+(`Statewide Integration Platform`, not any particular product), eight systems
+in the same source-to-reporting shape, seven flows including one carrying no
+PII, and twelve data elements chosen to cover every case the catalogs display.
+`sample_schema.json` replaces the two real schema seeds with four tables and
+three foreign keys. The shape is deliberately realistic because the point of a
+seed is to demonstrate features; the content is deliberately invented.
+
+**The harness now builds from the migrations alone**, 0001 included, starting
+from an empty file. The module docstring always claimed the schema was
+generated rather than hand-written; that is now true of all of it rather than
+of everything after 0001. One consequence worth knowing when reading a suite:
+**the harness database has no rows.** Anything needing a system creates its
+own, and `seed_db()` supplies the sample district once the server has started.
+
+`FIRST_MIGRATION` is emitted separately, before the hand-written 0002 block,
+because that block renames `stakeholder` and the table has to exist first.
+And `PRELUDE_0002` uses **single braces** while `PREAMBLE` uses doubled ones:
+the preamble goes through `.format()` and the prelude is concatenated as-is, so
+a doubled brace there reaches SQLite literally and fails with
+`unrecognized token: "{"`.
+
+#### The generator was dropping every REFERENCES clause
+
+Generating 0001 exposed it. `gen_harness_schema.py` translated the column type,
+nullability, defaults and primary keys, and **silently discarded
+`sa.ForeignKey(...)`**. That cost nothing while 0001 was excluded, because
+`lineage.db`'s tables had been created by real Alembic and carried their
+constraints — so the harness had foreign keys without the generator ever
+emitting one.
+
+The moment 0001 was generated they vanished, and the harness enables
+`PRAGMA foreign_keys=ON`, so a constraint production enforces stopped being
+enforced in the only place the suites can see it. `t_052` caught it: a
+free-text system name in a data element's Source of Truth was **stored instead
+of refused**, which is a 500 in production and a silent success in the
+harness. Exactly the harness-diverges-from-production shape this file keeps
+recording, arriving by a route nobody was watching.
+
+`REFERENCES` is emitted now. `ON DELETE` deliberately is not: nothing in the
+schema declares one, because the application does its own cascades on purpose,
+so emitting a guess would invent behavior the migrations do not describe.
+
+#### Schema seed files are globbed into the harness, not listed
+
+`seed_schema()` globs `*_schema.json`, so `harness_setup.py` globs them too. A
+hand-kept list there would mean the harness quietly having no schema to drill
+into — which is what happened on the first attempt: `sample_schema.json` was
+not in `APP_FILES`, `schema_table` came up empty, and `selftest`'s governance
+inheritance checks had nothing to inherit through. The suites do not report
+"no schema was seeded"; they report an assertion about governance failing.
+
+`APP_FILES` itself is still a hand-kept list of modules, for the reason given
+in its comment: that failure is loud, because the server exits on
+`ModuleNotFoundError` before binding a port.
+
 ### The harness applies every migration in `alembic/versions/`
 
 `gen_harness_schema.py` understood `server_default=sa.text("0")` but not a bare
@@ -984,7 +1054,7 @@ component there finds out on purpose.
 ### Feature suites sign in through `tools/tests/_client.py`
 
 Eleven suites each opened with the same copied block: log in as
-`ben.silberglitt@maine.gov` with the sandbox bootstrap password, then
+a hardcoded real address with the sandbox bootstrap password, then
 `change-password` to a literal out of the test file. Two faults, and the second
 is the serious one.
 
@@ -1787,6 +1857,135 @@ Read raw, the label comes back with a literal backslash and four digits, and a
 label assertion fails for a reason that has nothing to do with labels. The
 reader decodes them now.
 
+### Email: settings in the database, the secret in the environment
+
+Added in 0.9.0, for sharing the tracker with other states: a forgotten
+password needed Ben to issue a temporary one by hand, which is the first thing
+another department would hit.
+
+**The split is the design, and it is a compromise between two true things.**
+`CLAUDE.md` says config is environment variables only, and that is right for a
+secret. But in a state agency the person who knows the mail relay is usually
+not the person who can redeploy a container, so putting the host and port in
+the environment means mail never gets configured at all. So: the host, port,
+encryption, username, from address, from name and `app_base_url` are rows in
+the existing `preference` table — SuperAdmin-only and audited, which that
+table already was, so this needed **no migration for configuration**. The
+password or API key comes from `SMTP_PASSWORD` / `RESEND_API_KEY` and nothing
+else.
+
+Why not store the credential too, encrypted? Because it would travel in all 45
+retained nightly backups, and the key to decrypt it would have to be an
+environment variable — so it would move the secret rather than protect it, and
+add a rotation problem. `mailer.describe()` reports `secret_present` and the
+*name* of the variable, never the value; `t_email.py` asserts the password
+appears in no API response.
+
+**Two transports, and SMTP is the one that matters.** Most agencies run a
+relay and will not want an external vendor in the path for a password reset,
+and SMTP is also what Resend, SendGrid, Microsoft 365 and Google Workspace all
+speak — so one code path covers nearly everybody. Resend's HTTP API is there
+for hosts that will not allow an outbound SMTP connection. `mailer.py` is
+**standard library only** (`smtplib`, `urllib`), so adopting this adds no
+dependency to install, pin or audit.
+
+**`mailer.send` returns `(ok, detail)` and never raises.** Every caller has to
+carry on either way: a reset must answer the browser without revealing whether
+the address exists, and the test button needs the real reason to show. The
+`detail` strings are written to be read by an administrator, and the SMTP auth
+failure deliberately does *not* echo the server's text, because some relays
+include the username and that string reaches a browser.
+
+**Nothing logs a message body.** A reset email contains a working token for
+somebody's account, so a log line carrying one is a credential at rest in
+whatever aggregates the logs. The failure line logs the reason and not the
+recipient, for the same reason.
+
+#### The test sink, and why it announces itself
+
+`EMAIL_SINK_PATH` makes every send append JSON to a file and report success.
+It exists because the feature suites run against a real server process, so an
+in-memory list would be invisible to them, and because **a test suite must
+never be able to mail a real person**.
+
+It is also a hole if it is ever set on a real deployment: reset would report
+success and deliver nothing. So the app prints a loud warning at every startup
+when it finds it, `Preferences → Email status` shows a row saying so, and
+`t_email.py` refuses to run without it rather than risking real mail.
+
+#### Four decisions in the reset flow that are security, not polish
+
+* **The link is built from `app_base_url`, never the request's Host header.**
+  Reading the header is the standard way reset links get poisoned: an attacker
+  sends a forgot-password request for somebody else's address with a Host of
+  their choosing, and the victim receives a real token pointing at the
+  attacker's server. `auth.reset_link` takes the base URL as an argument so
+  there is no header in reach, and `t_email.py` sends a forged `Host` and
+  `X-Forwarded-Host` and asserts the link ignores both.
+* **The answer never reveals whether an address exists.** Same status and same
+  body for an address with an account, one without, and a deactivated one —
+  asserted as equality of the whole response, not as "both succeeded". A
+  forgot-password endpoint that distinguishes them is a free list of who works
+  at the department, which for a state agency is a phishing target list. It is
+  also why a *send failure* is not reported to the caller: "we could not send
+  to that address" tells an attacker the address was real.
+* **The token is stored as a SHA-256 hash** (migration 0022), so a reader of
+  the database or of a backup holds nothing usable. SHA-256 rather than scrypt
+  because 32 bytes of `token_urlsafe` has nothing to brute-force — the slow
+  hash a password needs would buy nothing and cost a comparison per click.
+* **Spending a token kills every other outstanding one for that account**, and
+  the reset revokes **every** session with no exception for the one asking —
+  unlike change-password, nobody is signed in here, so an unrevoked session
+  would be somebody else's.
+
+The rate limit is counted **per account, not per IP**: the thing being
+prevented is somebody's inbox being flooded, and an attacker doing that will
+not keep the same address. It is 5 an hour rather than 1, because a person
+whose first mail was slow must not be stopped. The HTTP answer does not change
+when the limit bites — only the mail stops — which `t_email.py` checks against
+a **fresh** account, since run against one that has already spent its hour the
+burst produces zero messages and "fewer than 8" passes while proving nothing.
+
+#### Both switches, or the link is a trap
+
+`reset_enabled()` requires the `enable_self_service_reset` preference AND a
+working transport AND a base URL. The preference is the organization's
+decision; the rest is whether that decision can be honored. Offering the link
+with mail unconfigured sends somebody to a screen that promises an email and
+delivers nothing, and they wait instead of asking an administrator. The
+sign-in screen learns this as **one boolean** on `/api/branding/public` — the
+host, port and username behind it are nobody's business before sign-in, and
+`t_email.py` asserts no `smtp*` or `email_*` key is public.
+
+`password_policy` **is** public now, and that reverses an assertion in
+`t_branding.py`. The reset screen is anonymous and has to state the rules a
+new password must meet, or somebody types one, is refused, and has to guess.
+The rules are not a secret — every signed-in user sees them on the
+forced-change screen. The old check is left pointing at the new behavior with
+a note, so the reversal reads as deliberate rather than as drift.
+
+#### `/reset-password` is the one non-root page
+
+A reset link has to point at a path rather than at `/`, so the token is not
+sitting in the address bar of the ordinary diagram. `AppStaticFileHandler`
+would 404 it — there is no `reset-password.html`, the whole app is one
+`index.html` — so there is an explicit route for exactly that path. Not a
+catch-all: returning the app for every unknown path would turn a mistyped API
+route into a page of HTML instead of an error.
+
+The browser reads the token **once on mount** and immediately clears the query
+string with `history.replaceState`, because a token in a URL otherwise lands
+in browser history. It stays in React state for the one request that spends it.
+
+#### `APP_FILES` in `harness_setup.py` is hand-kept
+
+`mailer.py` was not in it, so the harness server exited on
+`ModuleNotFoundError` before binding a port and every suite reported
+"connection refused". Annoying, and nothing like the silent failures a stale
+*migration* list used to cause — the server does not start at all — which is
+why that list is still written out rather than globbed. **Add a new top-level
+module to `APP_FILES`.**
+
 ### A suite borrows the database — including from the suite before it
 
 `t_fielddefs` asserted "nothing is defined except what the app ships with",
@@ -1865,8 +2064,13 @@ AA, so an arbitrary hex value would bypass that guarantee. The known gaps
 
 ## Not yet built
 
-- Two-factor authentication and self-service password reset (both need email;
-  Resend is the intended provider, and a domain with DNS access is required)
+- Two-factor authentication. TOTP via an authenticator app needs no email at
+  all, so this is no longer blocked on anything — the `require_2fa` preference
+  is in place and locked off. Email-based codes would use the 0.9.0 mailer.
+- Email notifications for tasks (assignment, overdue). The mailer is built and
+  the only question left is the shape: per-event alerts raise who-opts-in and
+  what-stops-a-mail-storm, so a scheduled digest is probably the better first
+  version.
 - Single sign-on via OIDC against a state identity provider
 - Field-level lineage tracing (tracing a column back through its transformations)
 - Agreements management screen

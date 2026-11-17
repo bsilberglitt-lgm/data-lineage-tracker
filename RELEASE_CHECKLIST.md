@@ -232,12 +232,37 @@ into the wrong group is how one ended up running after step 2.
   quietly undo an earlier one:
 
   ```bash
+  python3 tools/tests/t_email.py --email <your email>      # 0.9.0 — email, password reset
   python3 tools/tests/t_tasks.py --email <your email>      # 0.7.0 — tasks
   python3 tools/tests/t_060.py --email <your email>        # 0.6.0 — self-service profile
   python3 tools/tests/t_052.py --email <your email>        # 0.5.2 — payloads, contacts, deactivation
   python3 tools/tests/t_fieldhide.py --email <your email>  # 0.5.1 — field hiding
   python3 tools/tests/t_fielddefs.py --email <your email>  # 0.5.0 — field definitions
   ```
+
+  **`t_email.py` needs one extra thing, and it refuses to run without it.**
+  The app has to be started with `EMAIL_SINK_PATH` set, which makes it write
+  mail to a file instead of sending any. The suite reads that file to find the
+  reset token in a message it never receives — and it cannot mail a real person
+  by accident, which is the point.
+
+  The path must be **inside `/app`**, because Docker Compose mounts your
+  checkout there: a path anywhere else is written inside the container and the
+  suite, running on your Mac, cannot see it.
+
+  ```bash
+  EMAIL_SINK_PATH=/app/.mail-test.jsonl docker compose up -d
+  EMAIL_SINK_PATH=.mail-test.jsonl python3 tools/tests/t_email.py --email <your email>
+  ```
+
+  Note the two different paths for the same file — `/app/...` is where the
+  container writes it, the bare name is where you read it. `.mail-test.jsonl`
+  is gitignored.
+
+  **Restart the app without that variable when you are done.** The app prints a
+  loud warning at every startup while it is set, and Preferences → Email status
+  shows a row saying so, because a deployment with it set would report password
+  resets as sent and deliver nothing.
 
   Each prompts for your password, like `selftest.py`. Add a port only if the
   app is not on 8765: `t_tasks.py 8765 --email …`.
