@@ -168,6 +168,25 @@ try:
     check("login page still serves", s == 200)
     check("old hardcoded password is gone", "MaineLineage" not in str(page))
 
+    # The one non-root page, and the only check in this project that loads a
+    # page at all. It is here because the route 404'd for the whole of 0.9.0's
+    # development and nothing noticed: `t_email.py` exercises
+    # POST /api/auth/reset-password, which is a different thing with a similar
+    # name, and every other check talks to the API. A person following a real
+    # link from a real message was the first thing to find it.
+    #
+    # Asserted as "serves the application", not merely "is not a 404": the
+    # route has to return index.html, because the token is in the URL fragment
+    # and only the browser can read it.
+    s, page = anon.request("GET", "/reset-password")
+    check("the reset-password page serves", s == 200, f"got {s}")
+    check("and it serves the application, not an error page",
+          "text/babel" in str(page), str(page)[:120])
+    # A mistyped API route must still be an error rather than a page of HTML,
+    # which is why this is one explicit route and not a catch-all.
+    s, _ = anon.request("GET", "/api/definitely-not-a-route")
+    check("an unknown API path is still a 404", s == 404, f"got {s}")
+
     # -----------------------------------------------------------------------
     section("Sign in")
     s, body = admin.login(EMAIL, "definitely-the-wrong-password")

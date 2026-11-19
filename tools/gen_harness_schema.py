@@ -49,7 +49,7 @@ def columns(body, collect_pk=None):
         # It did not matter while migration 0001 was excluded from generation:
         # the harness copied `lineage.db`, whose tables real Alembic had
         # created, so they carried their foreign keys. Generating 0001 in
-        # 0.9.1 lost them, and the harness enables `PRAGMA foreign_keys=ON` —
+        # 0.9.0 lost them, and the harness enables `PRAGMA foreign_keys=ON` —
         # so a constraint that production enforces stopped being enforced in
         # the one place the suites can see. `t_052` caught it: a free-text
         # system name in a data element's Source of Truth was stored instead of

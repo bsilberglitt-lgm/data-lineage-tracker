@@ -12,7 +12,7 @@ Everything it needs is now in the repository:
     tools/harness/fakelibs/     the fake psycopg pool and no-op alembic
     tools/gen_harness_schema.py DDL generated from the real migrations
 
-**Nothing but the migrations.** Until 0.9.1 the harness started by copying
+**Nothing but the migrations.** Until 0.9.0 the harness started by copying
 `lineage.db` — Maine DOE's pre-auth database — which supplied both migration
 0001's tables and some rows to test against. That file is gone from the
 repository, so 0001 is generated like every other migration and the harness

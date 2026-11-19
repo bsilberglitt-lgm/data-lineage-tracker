@@ -278,8 +278,23 @@ def reset_link(base_url, raw_token):
     somebody else's address with a Host of their own choosing, and the victim
     receives a real token pointing at the attacker's server. Reading it from
     configuration means a forged request cannot change where the link goes.
+
+    **The token is in the fragment, not the query string**, and that is a
+    deliberate change from the first version. A fragment is never transmitted
+    to the server: a browser strips everything from the `#` onwards before
+    sending the request. A query string is not, so `?token=...` is written into
+    the access log of every reverse proxy, load balancer and CDN in the path —
+    Render's today, an ALB or Application Gateway later — where it sits as a
+    live credential in whatever aggregates those logs, readable by anyone with
+    log access and retained on whatever schedule they are retained on. Clearing
+    it from the address bar with `history.replaceState`, which the browser also
+    does, protects browser history and does nothing whatever about that.
+
+    Nothing server-side reads it from the URL either way: the page is served
+    for the path alone and the browser POSTs the token it found. So this costs
+    nothing and closes the log exposure completely.
     """
-    return f"{(base_url or '').rstrip('/')}/reset-password?token={raw_token}"
+    return f"{(base_url or '').rstrip('/')}/reset-password#token={raw_token}"
 
 
 # ---------------------------------------------------------------------------
