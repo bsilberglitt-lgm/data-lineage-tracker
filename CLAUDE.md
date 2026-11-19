@@ -109,8 +109,19 @@ Write the release's commit message to **`COMMIT_MSG.txt`** in the project root
 and tell Ben to run:
 
 ```bash
-git commit -F COMMIT_MSG.txt && git push
+git add -A && git commit -F COMMIT_MSG.txt && git push
 ```
+
+**Include the `git add -A`.** `-F` says where the message comes from and
+nothing about what is being committed, so without staging, `commit` finds an
+empty index and stops — and what it prints is a status listing under "Changes
+not staged for commit", which reads like *the work was already committed*
+rather than *you forgot to stage*. Ben lost a few minutes to exactly that
+reading, having been handed the command without the `add`. The `&&` then means
+`push` never runs, so the branch really is up to date with the remote, and the
+story is consistent all the way down. Nothing is damaged; the release simply
+has not happened. Check `git log --oneline -1` against the message you wrote if
+there is any doubt.
 
 Not `-m`, and not a heredoc. A long message pasted into Terminal breaks on the
 first quote, backtick, or line that looks like a shell word — Ben lost one to
@@ -454,6 +465,15 @@ And `PRELUDE_0002` uses **single braces** while `PREAMBLE` uses doubled ones:
 the preamble goes through `.format()` and the prelude is concatenated as-is, so
 a doubled brace there reaches SQLite literally and fails with
 `unrecognized token: "{"`.
+
+**The history was rewritten in November 2026, so commit hashes before then do
+not exist any more.** `git filter-repo` stripped `lineage.db`, the two real
+schema seeds, `FedReporting_Tables.xlsx`, `.DS_Store` and
+`migrate_sqlite_to_postgres.py` out of every commit, while the repository was
+still private — doing it after publishing would have been a far weaker
+guarantee, because an unreferenced commit stays reachable by SHA until GitHub
+garbage-collects. A pre-rewrite mirror is archived locally and off any public
+service; it is the only remaining copy of the department's pre-auth database.
 
 #### The generator was dropping every REFERENCES clause
 
