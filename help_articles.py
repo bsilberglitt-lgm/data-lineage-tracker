@@ -87,9 +87,16 @@ packaged as a container.
 All of its configuration comes from environment variables rather than being
 baked in, making it portable.
 
-The database is backed up automatically every night to separate, encrypted
-off-site storage, with thirty days of daily copies kept alongside monthly and
-annual ones.
+## The example records
+
+A new installation arrives with a small invented school district already in it
+— a handful of systems, the flows between them, some data elements, and one
+mapped database schema. None of it is real. It is there so the diagram and the
+catalogs have something to show before anyone has entered anything, and so the
+features can be seen working.
+
+Delete them as you go, like any other record. They are created only into a
+database with no systems in it, so once they are gone they do not come back.
 
 ## What it makes possible
 
@@ -789,7 +796,10 @@ is being planned without opening each one.
         "keywords": ["email", "mail", "smtp", "resend", "relay", "password "
                      "reset", "forgot password", "from address", "port", "587",
                      "465", "starttls", "ssl", "credential", "api key",
-                     "setup", "configure", "test message", "deliverability"],
+                     "setup", "configure", "test message", "deliverability",
+                     "ses", "amazon ses", "azure", "communication services",
+                     "microsoft 365", "office 365", "exchange online",
+                     "oauth", "basic authentication", "secret", "rotate"],
         "body": """\
 The tracker sends email for one thing at present: a link that lets somebody
 who has forgotten their password set a new one. Until this is configured, a
@@ -803,19 +813,42 @@ Only a SuperAdmin can see or change any of this.
 Everything except the password or API key is on the **Preferences \u2192 Email**
 screen, so you do not need access to the server to set mail up.
 
-**The credential is the exception.** It comes from an environment variable
-where the application runs, never from this screen. This prevents passwords
-from being stored in the nightly database backups.
+**The credential is the exception.** It comes from the environment where the
+application runs, never from this screen. This keeps passwords out of the
+nightly database backups.
+
+There are two ways to supply it: set the password or API key directly in a
+variable, or set a second variable to the **path of a file** holding it. The
+file form is there because AWS, Azure and Docker all deliver a secret to an
+application as a mounted file, so this lets you keep the credential in your own
+secret store instead of copying it into a deployment setting. A credential
+supplied as a file is re-read for every message, so rotating it does not need a
+restart. Email status tells you which one it found.
 
 ## Choosing a transport
 
-**SMTP** works with your organization's own mail relay, and also with
-Microsoft 365, Google Workspace, Resend and SendGrid. You will need:
+**SMTP** works with your organization's own mail relay, with Amazon SES, with
+Azure Communication Services, and with Resend, SendGrid and Google Workspace.
+You will need:
 
 * the host, e.g. `smtp.example.gov`
 * the port \u2014 **587** with STARTTLS is the usual pairing; **465** goes with SSL
-* a username
-* the matching password, set as `SMTP_PASSWORD` in the environment
+* a username, and the matching password set in the environment (below)
+
+An internal relay often needs no username at all, because it allows your
+servers by address instead. Set encryption to match what it expects and leave
+the username empty.
+
+### Do not use Microsoft 365 as the relay
+
+Microsoft is withdrawing password-based sign-in for sending mail through
+Exchange Online: it is off by default from December 2026 and will be removed
+altogether after that. The tracker signs in with a password, so a setup
+pointing at `smtp.office365.com` will stop working.
+
+If your organization runs Microsoft 365, send through your own relay, through
+Amazon SES, or through Azure Communication Services instead. All three are
+ordinary SMTP as far as the tracker is concerned.
 
 **Resend** uses their web API instead of an SMTP connection. Choose it if the
 place you are hosting will not allow outbound SMTP, which some platforms
@@ -823,7 +856,8 @@ block. You will need a Resend account with your sending domain verified, and
 the API key set as `RESEND_API_KEY`.
 
 Either way, set the variable and then **restart the application** \u2014 it reads
-its environment at startup.
+its environment at startup. That is only needed the first time: if you used the
+file form, replacing the file's contents later takes effect without a restart.
 
 ## The other settings
 
@@ -878,8 +912,11 @@ Work down these in order:
    your mail that this sender is allowed. Mail from a new address is often
    quarantined for a while.
 5. **Email status shows "Test sink is active".** The application is running
-   with a testing variable set that writes mail to a file instead of sending
-   it. It should never be set on a real deployment.
+   with testing variables set that write mail to a file instead of sending it.
+   They should never be set on a real deployment. If the application will not
+   start at all and says it is refusing to, one of the two was set without the
+   other — that guard exists so this arrangement cannot be reached by
+   accident.
 """,
     },
     {

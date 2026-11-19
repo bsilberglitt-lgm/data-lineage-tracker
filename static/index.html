@@ -5503,11 +5503,14 @@ function EmailStatus({ notify }) {
             {info.transport === 'none'
               ? 'No transport is selected, so no credential is needed.'
               : info.secret_present
-                ? `Found in ${info.secret_env_var}.`
+                ? `Found in ${info.secret_source === 'file'
+                    ? `the file named by ${info.secret_file_env_var}`
+                    : info.secret_env_var}.`
                 : `Not found. Set ${info.secret_env_var} in the environment ` +
-                  `where this app runs, then restart it. It is deliberately ` +
-                  `not set from this screen, so it is never stored in the ` +
-                  `database or carried in a backup.`}
+                  `where this app runs, or ${info.secret_file_env_var} to the ` +
+                  `path of a file holding it, then restart it. It is ` +
+                  `deliberately not set from this screen, so it is never ` +
+                  `stored in the database or carried in a backup.`}
           </span>
         </div>
         <div className="pref-control">
@@ -5533,9 +5536,10 @@ function EmailStatus({ notify }) {
           <div className="pref-label">
             <b>Test sink is active</b>
             <span>
-              EMAIL_SINK_PATH is set in this environment, so messages are
-              written to a file and nothing is actually delivered. This should
-              only ever be set in a test environment.
+              EMAIL_SINK_PATH and EMAIL_SINK_CONFIRM are both set in this
+              environment, so messages are written to a file and nothing is
+              actually delivered. This should only ever be set in a test
+              environment.
             </span>
           </div>
           <div className="pref-control">On</div>
@@ -9288,14 +9292,23 @@ function AppWrapper() {
   // Whether the sign-in screen is showing the forgot-password form.
   const [forgot, setForgot] = useState(false);
   // The token out of an emailed link. Read ONCE on mount rather than on every
-  // render, and the query string is cleared from the address bar immediately:
-  // a reset token in a URL ends up in browser history, and `history.replaceState`
-  // is what keeps it out. The token itself stays in React state for the one
-  // request that spends it.
+  // render, and cleared from the address bar immediately: a reset token in a
+  // URL ends up in browser history, and `history.replaceState` is what keeps
+  // it out. The token itself stays in React state for the one request that
+  // spends it.
+  //
+  // It arrives in the **fragment** (`#token=...`), not the query string, so it
+  // is never sent to the server and therefore cannot appear in the access log
+  // of any proxy or load balancer in front of us. See `auth.reset_link` for
+  // the full reasoning. A link made by an older build carried `?token=`, so
+  // that is still read as a fallback — those links expire within the hour, so
+  // this can come out once no issued token predates the change.
   const [resetToken, setResetToken] = useState(() => {
     try {
       if (window.location.pathname !== '/reset-password') return null;
-      const t = new URLSearchParams(window.location.search).get('token');
+      const hash = (window.location.hash || '').replace(/^#/, '');
+      const t = new URLSearchParams(hash).get('token')
+                || new URLSearchParams(window.location.search).get('token');
       if (t) window.history.replaceState({}, '', '/reset-password');
       return t || '';
     } catch (e) { return null; }

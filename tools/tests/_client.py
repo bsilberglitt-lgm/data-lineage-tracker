@@ -326,7 +326,7 @@ def unique_email(local, domain="example.gov"):
     rather than tidiness: `example.gov` is IANA-reserved and can never receive
     mail, so a misconfigured send cannot reach a real person. That began to
     matter in 0.9.0, when the app gained a mailer. These were `maine.gov`
-    addresses until 0.9.1, which also read as real colleagues in a repository
+    addresses until 0.9.0, which also read as real colleagues in a repository
     about to be made public.
 
     `ensure_account` covers an account a suite reuses. It cannot help a check

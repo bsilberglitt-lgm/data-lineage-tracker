@@ -432,7 +432,7 @@ shortening the catalog. Add it to `FIELD_GROUPS`.
 
 ### The seed is a fictional district, and the harness builds from nothing
 
-Until 0.9.1 two things carried Maine DOE's own data, and both were wrong the
+Until 0.9.0 two things carried Maine DOE's own data, and both were wrong the
 moment the project was shared:
 
 * **`seed_db()` in `app.py`** held the department's real architecture — eight
@@ -1167,7 +1167,7 @@ Three more things to know when touching these:
 ### Proposed was accepted by the server and had no control
 
 A task has carried `change_state` since 0016 and the update handler has always
-honoured `proposed` — the **checkbox was simply never drawn** in the task edit
+honored `proposed` — the **checkbox was simply never drawn** in the task edit
 view, so the state could be set when creating a task inside a scenario and
 never changed afterwards.
 
@@ -1919,8 +1919,30 @@ the environment means mail never gets configured at all. So: the host, port,
 encryption, username, from address, from name and `app_base_url` are rows in
 the existing `preference` table — SuperAdmin-only and audited, which that
 table already was, so this needed **no migration for configuration**. The
-password or API key comes from `SMTP_PASSWORD` / `RESEND_API_KEY` and nothing
-else.
+password or API key comes from the environment and nothing else.
+
+**From a variable or from a file, and the file form is the one that matters
+off Render.** `SMTP_PASSWORD` / `RESEND_API_KEY` hold the secret directly;
+`SMTP_PASSWORD_FILE` / `RESEND_API_KEY_FILE` hold the *path* of a file holding
+it. The second form is not a convenience — it is how both platforms an adopter
+is likely to use actually deliver a secret to a container. AWS ECS task
+secrets, Azure Key Vault through the CSI driver and Docker secrets all mount
+the value as a file, so an app that can only read a variable forces somebody to
+copy the credential out of their secret store and paste it into deployment
+configuration, which is the precise thing their security team is trying to
+prevent. It also buys rotation: `read_secret` reads the file **per send** rather
+than caching it, so replacing a mounted secret takes effect with no restart.
+
+Two details in `read_secret` are load-bearing. The value is **stripped**,
+because a mounted secret almost always ends in a newline and a trailing
+newline in a password is an authentication failure nobody can see by looking.
+And a `*_FILE` that is set but unreadable is **an error, not a reason to fall
+back** to the plain variable: falling back would mean a deployment whose secret
+mount had failed quietly authenticating with whatever stale value was left in
+the environment — something broken looking like something working, which is the
+one failure shape this file exists to record. `problems()` names the mount
+failure distinctly from "no credential found", because the two need different
+things done about them.
 
 Why not store the credential too, encrypted? Because it would travel in all 45
 retained nightly backups, and the key to decrypt it would have to be an
@@ -1931,11 +1953,46 @@ appears in no API response.
 
 **Two transports, and SMTP is the one that matters.** Most agencies run a
 relay and will not want an external vendor in the path for a password reset,
-and SMTP is also what Resend, SendGrid, Microsoft 365 and Google Workspace all
-speak — so one code path covers nearly everybody. Resend's HTTP API is there
-for hosts that will not allow an outbound SMTP connection. `mailer.py` is
-**standard library only** (`smtplib`, `urllib`), so adopting this adds no
-dependency to install, pin or audit.
+and SMTP is what nearly every destination speaks — so one code path covers
+nearly everybody. Resend's HTTP API is there for hosts that will not allow an
+outbound SMTP connection. `mailer.py` is **standard library only** (`smtplib`,
+`urllib`), so adopting this adds no dependency to install, pin or audit.
+
+That SMTP-first choice turned out better than the reasoning that produced it,
+because **both cloud-native email services speak plain SMTP**: AWS **SES** has
+an SMTP interface with its own credentials, and Azure **Communication Services
+Email** authenticates at `smtp.azurecomm.net:587` with STARTTLS, where the
+username encodes the ACS resource, Entra application id and tenant, and the
+password is an Entra client secret. So an adopter on AWS or Azure uses their
+platform's own mail service with no code change at all. An internal agency
+relay is usually easier still — `security` `none` with no username, which is
+what an IP-allowlisted relay wants.
+
+#### Do not point this at Exchange Online with a username and password
+
+The one destination our SMTP transport does **not** have a future with is
+Microsoft 365 direct submission, and it is worth being precise about why, since
+it is the first thing a state running M365 will reach for.
+
+Exchange Online began **disabling Basic Authentication for SMTP AUTH by
+default in December 2026**, with permanent removal to be announced for the
+second half of 2027; an administrator can re-enable it in the interim. This
+module authenticates with a password only — there is no XOAUTH2 and no Graph —
+so a deployment submitting through `smtp.office365.com` has a relay that stops
+working by default almost immediately and permanently not long after.
+
+**That is a deliberate scope limit, not an oversight**, and the reason it is
+acceptable is the paragraph above: every destination an adopter *should* be
+using already works. The documented position is therefore to steer people to
+SES, ACS or an internal relay rather than to build OAuth speculatively. If a
+deployment genuinely must submit through Exchange Online, that needs OAuth
+support adding first, and **Microsoft Graph `sendMail` is the better target
+than XOAUTH2 SMTP** — both are reachable with `urllib` and a client-credentials
+token fetch, so neither costs the standard-library-only property.
+
+Scope the worry correctly when reading about this elsewhere: the deprecation
+affects **M365 as the relay**. It does not touch SES, ACS, Resend, SendGrid,
+Google Workspace or an internal relay.
 
 **`mailer.send` returns `(ok, detail)` and never raises.** Every caller has to
 carry on either way: a reset must answer the browser without revealing whether
@@ -1957,9 +2014,28 @@ in-memory list would be invisible to them, and because **a test suite must
 never be able to mail a real person**.
 
 It is also a hole if it is ever set on a real deployment: reset would report
-success and deliver nothing. So the app prints a loud warning at every startup
-when it finds it, `Preferences → Email status` shows a row saying so, and
-`t_email.py` refuses to run without it rather than risking real mail.
+success and deliver nothing. So `Preferences → Email status` shows a row
+saying so, and `t_email.py` refuses to run without it rather than risking
+real mail.
+
+**It takes two variables, and the app refuses to start on one.** The first
+version only warned at startup, and a warning at startup is read once by
+whoever deploys and never again — an environment file copied from a test
+deployment carries `EMAIL_SINK_PATH` along with everything else, and the
+symptom arrives weeks later as users who never received a reset and an
+administrator with no reason to doubt the mail settings they can see. So
+`EMAIL_SINK_CONFIRM=discard-all-mail` is required as well, `mailer.sink_path()`
+returns None without it, and `mailer.sink_refusal()` gives `main()` a sentence
+to print before `raise SystemExit(2)`.
+
+The asymmetry is the whole design: **one variable is a mistake and crashes,
+two are a decision and work.** A crash on the way up is the cheapest possible
+place to find this, because nothing has silently swallowed a message yet.
+`sink_refusal` returns the sentence rather than raising so the caller decides
+what to do with it and a test can assert the wording without arranging to catch
+an exit. `t_email.py` checks both variables itself, because the server's answer
+to a missing confirmation is to not start — which from inside a suite is a
+connection error, and a connection error names nothing.
 
 #### Four decisions in the reset flow that are security, not polish
 
@@ -1970,6 +2046,23 @@ when it finds it, `Preferences → Email status` shows a row saying so, and
   attacker's server. `auth.reset_link` takes the base URL as an argument so
   there is no header in reach, and `t_email.py` sends a forged `Host` and
   `X-Forwarded-Host` and asserts the link ignores both.
+* **The token is in the URL fragment, not the query string.** A fragment is
+  never transmitted: the browser strips everything from the `#` onwards before
+  sending the request. A query string is not, so `?token=...` is written into
+  the access log of every reverse proxy, load balancer and CDN in the path —
+  Render's today, an ALB or Application Gateway later — where it sits as a live
+  credential in whatever aggregates those logs, readable by anyone with log
+  access and kept for however long those logs are kept. Clearing it from the
+  address bar with `history.replaceState`, which the browser also does,
+  protects browser *history* and does nothing whatever about that. Nothing
+  server-side reads it from the URL either way — the page is served for the
+  path alone and the browser POSTs the token it found — so this costs nothing.
+  `t_email.py` asserts the **absence** of `/reset-password?token=` as well as
+  the presence of the `#` form, because a check that only looked for `token=`
+  somewhere in the body would still pass if `reset_link` were reverted. The
+  browser reads the query string as a fallback so that links issued by an
+  earlier build still work; those expire within the hour, so that fallback can
+  come out once no live token predates the change.
 * **The answer never reveals whether an address exists.** Same status and same
   body for an address with an account, one without, and a deactivated one —
   asserted as equality of the whole response, not as "both succeeded". A
@@ -2011,6 +2104,43 @@ new password must meet, or somebody types one, is refused, and has to guess.
 The rules are not a secret — every signed-in user sees them on the
 forced-change screen. The old check is left pointing at the new behavior with
 a note, so the reversal reads as deliberate rather than as drift.
+
+#### `/reset-password` 404'd for all of 0.9.0, and nothing could see it
+
+The route was written the obvious way and is wrong:
+
+```python
+(r"/(reset-password)", AppStaticFileHandler, {
+    "path": str(STATIC_DIR), "default_filename": "index.html"}),
+```
+
+The capture group becomes the path `StaticFileHandler` is asked to serve, so it
+went looking for `static/reset-password` — and **`default_filename` only
+applies to a directory.** Neither a file nor a directory, so 404. Every
+emailed reset link in the release landed on an error page.
+
+`AppPageHandler` fixes it by serving a **constant** file: the path in this URL
+is not a filename at all, which is why a cleverer route cannot help.
+`set_extra_headers` still receives `index.html`, so the never-cache-the-app
+rule keeps applying.
+
+**The reason this survived is the lesson.** `t_email.py` exercises
+`POST /api/auth/reset-password` — a different thing with a similar name — and
+every other check in this project talks to the API. **Nothing loaded a page.**
+So the suite proving the link is *built* correctly sat next to a route that
+could not *serve* it, and both were green. A person following a real link from
+a real message was the first thing to find it, at the end of 0.9.0's smoke
+test.
+
+Two guards now exist, and the second is the general one:
+
+* `selftest.py` asks for `/reset-password` and asserts it returns the
+  **application** — `text/babel` in the body — not merely that it is not a
+  404. It also asserts an unknown `/api/...` path is still a 404, which is the
+  property that makes this one explicit route rather than a catch-all.
+* The release checklist smoke test has a reset item, with the warning that **no
+  email arrives while the sink is active** — that absence being indistinguish-
+  able from a broken feature is what made the step worth writing down.
 
 #### `/reset-password` is the one non-root page
 
@@ -2092,6 +2222,35 @@ Two things this cost that are worth remembering:
   any order, and more than once". Fixing `t_tasks` and stopping there would
   have left that sentence false: running the whole set twice found `t_052` and
   `t_060` failing the same way. Run every suite twice before believing it.
+
+#### Put the restore in a `finally`, and stop on a missing precondition
+
+Two more ways `t_email` broke the borrows-the-database rule, both found when Ben
+ran it with no `SMTP_PASSWORD` in the container.
+
+**The restore has to be in a `finally`.** It was the last thing in `main()`, so
+an exception skipped it — and one did: with mail unconfigured the sink stayed
+empty, `token_in(sent[-1])` raised `IndexError`, and the suite exited leaving
+this deployment's email preferences set to its own test values. The docstring
+claimed it restored them, which made it worse than silence. A suite that
+mutates shared state has to put it back **on the way out as well as on the way
+through**, so the whole body is wrapped and the restore cannot be skipped by a
+crash or by an early return.
+
+**A missing precondition must stop the suite, not fail every check.** Mail
+being configured was asserted with an ordinary `ck()` and the suite carried on,
+so one absent variable produced nine failures, a traceback, and no indication
+which of the ten was the cause. The suites already refuse clearly when the sink
+is missing; this now does the same, printing `problems()` and the exact
+`docker compose` line. **A precondition checked as an assertion reports the
+cause everywhere except where it is** — the most expensive failure shape in
+this file, arriving this time through a test rather than through the app.
+
+Worth knowing while you are in there: **a credential is required even when the
+sink is active**, because `mailer.send` evaluates `problems()` before it looks
+at the sink. That ordering is deliberate — a test environment must not be able
+to mask a misconfigured transport — so the fix is a throwaway value, not a
+reordering.
 
 ### `selftest.py` accepts a bare port
 

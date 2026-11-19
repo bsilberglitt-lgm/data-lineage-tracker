@@ -14,11 +14,25 @@ kinds of adopter are genuinely different:
 **Settings live in the `preference` table; the secret does not.** The host,
 port, from-address and so on are edited by a SuperAdmin in Preferences, so
 setting this up does not require infrastructure access. The password or API key
-comes from an environment variable and nothing else — see `secret_for`. The
-reason is the backups: a credential in the database travels in all 45 retained
-nightly snapshots, and encrypting it there would need a key that must itself be
-an environment variable, so it would move the secret rather than protect it and
-add a rotation problem on the way.
+comes from the environment — either a variable or, better, the path of a file
+holding it; see `read_secret`. The reason it is not in the database is the
+backups: a credential there travels in all 45 retained nightly snapshots, and
+encrypting it would need a key that must itself come from the environment, so
+it would move the secret rather than protect it and add a rotation problem on
+the way.
+
+**On Microsoft 365, do not use this with a username and password.** Exchange
+Online began disabling Basic Authentication for SMTP AUTH by default in
+December 2026, with permanent removal to follow, and this module authenticates
+with a password only — no XOAUTH2, no Graph. That is a deliberate scope limit
+rather than an oversight, because the destinations an adopter should actually
+use all speak ordinary SMTP: AWS **SES** has an SMTP interface with its own
+credentials, Azure **Communication Services Email** authenticates at
+`smtp.azurecomm.net:587` with an Entra application secret as the password, and
+an internal agency relay usually wants no authentication at all (`security`
+`none`, no username). If a deployment genuinely must submit through Exchange
+Online, that needs OAuth support adding first — see `help_articles.py` and the
+install documentation for the user-facing version of this.
 
 **Nothing here raises for a delivery failure.** `send` returns
 `(ok, detail)`, because every caller has to carry on either way: a password
@@ -57,11 +71,26 @@ SMTP_SECURITY = ("starttls", "ssl", "none")
 
 RESEND_ENDPOINT = "https://api.resend.com/emails"
 
-# Where the secret comes from, per transport. The only two environment
-# variables this module reads for credentials.
+# Where the secret comes from, per transport. Two forms, and the file form is
+# not a convenience — it is how the platforms this is likely to run on actually
+# deliver a secret to a container. AWS ECS task secrets, Azure Key Vault
+# through the CSI driver, and Docker secrets all mount the value as a **file**.
+# An app that can only read an environment variable therefore forces an adopter
+# to copy the credential out of their secret store and into their deployment
+# configuration by hand, which is the specific thing their security team is
+# trying to prevent.
+#
+# It also buys rotation: the file is read **per send** rather than cached, so
+# replacing the mounted secret takes effect with no restart. One small read per
+# message is nothing beside an SMTP round trip.
 SECRET_ENV = {
     "smtp": "SMTP_PASSWORD",
     "resend": "RESEND_API_KEY",
+}
+
+SECRET_FILE_ENV = {
+    "smtp": "SMTP_PASSWORD_FILE",
+    "resend": "RESEND_API_KEY_FILE",
 }
 
 # Test-only. When set, nothing is sent: each message is appended to this file as
@@ -70,26 +99,94 @@ SECRET_ENV = {
 # be invisible to them, and because a test suite must never be able to mail a
 # real person.
 #
-# **This is a hole if it is ever set in production**, so the app logs a loud
-# warning at startup when it finds it, and the name is deliberately not
-# something anybody would set by accident.
+# **It takes two variables, and that is the point.** A single obscure variable
+# that makes password-reset mail report success and deliver nothing is a hole
+# however loudly it is announced: an environment file copied from a test
+# deployment carries it along, and the symptom is users who never receive a
+# reset and an administrator with no reason to suspect the mail settings they
+# can see are correct. So the path alone is **refused at startup**
+# (`sink_refusal`) and the sink is only active when `EMAIL_SINK_CONFIRM` is
+# also set to exactly `SINK_CONFIRM_VALUE`.
+#
+# The asymmetry is deliberate: one variable is a mistake and crashes, two are
+# a decision and work. A crash on the way up is the cheapest possible place to
+# find this, because nothing has silently swallowed a message yet.
 SINK_ENV = "EMAIL_SINK_PATH"
+SINK_CONFIRM_ENV = "EMAIL_SINK_CONFIRM"
+SINK_CONFIRM_VALUE = "discard-all-mail"
 
 TIMEOUT_SECONDS = 20
 
 
+def sink_configured():
+    """Whether a sink path is set at all, confirmed or not."""
+    return bool((os.environ.get(SINK_ENV) or "").strip())
+
+
+def sink_confirmed():
+    return ((os.environ.get(SINK_CONFIRM_ENV) or "").strip()
+            == SINK_CONFIRM_VALUE)
+
+
 def sink_path():
+    """The sink file, or None. Requires BOTH variables — see the note above."""
+    if not sink_confirmed():
+        return None
     return (os.environ.get(SINK_ENV) or "").strip() or None
 
 
-def secret_for(transport):
-    """The credential for this transport, from the environment only.
+def sink_refusal():
+    """Why the app must not start, or None if there is no reason.
 
-    Returns "" rather than None when unset, so a caller cannot accidentally
+    Returned rather than raised so the caller decides what to do with it, and
+    so a test can assert the sentence without arranging to catch an exit.
+    """
+    if sink_configured() and not sink_confirmed():
+        return (f"{SINK_ENV} is set. That writes every message to a file and "
+                f"reports it as sent, so a password reset would succeed and "
+                f"deliver nothing. It is a test arrangement and must not be "
+                f"reachable by accident, so it also requires "
+                f"{SINK_CONFIRM_ENV}={SINK_CONFIRM_VALUE}. Set that as well "
+                f"if this really is a test environment, or unset {SINK_ENV}.")
+    return None
+
+
+def read_secret(transport):
+    """`(value, source, error)` for this transport's credential.
+
+    `source` is "file", "env" or None, so an administrator can be told where
+    the credential was found without ever being shown it.
+
+    **A `*_FILE` that is set but unreadable is an error, not a reason to fall
+    back to the plain variable.** Falling back would mean a deployment whose
+    secret mount had failed quietly authenticating with whatever stale value
+    happened to be left in the environment — something wrong looking like
+    something working, which is the one failure shape this project keeps
+    paying for.
+
+    Returns "" rather than None for the value, so a caller cannot accidentally
     send the string "None" as a password.
     """
+    file_name = SECRET_FILE_ENV.get(transport)
+    path = (os.environ.get(file_name) or "").strip() if file_name else ""
+    if path:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                # Stripped because a mounted secret almost always ends in a
+                # newline, and a trailing newline in a password is an
+                # authentication failure nobody can see by looking.
+                return fh.read().strip(), "file", None
+        except OSError as e:
+            return "", None, (f"{file_name} is set to {path}, which cannot be "
+                              f"read ({e.strerror or e}).")
     name = SECRET_ENV.get(transport)
-    return (os.environ.get(name) or "").strip() if name else ""
+    value = (os.environ.get(name) or "").strip() if name else ""
+    return value, ("env" if value else None), None
+
+
+def secret_for(transport):
+    """Just the credential, for callers that do not care where it came from."""
+    return read_secret(transport)[0]
 
 
 def config_from_preferences(prefs):
@@ -108,6 +205,7 @@ def config_from_preferences(prefs):
         port = int(str(prefs.get("smtp_port") or "587").strip())
     except ValueError:
         port = 587
+    secret, secret_source, secret_error = read_secret(transport)
     return {
         "transport": transport,
         "host": (prefs.get("smtp_host") or "").strip(),
@@ -116,7 +214,11 @@ def config_from_preferences(prefs):
         "username": (prefs.get("smtp_username") or "").strip(),
         "from_address": (prefs.get("email_from_address") or "").strip(),
         "from_name": (prefs.get("email_from_name") or "").strip(),
-        "secret": secret_for(transport),
+        "secret": secret,
+        # Where it came from and why it could not be read. Both are about the
+        # credential without being the credential, so both are safe to report.
+        "secret_source": secret_source,
+        "secret_error": secret_error,
     }
 
 
@@ -128,12 +230,15 @@ def describe(cfg):
     settings endpoint that returns a credential is one copy-paste away from a
     support ticket.
     """
-    env_name = SECRET_ENV.get(cfg["transport"])
     return {
         "transport": cfg["transport"],
         "configured": is_configured(cfg),
-        "secret_env_var": env_name,
+        "secret_env_var": SECRET_ENV.get(cfg["transport"]),
+        "secret_file_env_var": SECRET_FILE_ENV.get(cfg["transport"]),
         "secret_present": bool(cfg["secret"]),
+        # "file" or "env", so an administrator can tell a mounted secret from
+        # a stale environment variable without either value crossing the wire.
+        "secret_source": cfg.get("secret_source"),
         "problems": problems(cfg),
         "sink_active": bool(sink_path()),
     }
@@ -153,9 +258,17 @@ def problems(cfg):
     elif "@" not in cfg["from_address"]:
         out.append("The from address does not look like an email address.")
     env_name = SECRET_ENV.get(cfg["transport"])
-    if not cfg["secret"]:
+    file_name = SECRET_FILE_ENV.get(cfg["transport"])
+    if cfg.get("secret_error"):
+        # Reported instead of the generic "no credential", and deliberately
+        # distinct from it: a mount that failed and a secret nobody set need
+        # different things done about them.
+        out.append(cfg["secret_error"])
+    elif not cfg["secret"]:
         out.append(f"No credential found. Set {env_name} in the environment "
-                   f"where the app runs, then restart it.")
+                   f"where the app runs, or {file_name} to the path of a file "
+                   f"holding it — which is how AWS, Azure and Docker mount a "
+                   f"secret — then restart it.")
     if cfg["transport"] == "smtp":
         if not cfg["host"]:
             out.append("An SMTP host is required.")

@@ -2,7 +2,7 @@
 .env
 
 # The legacy SQLite database. It was Maine DOE's pre-auth data and the seed
-# for the test harness, and was removed from the repository in 0.9.1 before
+# for the test harness, and was removed from the repository in 0.9.0 before
 # the project was shared: it held one department's real schema, 118 tables and
 # 3,304 column names. The harness now builds from the migrations alone.
 #

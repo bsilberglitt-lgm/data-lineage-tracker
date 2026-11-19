@@ -232,7 +232,8 @@ into the wrong group is how one ended up running after step 2.
   quietly undo an earlier one:
 
   ```bash
-  python3 tools/tests/t_email.py --email <your email>      # 0.9.0 — email, password reset
+  EMAIL_SINK_PATH=.mail-test.jsonl EMAIL_SINK_CONFIRM=discard-all-mail \
+    python3 tools/tests/t_email.py --email <your email>    # 0.9.0 — email, reset
   python3 tools/tests/t_tasks.py --email <your email>      # 0.7.0 — tasks
   python3 tools/tests/t_060.py --email <your email>        # 0.6.0 — self-service profile
   python3 tools/tests/t_052.py --email <your email>        # 0.5.2 — payloads, contacts, deactivation
@@ -240,29 +241,59 @@ into the wrong group is how one ended up running after step 2.
   python3 tools/tests/t_fielddefs.py --email <your email>  # 0.5.0 — field definitions
   ```
 
-  **`t_email.py` needs one extra thing, and it refuses to run without it.**
-  The app has to be started with `EMAIL_SINK_PATH` set, which makes it write
-  mail to a file instead of sending any. The suite reads that file to find the
-  reset token in a message it never receives — and it cannot mail a real person
-  by accident, which is the point.
+  The variables are **on the command above** rather than only described here,
+  because a command in a block gets pasted and a paragraph underneath it does
+  not. Running the bare line is how this step fails.
+
+  **The app must have been started with the same two**, which the command above
+  cannot do for you. Check before you blame the suite:
+
+  ```bash
+  docker compose exec app printenv | grep -E 'EMAIL_SINK|SMTP_PASSWORD|RESEND'
+  ```
+
+  **What the variables do.** `EMAIL_SINK_PATH` makes the app write mail to a
+  file instead of sending any. The suite reads that file to find the reset
+  token in a message it never receives — and it cannot mail a real person by
+  accident, which is the point.
+
+  `EMAIL_SINK_CONFIRM=discard-all-mail` is required as well, and **the app
+  refuses to start on the path alone.** One variable that makes password reset
+  report success and deliver nothing is something an environment file carries
+  along by accident; two mean one of them is a decision.
+
+  **It also needs a mail credential, even though nothing can leave.**
+  `mailer.send` checks that the transport is configured *before* it looks at
+  the sink, deliberately, so a test environment cannot hide a misconfigured
+  relay. Any value will do, because the sink intercepts before a socket is
+  opened. Without it the suite stops with one message naming what is missing.
 
   The path must be **inside `/app`**, because Docker Compose mounts your
   checkout there: a path anywhere else is written inside the container and the
   suite, running on your Mac, cannot see it.
 
   ```bash
-  EMAIL_SINK_PATH=/app/.mail-test.jsonl docker compose up -d
-  EMAIL_SINK_PATH=.mail-test.jsonl python3 tools/tests/t_email.py --email <your email>
+  EMAIL_SINK_PATH=/app/.mail-test.jsonl EMAIL_SINK_CONFIRM=discard-all-mail \
+    SMTP_PASSWORD=not-a-real-password docker compose up -d
+  EMAIL_SINK_PATH=.mail-test.jsonl EMAIL_SINK_CONFIRM=discard-all-mail \
+    python3 tools/tests/t_email.py --email <your email>
   ```
+
+  The container's environment is fixed when it is created, so after changing
+  any of these, `docker compose down` and bring it up again — a restart keeps
+  the old environment.
 
   Note the two different paths for the same file — `/app/...` is where the
   container writes it, the bare name is where you read it. `.mail-test.jsonl`
   is gitignored.
 
-  **Restart the app without that variable when you are done.** The app prints a
-  loud warning at every startup while it is set, and Preferences → Email status
-  shows a row saying so, because a deployment with it set would report password
-  resets as sent and deliver nothing.
+  If the app exits at startup saying it is refusing to start, you set the path
+  without the confirmation. That is the guard working, not a broken build.
+
+  **Restart the app without those variables when you are done.** The app prints
+  a loud warning at every startup while the sink is active, and Preferences →
+  Email status shows a row saying so, because a deployment with it set would
+  report password resets as sent and deliver nothing.
 
   Each prompts for your password, like `selftest.py`. Add a port only if the
   app is not on 8765: `t_tasks.py 8765 --email …`.
@@ -580,6 +611,44 @@ Then, in a **private/incognito window**, sign in as a **Viewer** test account:
 - [ ] No Edit or Delete buttons anywhere
 - [ ] No Administration section in the sidebar
 - [ ] Dragging a diagram node does nothing
+
+**Password reset, if email is configured on this environment** — the only place
+a person exercises the emailed link, which no suite can do:
+
+- [ ] Sign out. **Forgot your password?** appears on the sign-in screen if
+  email is working, and is absent if it is not. Both are correct answers;
+  which one you should see depends on the environment
+- [ ] Request a reset for a test account. **No email will arrive, and that is
+  correct** — while the sink is active the message is written to a file and
+  nothing is sent. Waiting for an inbox here is waiting for something that
+  cannot happen. Read the link out of the file instead:
+
+  ```bash
+  python3 -c "
+  import json
+  print(json.loads([l for l in open('.mail-test.jsonl') if l.strip()][-1])['body'])"
+  ```
+
+  If the body's link points at the production hostname, that is `app_base_url`
+  doing its job. Swap the host for `http://localhost:8765` and keep the
+  `#token=...` exactly as it is — the fragment is the part being tested.
+
+  Two different things look the same here. If the app is running **without**
+  the sink and the SMTP settings are fake, the send really failed and the
+  endpoint deliberately did not say so, because "we could not send to that
+  address" would confirm the address exists. `docker compose exec app printenv
+  | grep EMAIL_SINK` tells you which case you are in; the app log carries the
+  real reason for a genuine failure.
+- [ ] The **Set a new password** screen appears — not the sign-in screen — and
+  the token disappears from the address bar at once
+- [ ] A new password is accepted, and the rules are stated on the screen before
+  you type rather than after you are refused
+- [ ] Following the same link a second time is refused
+- [ ] Any other session for that account is signed out
+
+If the link opens the sign-in screen instead, the token is not being read.
+Nothing automated catches that: the server-side suite proves the link is built
+correctly and says nothing about the browser reading it.
 
 Finally:
 
@@ -963,6 +1032,65 @@ Only needed once per computer.
 
 ## Appendix B — Troubleshooting
 
+### `check_jsx.sh` prints nothing for minutes
+
+**It is working.** The npm install inside the container runs at
+`--loglevel=error`, so a *successful* install prints nothing at all — and the
+first run also pulls a Node image before that. One to three minutes of silence
+is normal, and it is indistinguishable from a hang, which is the problem.
+
+To tell the difference, in a second terminal:
+
+```bash
+docker ps
+docker stats --no-stream
+```
+
+A `node:20-alpine` container listed with `NET I/O` climbing between two runs
+means it is downloading. If `docker ps` **itself** hangs, the problem is not
+this script: the Docker daemon is unresponsive. See below.
+
+This script is the only thing in the project that needs the npm registry, so on
+a filtered network check `docker run --rm node:20-alpine npm ping` before
+blaming the app.
+
+### `docker ps` hangs, or Compose does nothing
+
+`docker ps` is a local call to the Docker daemon and touches no network, so if
+it hangs the daemon is wedged rather than anything being slow. Check the whale
+in the menu bar for a dialog waiting on you — a pending update or a new service
+agreement will stop it serving requests, and the dialog is easy to miss behind
+other windows. Then quit Docker Desktop fully and relaunch. Check `df -h /` as
+well: a nearly-full host disk wedges it in exactly this way, by not answering
+rather than by erroring.
+
+### The database container exits 1 with "bogus data in lock file"
+
+```
+FATAL:  bogus data in lock file "postmaster.pid": ""
+```
+
+**The data is fine.** This is the lock file, not the database. Postgres writes
+`postmaster.pid` once at startup and was killed before finishing — a force-quit
+of Docker Desktop does it — so the file exists with a corrupt first line and
+Postgres cannot tell whether another server is still running. It refuses to
+start rather than risk two servers on one data directory.
+
+Do **not** reach for `docker compose down -v`; it would destroy the local
+database for no reason. Delete the stale file instead, with nothing running:
+
+```bash
+docker compose down
+docker compose run --rm --no-deps --entrypoint sh db \
+  -c 'find /var/lib/postgresql -name postmaster.pid -delete -print'
+docker compose up -d
+docker compose logs db | tail -8
+```
+
+Overriding the entrypoint with `sh` means no Postgres starts — the container
+only mounts the data. Expect a line or two about recovery as the write-ahead
+log is replayed on the way up; that is the mechanism that makes this safe.
+
 ### A dropdown shows only its current value
 
 Fixed in 0.7.1 and recorded here because the symptom is so misleading. The
@@ -1089,6 +1217,98 @@ Erase it and start from seed. Local data is disposable; production is unaffected
 docker compose down -v
 docker compose up --build
 ```
+
+---
+
+## Appendix C — Turning email on in production (one time)
+
+The release checklist proves the reset *mechanism* against a test sink, which
+by design can never deliver a message. This is the separate, one-time job of
+making real mail work. Nothing here is part of a release, and none of it should
+be done on the same pass as a deploy.
+
+**Read this before starting, because the order matters.** Self-service reset
+needs three things together — a working transport, a public address, and the
+preference switched on — and it stays hidden until all three hold. So the
+switch goes on last, after a test message has actually arrived.
+
+### 1. Choose where mail will come from
+
+| Option | When it fits |
+|---|---|
+| Your own relay (SMTP) | The organization runs one and will give you a host, port and credential. Usually no username: it allows servers by address. |
+| **Resend** | No relay available, or an outbound SMTP connection is awkward. Needs a domain you control. |
+| Amazon SES | You are already on AWS. Ordinary SMTP with its own credentials. |
+
+**Do not use Microsoft 365 as the relay.** Microsoft is withdrawing
+password-based sign-in for sending through Exchange Online — off by default
+from December 2026 — and this application signs in with a password. See the
+note in `mailer.py`.
+
+### 2. Verify a sending domain
+
+For Resend: add the domain, then add the DKIM and SPF records it gives you at
+your DNS provider. Add a DMARC record while you are there.
+
+**Use the same domain the application is served from.** Mail from one domain
+carrying a link to another is the pattern that reads as phishing to both a spam
+filter and a careful reader.
+
+### 3. Put the credential in the environment
+
+Either the value directly, or the path of a file holding it:
+
+| Transport | Variable | Or |
+|---|---|---|
+| SMTP | `SMTP_PASSWORD` | `SMTP_PASSWORD_FILE` |
+| Resend | `RESEND_API_KEY` | `RESEND_API_KEY_FILE` |
+
+Set it where the app runs — on Render, the service's Environment page — then
+**restart**. The file form is read per message, so rotating a mounted secret
+later needs no restart; the first setup still does.
+
+**Check that no sink variable is set in production.** `EMAIL_SINK_PATH` makes
+mail report success and deliver nothing. The app refuses to start if it is set
+without `EMAIL_SINK_CONFIRM`, so a half-copied environment fails loudly — but
+both together would be silent, and neither belongs here.
+
+### 4. Fill in Preferences → Email
+
+- [ ] **Email delivery** — SMTP or Resend
+- [ ] **From address** on the verified domain, e.g. `noreply@example.org`
+- [ ] **From name**
+- [ ] **Public address of this app** — the full `https://` address people use.
+      Reset links are built from this and never from the incoming request, so a
+      stale value here sends working links to the wrong hostname
+- [ ] SMTP only: **host**, **port**, **encryption**, **username**
+- [ ] Save
+
+### 5. Send a test message, and read it
+
+**Email status** → **Send test message**. It goes to your own address and
+reports what the mail server said, including the reason for a refusal.
+
+- [ ] Email status says the credential was found, and names where
+- [ ] The test message arrives
+- [ ] It is not in spam — if it is, that is a DNS records problem, not a
+      configuration one
+
+Nothing else will tell you this. A reset request deliberately reveals nothing
+about whether it worked, so a wrong port is invisible from the sign-in screen.
+
+### 6. Only now, turn it on
+
+- [ ] **Allow self-service password reset** → On
+- [ ] Sign out and confirm **Forgot your password?** appears
+- [ ] Request a reset for your own account and follow the link through to a new
+      password
+- [ ] Confirm the link does not work a second time
+
+### 7. Tell people
+
+- [ ] Say the address reset mail will come from, before anyone needs it
+- [ ] Say that requesting a reset answers the same way whether or not the
+      address has an account, so "nothing arrived" may just be a typo
 
 ---
 

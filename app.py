@@ -883,7 +883,7 @@ def seed_db():
     """Put a small fictional district in an empty database, so a new
     installation has something to look at.
 
-    **Everything here is invented.** Until 0.9.1 this was Maine DOE's actual
+    **Everything here is invented.** Until 0.9.0 this was Maine DOE's actual
     architecture — eight real systems, the real SIF/CONNECT pipeline, and 33
     data elements from the state's SIF profile. That was right while this was a
     one-department tool and wrong the moment it was shared: an adopter starting
@@ -895,8 +895,12 @@ def seed_db():
     shape is deliberately the same as a real deployment, because the point of a
     seed is to demonstrate the features: layered systems from source to
     reporting, flows that carry PII and flows that do not, elements with
-    different classifications, and two schemas to drill into. An adopter
-    deletes all of it once they have seen what it does.
+    different classifications, and one mapped database schema to drill into.
+    An adopter deletes all of it once they have seen what it does.
+
+    ("Two schemas" until this was corrected — that counted the two real seeds
+    0.9.0 removed. There is one now, `sample_schema.json`, four tables across
+    a `core` and a `reporting` namespace on SYS-003.)
 
     Seeded only into a database with no systems, so it never reappears after
     somebody clears it out.
@@ -1549,9 +1553,9 @@ SEED_RELEASES = [
 * Interactive lineage diagram of systems and the data flows between them
 * Catalogs for systems, data flows, and data elements
 * Governance fields aligned to the Education Data Governance Framework
-* Database schema drill-down for NEO and Federal Reporting, with governance
-  that can be set at the table and field level and inherits from the parent
-  system unless overridden
+* Database schema drill-down for mapped data stores, with governance that can
+  be set at the table and field level and inherits from the parent system
+  unless overridden
 """),
     ("0.1.1", "PostgreSQL, Docker, and sign-in", "2026-08-05", 1, 200, """\
 ## Infrastructure and access control
@@ -2061,9 +2065,10 @@ SEED_RELEASES = [
 * A help article on tasks is in the help panel, covering subtasks, dates, the
   diagram colors, automated tasks and dependencies.
 """),
-    # DRAFT — not published. `ensure_releases` re-seeds a draft from here on
-    # every start, so edit the wording in this file, not in the app.
-    (VERSION, "Password reset by email", None, 0, 1900, """\
+    # Reviewed and approved by Ben, November 2026, so published. From here it
+    # is live and `ensure_releases` will never overwrite it — any further
+    # change has to be made in the app, not in this file.
+    (VERSION, "Password reset by email", None, 1, 1900, """\
 ## What's new in this release
 
 **Forgotten passwords**
@@ -2072,6 +2077,8 @@ SEED_RELEASES = [
   email, instead of asking an administrator for a temporary one.
 * The link works once and stops working after an hour.
 * Setting a new password this way signs the account out everywhere else.
+* Requesting a reset answers the same way whether or not the address has an
+  account here, so nothing arriving may simply mean a mistyped address.
 
 **Setting up email**
 
@@ -8137,6 +8144,30 @@ if HAS_TORNADO:
                 self.set_header("Pragma", "no-cache")
                 self.set_header("Expires", "0")
 
+    class AppPageHandler(AppStaticFileHandler):
+        """Serve `index.html` for a route that is a *page*, not a file.
+
+        `/reset-password` was `(r"/(reset-password)", AppStaticFileHandler,
+        {"default_filename": "index.html"})`, which looks right and **404s**:
+        the capture group becomes the path `StaticFileHandler` is asked for, so
+        it went looking for `static/reset-password`, and `default_filename`
+        only applies to a **directory**. Neither a file nor a directory, so
+        nothing to serve.
+
+        That is why it has to be a handler rather than a cleverer route: the
+        file to serve is a constant, and the path in the URL is not a filename
+        at all. `set_extra_headers` still sees `index.html`, so the no-cache
+        rule above continues to apply.
+
+        Nothing automated found this. `t_email.py` exercises
+        `POST /api/auth/reset-password`, which is a different thing with a
+        similar name, and no check in this project loads a page. It took
+        somebody following a real link from a real message — which is now a
+        smoke-test item, for exactly this reason.
+        """
+        async def get(self, path=None, include_body=True):
+            await super().get("index.html", include_body)
+
     def make_app():
         return tornado.web.Application([
             # Public
@@ -8230,9 +8261,12 @@ if HAS_TORNADO:
             # once rather than generally, because a catch-all that returned the
             # app for every unknown path would turn a mistyped API route into a
             # page of HTML instead of an error.
-            (r"/(reset-password)", AppStaticFileHandler, {
+            #
+            # `AppPageHandler`, not `AppStaticFileHandler` with a
+            # `default_filename` — see that class for why the obvious form
+            # 404s. No capture group: there is no filename in this URL.
+            (r"/reset-password", AppPageHandler, {
                 "path": str(STATIC_DIR),
-                "default_filename": "index.html",
             }),
             (r"/(.*)", AppStaticFileHandler, {
                 "path": str(STATIC_DIR),
@@ -8273,8 +8307,20 @@ if __name__ == "__main__":
     # The test sink swallows every outgoing message. It exists so a test suite
     # can never mail a real person, and it is a hole if it is ever set on a
     # real deployment: password reset would report success and deliver nothing.
-    # So it announces itself loudly at every start rather than being something
-    # somebody discovers from a user who never got their email.
+    #
+    # **Refusing to start is the whole protection.** The previous version only
+    # warned, and a warning at startup is read once by whoever deploys and
+    # never again — an environment file carried over from a test deployment
+    # would take the sink with it, and the symptom arrives weeks later as users
+    # who never receive a reset, with every setting an administrator can see
+    # looking correct. Exiting here costs a confused minute to someone who set
+    # one variable and meant to set two; the alternative costs a password reset
+    # that lies. See the note above `SINK_ENV` in mailer.py.
+    refusal = mailer.sink_refusal()
+    if refusal:
+        print(f"\n  *** REFUSING TO START ***\n  {refusal}\n")
+        raise SystemExit(2)
+
     if mailer.sink_path():
         print(f"\n  *** {mailer.SINK_ENV} is set. NO EMAIL WILL BE SENT. ***"
               f"\n  *** Messages are being written to {mailer.sink_path()}"
