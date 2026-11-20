@@ -1,359 +1,193 @@
 # Data Lineage Tracker
 
-An interactive web application for tracking data lineage across the Department of Education's ecosystem. Visualize how data flows between systems, drill into transformation details, and maintain a living catalog of systems, data flows, data elements, stakeholders, and agreements.
+A web application for documenting how data moves through an organization — which
+systems hold it, what flows between them, what the fields mean, who is
+accountable, and what work the pipelines depend on.
 
-## Quick Start
+Built for the **Maine Department of Education** and shared in the hope that it
+is useful to other state agencies and school districts with the same problem.
+MIT licensed.
 
-The app runs as a container alongside a PostgreSQL database, so local development
-matches production exactly.
+**Status: beta (0.9.x).** In production use at one agency. The schema is
+stable and migrations run automatically, but the version stays on `0.x` because
+the feature set is still moving.
 
-### Prerequisites
-- **Docker Desktop** ([download](https://www.docker.com/products/docker-desktop/)) — running
+---
 
-### Run
+## The question it answers
+
+Most organizations can already say what systems they have and who runs them.
+The question that is hard to answer quickly is the one that actually comes up:
+
+> This field is wrong in a public report. Where did it come from, what touched
+> it on the way, and who do I talk to?
+
+This holds the answer as a diagram plus the records behind it. It is
+documentation your organization maintains deliberately — it does **not** connect
+to your databases, hold your actual data, or discover anything automatically.
+
+---
+
+## What it does
+
+**Lineage diagram.** Systems as boxes, data flows as arrows. Drag to rearrange
+with alignment guides, route arrows by their connection points and bends, zoom
+and pan, and export as SVG, PNG or JPG — or print to PDF. Positions are saved.
+
+**Catalogs.** Systems, data flows, and a data elements glossary with PII and
+FERPA classification. Click any row for the full record.
+
+**Governance inheritance.** A data element takes its owner and steward from the
+system or flow that carries it unless it overrides them, so accountability is
+recorded once. Every value shows whether it is inherited or overridden.
+
+**Database schema drill-down.** Upload a T-SQL schema script against a data
+store and browse its entity-relationship diagram, then govern at the table and
+column level — each value inheriting from the table, then the system. Governance
+already entered survives a re-upload by name, and the previous schema is kept
+and can be restored.
+
+**Tasks.** The work a flow or a store depends on: validation steps, a stored
+procedure, a file somebody moves by hand. Tasks carry subtasks, dates,
+assignees, dependencies on other tasks, and an automated flag — and appear on
+the diagram as circles on their parent, colored by whether anything needs
+attention. A task's window is derived from its subtasks unless you override it.
+
+**Scenario planning.** A private working copy of the whole picture. Retire a
+system, add three that do not exist yet, repoint flows, and compare against what
+you run today — with proposed, modified and retired marked, and nothing touching
+the live record until you decide. See [`SCENARIOS.md`](SCENARIOS.md).
+
+**Resources.** Attach documents or links to systems, flows and tasks. PDFs,
+images and text preview in the app; previous versions are kept and every change
+is audited.
+
+**Accounts and audit.** Four roles enforced server-side on every request. Every
+change recorded field by field with old and new values, who, when and from
+where — append-only, filterable, exportable to CSV, and a SuperAdmin can revert
+an individual update, which writes a new entry rather than erasing one.
+
+**Make it your own.** Your logo in one of four positions, your own definitions
+for any field, fields you do not use switched off per record type (never
+deleting the stored value), your own system types and colors, and a built-in
+help panel with fourteen articles.
+
+**Self-service password reset**, by SMTP or Resend, with the credential read
+from the environment or a mounted secret file. Off until both the setting and a
+working transport exist.
+
+---
+
+## Quick start
+
+Docker is the only requirement.
+
 ```bash
+git clone <this repository>
 cd data-lineage-tracker
+cp .env.example .env          # set BOOTSTRAP_SUPERADMIN_EMAIL and _PASSWORD
 docker compose up
 ```
 
-Then open **http://localhost:8765** in your browser.
+Open **http://localhost:8765** and sign in. Migrations run on startup, and an
+empty database is seeded with a small **fictional** school district so there is
+something to look at. Everything in it is invented; delete it once you have
+seen what the features do.
 
-On startup the app:
-1. Waits for PostgreSQL to be ready
-2. Runs Alembic migrations to create or update the schema
-3. Seeds baseline data if the database is empty (systems, flows, data elements, and the NEO and Federal Reporting database schemas)
-4. Serves the app on port 8765
-
-### Everyday commands
 ```bash
-docker compose up              # start (Ctrl+C to stop)
-docker compose up -d           # start in the background
-docker compose down            # stop; your data is kept
-docker compose restart app     # apply code changes
-docker compose logs -f app     # watch the logs
-docker compose down -v         # stop and DELETE all data
+python3 selftest.py --email you@example.gov   # verify, prompts for the password
 ```
 
-Code changes are picked up with `docker compose restart app`. If you change
-`requirements.txt`, rebuild with `docker compose up --build`.
+For a real deployment — environment variables, reverse proxies, email, backups,
+upgrading — read [`INSTALL.md`](INSTALL.md).
 
-### First sign-in
-The first time the app starts against an empty database it creates a SuperAdmin
-account from `BOOTSTRAP_SUPERADMIN_EMAIL` (set in `docker-compose.yml`, or your
-own `.env`). If you don't supply a password, one is generated and printed to the
-logs **once**:
+---
 
-```
-====================================================================
-  Initial SuperAdmin created
-    Email:    you@example.gov
-    Password: <generated>
-    (shown once — you must change it at first login)
-====================================================================
-```
+## Documentation
 
-Sign in with it and you'll be required to choose a new password before you can
-go anywhere else.
-
-### Verify everything works
-```bash
-python3 selftest.py --email you@example.gov --password 'YourPassword'
-```
-Exercises every endpoint, the governance inheritance chain, the read/write
-paths, and — importantly — checks that roles are actually enforced on the
-server, by creating a temporary Viewer account and confirming it is blocked from
-writing. Uses only the Python standard library.
-
-### Configuration
-All configuration is via environment variables (no code changes needed to move
-hosts):
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `DATABASE_URL` | PostgreSQL connection string (required) | set by Docker Compose |
-| `PORT` | Port to listen on | `8765` |
-| `BOOTSTRAP_SUPERADMIN_EMAIL` | First-run only: creates the initial SuperAdmin | — |
-| `BOOTSTRAP_SUPERADMIN_PASSWORD` | Optional; generated and logged once if omitted | — |
-| `SCRYPT_N` | Password hashing cost | `32768` |
-| `SMTP_PASSWORD` | SMTP credential, when email delivery is set to SMTP | — |
-| `RESEND_API_KEY` | Resend credential, when delivery is set to Resend | — |
-| `EMAIL_SINK_PATH` | **Testing only.** Writes mail to a file instead of sending it | — |
-
-Email is configured in two places on purpose. The host, port, from address and
-public address are set by a SuperAdmin under **Preferences → Email**, so
-setting mail up does not require access to the server; only the credential is
-an environment variable, because a secret in the database would travel in
-every nightly backup. **Preferences → Email status** reports whether the
-credential was found and has a *Send test message* button that gives the real
-reason for a failure.
-
-See `.env.example`.
-
-## Accounts, Roles, and the Audit Trail
-
-### Roles
-Roles are strictly ordered — each inherits everything below it.
-
-| Role | Can do |
+| Document | For |
 |---|---|
-| **Viewer** | Read the diagram, catalogs, and schema drill-down, including all detail panels. Cannot edit anything, including rearranging the diagram. |
-| **Editor** | Everything a Viewer can, plus create/update/delete systems, data flows, data elements, and contributors, and edit table- and field-level schema governance. |
-| **Administrator** | Everything an Editor can, plus create and manage user accounts and assign roles (except SuperAdmin). |
-| **SuperAdmin** | Everything an Administrator can, plus the Preferences and Audit Log screens, and managing other SuperAdmins. |
+| [`GETTING_STARTED.md`](GETTING_STARTED.md) | Your first hour as a user |
+| [`INSTALL.md`](INSTALL.md) | Deploying and running it |
+| [`SECURITY.md`](SECURITY.md) | What it does, where it stops, how to report a problem |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Changing the code |
+| [`SCENARIOS.md`](SCENARIOS.md) | How scenario planning is designed |
+| [`ACCESSIBILITY.md`](ACCESSIBILITY.md) | WCAG contrast measurements and known gaps |
+| [`CLAUDE.md`](CLAUDE.md) | The engineering journal — every rule, with the bug that produced it |
+| [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) | How a release is done |
+| [`backup/README.md`](backup/README.md) | The nightly backup job and the restore procedure |
 
-Permissions are enforced **on the server for every request**. The interface also
-hides controls a user can't use, but that's only a convenience — the server is
-the security boundary.
+There is also a help panel **inside the application**, on every screen, which
+is the manual for using it.
 
-### Managing accounts
-There is no self-registration. An Administrator creates each account with a
-temporary password, which must be shared through a separate channel (email
-delivery isn't configured yet) and must be changed at first sign-in.
+---
 
-Accounts are **deactivated, never deleted**, so audit history stays intact.
-Deactivation and role changes take effect immediately, on the deactivated user's
-very next request. The system refuses to demote or deactivate the last remaining
-SuperAdmin.
+## How it is built
 
-### Sessions and passwords
-Sessions live in the database, so an Administrator can see who's signed in and
-force a sign-out. A session expires after 8 hours idle (configurable) and after
-30 days regardless. Passwords are hashed with scrypt, must be at least 12
-characters with upper case, lower case, a number and a symbol, are screened
-against a list of common passwords, and can't contain the user's own name or
-email. Repeated failed sign-ins trigger progressive delays and then a temporary
-lockout.
-
-### Audit log
-Every create, update, and delete is recorded **field by field**, with the old and
-new values, who made the change, when, and from which IP address. Sign-ins,
-failed sign-ins, and permission denials are recorded too. The log is
-append-only — nothing in the application can edit or remove an entry.
-
-SuperAdmins can filter by date range, user, action, and entity type, and export
-the filtered view to CSV.
-
-**Reverting a change.** A SuperAdmin can revert an individual update from the
-audit log, restoring the values as they were before it. If a field has changed
-since, the app warns and names the newer values before letting you proceed. The
-revert is written as a *new* audit entry — nothing is erased. Creations and
-deletions are not revertible, and schema uploads revert through their own saved
-versions instead.
-
-### Not yet built
-Two-factor authentication and self-service password reset both need email
-delivery, which isn't configured yet. Their toggles appear in Preferences,
-visibly locked, and the surrounding code is structured so they can be added
-without rework. When single sign-on (OIDC against a state identity provider)
-arrives, it replaces the sign-in step only — roles, permissions, and the audit
-trail stay exactly as they are.
-
-## Versioning and Releases
-
-The current version lives in `version.py` and appears in the bottom-right corner
-of every page, including the sign-in screen. Click it to open **Release Notes**.
-
-Release notes are stored in the database. A SuperAdmin writes them (markdown:
-`## heading`, `* bullet`, `**bold**`, `[link](url)`), saves them as a **draft**,
-and publishes when ready. Publishing shows the notes once to each user at their
-next sign-in — someone returning after several releases sees all of them in
-order, oldest first, with *Remind me later* and *Got it*.
-
-> **Releasing:** bump `version.py`, draft the notes, and get them reviewed before
-> publishing. See `CLAUDE.md`.
-
-## What You Can Do
-
-### Lineage Diagram
-- **Drag nodes** to rearrange the layout (positions are saved)
-- **Click a system node** to see its details in the side panel
-- **Click a flow line** (the arrows between nodes) to see transformation steps, business rules, validations, data elements carried, and more
-- **Scroll to zoom** in and out
-- **Click and drag the background** to pan
-
-### Resources on systems and data flows
-Attach **documents or links** with your own label. PDFs, images, and text files
-preview in the app; Office documents show their details with a Download button
-(browsers can't render Word or Excel without a conversion service). To change a
-document, download it, edit, and upload it back — the previous version is kept
-and the change is recorded in the audit log. Links open in a new tab.
-
-Files are capped at 10 MB and stored in PostgreSQL for now, so they're covered by
-the database backups. See `CLAUDE.md` for the planned move to S3.
-
-### Manual Entry systems
-The **Manual Entry** system type (formerly *Manual Process*) tracks data typed or
-uploaded directly into a data store. Alongside the usual ownership fields it
-records the entry type (direct entry or file upload), who does the entering,
-what validates the data at entry, and how errors get corrected.
-
-Choosing a target data store **creates the inbound data flow automatically**, so
-the timing questions are only answered once; changing the target repoints that
-flow. Each Manual Entry system also gets a fixed **Data entry field list**
-resource slot for a sample file or list of field headers.
-
-### Uploading a database schema
-Administrators can upload a **SQL Server (T-SQL) schema script** to a Data Store
-system to refresh its tables and columns. Governance already entered is carried
-forward wherever the schema, table, and column names still match, so hand-entered
-classifications and stewards aren't lost. The previous schema is saved and can be
-restored, and the whole upload is recorded as a single audit entry rather than
-thousands of per-column rows.
-
-### Catalog Views
-- **Systems** — table view of all systems with type, status, and PII flags
-- **Data Flows** — table view of all pipelines with source, destination, and frequency
-- **Data Elements** — glossary of all data fields with PII/FERPA classification
-
-Click any row to open its detail panel.
-
-### Database Schema Drill-Down
-A system with a database schema mapped shows a **SCHEMA** badge on its node and an **Explore Schema** button in its detail panel. Double-clicking the node also drills in. In the sample data that is the Operational Data Store.
-
-Inside the schema view you can:
-- **Browse the entity-relationship diagram** of the system's tables — each card lists its columns with PK/FK markers and data types. Drag table headers to rearrange (positions are saved), scroll to zoom, and drag the background to pan. Foreign-key relationships are drawn as connectors that follow the cards.
-- **Click a table or a field** to open its governance panel.
-- **Govern at the table and field level.** Every table and column inherits its governance (classification, PII/FERPA flags, owner, steward, retention, access restrictions, legal authority) from the parent system by default. Each value is tagged to show where it comes from — **Inherited**, **From table**, or **Override**.
-- **Override only what differs.** Edit a table or field and set just the values that differ from the parent; leave the rest blank to keep inheriting. A small dot on a column marks fields that carry an override. Clearing a value reverts it to inheritance.
-
-A breadcrumb at the top returns you to the high-level lineage diagram at any time.
-
-> **Coming next (Phase 3):** true upstream field-level lineage — tracing where each column originates, the transformations applied along the way, and the responsible owners/stewards at each hop. The field panel already includes a placeholder section for this, pending column-level source mappings.
-
-### Add New Records
-- Use the **+ Add System** and **+ Add Flow** buttons in the toolbar
-- New systems appear on the diagram immediately
-
-## Project Structure
+- **Backend:** Python and Tornado, PostgreSQL through a thin shim in `db.py`.
+  No ORM; handlers write SQL.
+- **Frontend:** one file, `static/index.html` — React compiled in the browser,
+  with React and Babel pinned by version.
+- **Schema:** Alembic migrations, applied automatically at startup.
+- **Configuration:** environment variables only, so the same container runs
+  locally, on Render, and on AWS or Azure.
+- **Dependencies:** five Python packages. The mail module is standard library
+  only, so adding email costs nothing to audit.
 
 ```
-data-lineage-tracker/
-  app.py              Python backend (Tornado + PostgreSQL)
-  db.py               Database layer: connection pool + sqlite-style query shim
-  auth.py             Password hashing, password policy, sessions, lockout
-  permissions.py      Role hierarchy and permission checks
-  audit.py            Append-only audit trail (field-level change tracking)
-  requirements.txt    Python dependencies
-  Dockerfile          Container image (portable to Render, AWS, or Azure)
-  docker-compose.yml  Local stack: app + PostgreSQL
-  .env.example        Environment variables reference
-  alembic.ini         Migration configuration
-  alembic/
-    env.py            Reads DATABASE_URL
-    versions/         Versioned schema migrations
-  sample_schema.json       Sample database schema seed (tables, columns, foreign keys)
-  selftest.py         End-to-end verification script
-  static/
-    index.html        Frontend (React, runs in the browser)
-  README.md           This file
+app.py            Backend: API handlers, seeding, startup
+db.py             Connection pool and the ? placeholder shim
+auth.py           Password hashing and policy, sessions, lockout, reset tokens
+permissions.py    Role hierarchy and permission checks
+audit.py          Append-only audit trail
+scenarios.py      Scenario scoping and copy-on-write
+schema_import.py  T-SQL parsing and carrying governance forward
+mailer.py         SMTP and Resend transports (standard library only)
+help_articles.py  The in-app help panel's content
+field_catalog.py  Generated — do not edit; see CONTRIBUTING.md
+static/index.html The whole frontend
+alembic/versions/ Schema migrations
+tools/            Static checks, the test harness, and the test suites
+backup/           Nightly database backup job for S3
+selftest.py       End-to-end verification
 ```
 
-## Architecture Notes
+---
 
-**PostgreSQL, not SQLite.** All durable state lives in the database, which keeps
-the app stateless and portable — the same container runs on Render today and on
-AWS or Azure later by changing `DATABASE_URL`.
+## Not yet built
 
-**Schema changes go through Alembic.** Add a migration rather than editing
-tables by hand:
-```bash
-docker compose exec app alembic revision -m "describe the change"
-# edit the generated file in alembic/versions/, then:
-docker compose restart app        # migrations run automatically on startup
-```
+Listed because knowing what is missing is part of deciding whether to adopt it.
 
-**Boolean-ish columns are stored as `INTEGER` (0/1)**, not `BOOLEAN`. The JSON
-API and frontend both expect 0/1, so this preserves the API contract exactly.
+- **Two-factor authentication.** The preference exists and is locked off; TOTP
+  is the intended implementation.
+- **Single sign-on.** No OIDC or SAML — everyone has a local password. For an
+  organization with an identity provider this is the most likely objection.
+- **Email notifications for tasks** — assignment and overdue. The mailer is
+  built; the open question is the shape, and a scheduled digest is probably the
+  better first version.
+- **Field-level lineage tracing** — following a single column back through the
+  transformations that produced it. The field panel has a placeholder for it,
+  pending column-level source mappings.
+- **An agreements screen.** The table and API exist; there is no interface.
 
-**`db.py` translates `?` placeholders to `%s`** and returns rows that support
-both `row['column']` and `row[0]`, so application queries keep the sqlite3-style
-form they were written in.
+`SECURITY.md` lists the security-relevant gaps, which are a different list.
 
-## Data Model
+---
 
-The app stores these entity types:
+## Contributing and support
 
-| Entity | What It Represents |
-|--------|-------------------|
-| **System** | Any software, database, ETL process, or manual step in the ecosystem |
-| **Data Flow** | A movement of data from one system to another, with all the details |
-| **Data Element** | A specific data field (e.g., Student ID) with its definition and classification |
-| **Stakeholder** | A person who owns or manages systems and flows |
-| **Agreement** | A data sharing agreement governing interagency data exchanges |
-| **Schema Table** | A physical database table belonging to a System, with governance overrides |
-| **Schema Column** | A field within a schema table, with its own governance overrides (inheriting from the table, then the system) |
-| **Contributor** | A person holding a governance role (data owner, steward). Formerly "Stakeholder". May optionally be linked to a user account. |
-| **User** | A login account with a role. Users and contributors are separate: a contributor needs no login, and a user need not hold a governance role. |
+This is maintained by one person alongside other work, so expect no
+response-time commitment. Pull requests and issues are welcome;
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the rules, and security problems should
+go to the address in [`SECURITY.md`](SECURITY.md) rather than into a public
+issue.
 
-See the **Data_Lineage_Tracker_Data_Model.docx** for the full schema reference.
+If you deploy this at another agency, the maintainer would like to hear about
+it — partly out of interest, and partly because what breaks for you is the
+fastest way to find out what the documentation assumes.
 
-## Sample Data
+---
 
-An **empty** database gets a small fictional district on first start, so there
-is something to look at before you have entered anything of your own:
+## License
 
-- **8 systems** laid out from collection through to reporting — district source
-  systems, an integration platform, an operational store, a longitudinal
-  store, and three reporting destinations
-- **7 data flows**, including one carrying no PII and one on its own
-  collection calendar, so the diagram shows more than a single pipeline
-- **12 data elements** covering the cases the catalogs have to display: PII and
-  not, FERPA-protected and not, three classifications, a derived element and a
-  coded one
-- **A sample database schema** (`sample_schema.json`): two schemas, four
-  tables, three foreign keys — enough to show what the schema drill-down does
-
-**None of it describes a real organization.** Names are roles rather than
-products, so nothing here should be mistaken for a recommendation or for
-another agency's architecture. Delete it once you have seen what the features
-do; it is seeded only into a database with no systems in it, so it will not
-come back.
-
-### Mapping your own schema
-
-Two routes. Upload a `.sql` file against a system from its details panel, which
-is the normal one and keeps a revertible snapshot. Or drop a
-`<name>_schema.json` file beside the application declaring the `system_id` it
-belongs to, which is how the sample is loaded.
-
-Schema seeding is **idempotent per system**: a system is only seeded if it has
-no tables yet, and a system that does not exist is skipped entirely. So adding
-a file seeds just that system, an existing deployment is never re-seeded, and
-nothing is lost.
-
-## Resetting the Database
-
-To wipe everything and start from seed data:
-```bash
-docker compose down -v      # deletes the database volume
-docker compose up           # recreates the schema and re-seeds
-```
-
-## Deploying to Render
-
-1. Create a **PostgreSQL** instance on Render (a paid instance — free ones expire and have no backups).
-2. Create a **Web Service** from this repository and choose the **Docker** runtime.
-3. In the web service's environment, set `DATABASE_URL` to the database's **Internal Database URL**.
-4. Deploy. Migrations and seeding run automatically on startup.
-
-> **Do not deploy on Render's free tier.** Free services have an ephemeral
-> filesystem and spin down after 15 minutes of inactivity; with the previous
-> SQLite setup that silently discarded every change. Using managed PostgreSQL
-> avoids this entirely, but the database instance must be a paid one to get
-> backups and point-in-time recovery.
-
-**Backups.** Paid Render Postgres provides point-in-time recovery over a rolling
-window (3 days on Hobby, 7 on Pro) plus downloadable exports retained 7 days.
-That is disaster recovery, not records retention — schedule a periodic `pg_dump`
-to storage you control if the lineage documentation has a retention requirement.
-
-## Future Enhancements
-
-- **Two-factor authentication and self-service password reset** — both need email delivery (Resend); the preference toggles already exist, locked off
-- **Single sign-on (OIDC)** — federate with a state identity provider such as Microsoft Entra ID, replacing local passwords entirely
-- **Agreement management screen** — the table and API exist; no UI yet
-- **Field-level lineage tracing (Phase 3)** — trace each schema column back to its source element, the transformations applied, and the owners/stewards at each hop
-- Map database schemas for additional systems (NEO and Federal Reporting are done)
-- Stakeholder and Agreement management screens
-- Search and filter the diagram by type, owner, PII status
-- Export diagram as image
+MIT. See [`LICENSE`](LICENSE).

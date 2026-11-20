@@ -103,7 +103,61 @@ While you are in there: `SCREENS` maps a screen to the articles offered on it,
 so a new screen with no entry silently offers nothing, and a new article that
 names no screen can only be found by searching.
 
-### 4. The commit message goes in a file, not into Terminal
+### 4. Check the adopter documentation at every release, too
+
+Reminder 3 covers `help_articles.py`, which is what a **user** reads. This is
+the other audience: the repository documentation an **adopting organization**
+reads to decide whether to run this and how. Same failure mode, different
+files, and a worse one to get wrong — a help article that is out of date
+confuses somebody who is already inside the application, while `INSTALL.md`
+being out of date means a deployment that is wrong from the first day, or a
+security reviewer told something untrue.
+
+**Every release, without being asked**, read the release's changes against:
+
+| Document | Goes stale when |
+|---|---|
+| `INSTALL.md` | An environment variable is added, renamed or retired; the startup sequence changes; a new external dependency appears; the supported PostgreSQL or Python version moves; **anything email is used for changes** |
+| `SECURITY.md` | Anything about authentication, sessions, tokens, permissions, the audit trail, secret handling, uploads, or what leaves the deployment |
+| `CONTRIBUTING.md` | A new check, generated file or test suite; a changed rule about migrations or generated code |
+| `GETTING_STARTED.md` | What the seed district contains; a new screen, record type or Preferences feature; a role's capabilities; how a record is cleared or refused |
+| `README.md` | The feature list, or a new top-level document to link |
+| `RELEASE_CHECKLIST.md` | Reminder 2 already covers this, in both formats |
+| `tools/tests/README.md` | A new suite, a renamed one, or a changed rule about what a suite may assume |
+
+Then **tell Ben what you found**, as a short list, the way reminder 3 wants it.
+"Nothing needs changing" is a valid answer and has to be said out loud; silence
+reads as not having looked.
+
+**The example that prompted this rule**, from Ben: `INSTALL.md` currently says
+email is used for one thing, password reset. The moment task notifications ship
+— which is on the Not-yet-built list and uses the same mailer — that sentence
+is false, and nothing in the code will fail to tell anybody. **A document can
+be made wrong by a change that never touches it.** That is why this is a
+standing review rather than a thing to remember when it seems relevant: the
+releases that invalidate documentation are exactly the ones where documentation
+is not what you are thinking about.
+
+**And it had already happened somewhere nobody was looking**, which is why the
+last row is in the table. `tools/tests/README.md` was found stale while
+`CONTRIBUTING.md` was being written: its table was missing five suites, and a
+paragraph still told the reader every suite "changes the bootstrap password as
+its first act" — the exact behavior `_client.py` was built to remove, after it
+came one successful login away from rewriting the password of an account Ben
+was borrowing. So the document was not merely out of date, it was **instructing
+the next person to reintroduce the fault**. A README under `tools/` is as
+capable of going stale as one in the root, and the only reader who checks it is
+somebody about to write a test.
+
+`GETTING_STARTED.md` is the one row here whose audience is a **user** rather
+than an adopter, so it overlaps reminder 3 — review it alongside the help
+articles if that is the order that suits, as long as both get looked at.
+
+Worth knowing: these files are **not** reviewed-then-published like release
+notes. They are ordinary commits, so the review has to happen before the
+commit — same reasoning as the help articles in reminder 3.
+
+### 5. The commit message goes in a file, not into Terminal
 
 Write the release's commit message to **`COMMIT_MSG.txt`** in the project root
 and tell Ben to run:
@@ -134,7 +188,7 @@ belonging to one, and it is overwritten every release. Posting the message in
 chat as well is fine and worth doing — Ben reviews it there — but the file is
 what he actually commits from.
 
-### 5. The app is written in American English
+### 6. The app is written in American English
 
 Ben asked for this in November 2026: color without a "u", "Check" rather than
 "Tick", catalog, behavior, gray, center, organization, analyze, labeled.
@@ -152,7 +206,7 @@ attribute, and any identifier, column or endpoint that already exists. All of
 the current ones happen to be American already (`field_catalog.py`,
 `/api/field-catalog`), so this has not yet cost anything.
 
-### 6. Move uploaded files to S3 when object storage exists
+### 7. Move uploaded files to S3 when object storage exists
 
 Uploaded documents (the Resources feature) and schema `.sql` files are currently
 stored **in PostgreSQL** as binary columns. That was a deliberate interim choice:
@@ -195,7 +249,7 @@ gets stored and what the endpoint serves, so the two can never disagree. Do not
 add SVG to the accepted list: an SVG can carry script, and this one is served
 from our own origin.
 
-### 7. Backups: the job never deletes
+### 8. Backups: the job never deletes
 
 `backup/` holds a Render Cron Job that dumps the database nightly to S3 —
 30 daily, 12 monthly, 3 years of annual snapshots. Two properties are load-
