@@ -263,7 +263,7 @@ the answer is short.
 | Destination | When | Carrying |
 |---|---|---|
 | Your mail transport | A password reset, or an administrator pressing "Send test message" | The recipient address and a reset link |
-| `unpkg.com` | Every page load | Nothing. React, ReactDOM and Babel are fetched by the browser from a CDN |
+| `unpkg.com` | Every page load | Nothing. React, ReactDOM and Babel are fetched by the browser from a CDN, pinned by version and verified by hash |
 | Your backup storage | Nightly, if you set the backup job up | A full database dump |
 
 **That is the complete list.** The application makes no other outbound calls,
@@ -271,13 +271,28 @@ reports no telemetry, and contacts no analytics or error-reporting service.
 `mailer.py` is standard-library only, so adopting the mail feature adds no
 dependency to audit.
 
-The `unpkg.com` row is the one to think about: three script tags are fetched
-from a public CDN on every page load, which means **that CDN can serve
-arbitrary JavaScript into your users' browsers.** The versions are pinned,
-which stops a surprise upgrade, but pinning is not integrity checking.
-Subresource Integrity is the fix and is not yet in place — see below. If your
-review will not accept a CDN dependency, the alternative is to vendor the three
-files into `static/` and serve them yourself.
+The `unpkg.com` row is the one a review asks about, because three script tags
+fetched from a public CDN on every page load would otherwise mean **that CDN
+can serve arbitrary JavaScript into your users' browsers.**
+
+Two things close that, and it takes both. The **versions are pinned**, which
+stops a surprise upgrade. And each tag carries a **Subresource Integrity**
+hash, so the browser verifies the bytes it received against a `sha384` digest
+recorded in the page and refuses to execute anything else. npm package versions
+are immutable, so after those hashes were taken, any change to those files is
+an attack — and it fails closed rather than running.
+
+Be precise about what that does and does not buy. It is trust-on-first-use: the
+hashes attest to what the CDN served when they were computed, so a CDN already
+compromised at that moment would have been pinned in that state. What it
+prevents is a *future* substitution, which is the realistic threat for a
+long-lived deployment. CI re-checks the published hashes against what the CDN
+currently serves, so a divergence becomes a failed build rather than something
+a user discovers.
+
+If your review will not accept a CDN dependency at all, the alternative is to
+vendor the three files into `static/` and serve them yourself. Nothing else in
+the application depends on them being remote.
 
 ---
 
@@ -290,8 +305,6 @@ Listed because a review will ask, and because finding out later is worse.
 - **No single sign-on.** No OIDC or SAML. Everyone has a local password. For an
   organization with an identity provider this is the most likely objection, and
   it is on the roadmap.
-- **No Subresource Integrity on the three CDN script tags.** See the table
-  above. Being addressed.
 - **No formal penetration test.** Nothing here has been reviewed by anyone
   outside the project.
 - **Known accessibility gaps**, documented in `ACCESSIBILITY.md` — focus

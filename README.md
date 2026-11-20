@@ -127,12 +127,13 @@ is the manual for using it.
 - **Backend:** Python and Tornado, PostgreSQL through a thin shim in `db.py`.
   No ORM; handlers write SQL.
 - **Frontend:** one file, `static/index.html` — React compiled in the browser,
-  with React and Babel pinned by version.
+  with React and Babel pinned by version and verified by Subresource Integrity
+  hash.
 - **Schema:** Alembic migrations, applied automatically at startup.
 - **Configuration:** environment variables only, so the same container runs
   locally, on Render, and on AWS or Azure.
-- **Dependencies:** five Python packages. The mail module is standard library
-  only, so adding email costs nothing to audit.
+- **Dependencies:** five Python packages, pinned to exact versions. The mail
+  module is standard library only, so adding email costs nothing to audit.
 
 ```
 app.py            Backend: API handlers, seeding, startup

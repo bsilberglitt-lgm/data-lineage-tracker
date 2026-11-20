@@ -916,7 +916,8 @@ everyone means to do and nobody does.
 - [ ] **Check the CI run for the release commit is green** — the Actions tab on
   GitHub, or the check mark beside the commit.
 
-  CI runs the four static checks, a real Babel compile, the geometry suites,
+  CI runs the four static checks, a real Babel compile, a check that every
+  pinned CDN hash still matches what unpkg serves, the geometry suites,
   `selftest.py` against a fresh PostgreSQL, and every feature suite **twice**.
   It runs on push, so for a release committed straight to `main` it is a
   **backstop, not a gate**: by the time it answers, the commit exists. That is
@@ -1110,6 +1111,30 @@ this script: the Docker daemon is unresponsive. See below.
 resolution to go wrong — it downloads `@babel/standalone` from unpkg, which is
 the same file the page itself loads. On a filtered network, that one URL is
 what to check.
+
+### The app is a blank page right after a script tag was changed
+
+Suspect the **`integrity` hash** before anything else. The three CDN script
+tags in `static/index.html` are pinned by version *and* by `sha384` hash; if a
+version was changed without recomputing its hash, the browser refuses to run
+the file and the page renders empty, with the only explanation in the browser
+console (look for "Failed to find a valid digest").
+
+Recompute it:
+
+```bash
+curl -sL <the url from the tag> | openssl dgst -sha384 -binary | openssl base64 -A
+```
+
+Two other ways to produce the same blank page: removing
+`crossorigin="anonymous"` from a tag that has an `integrity` attribute — the
+request stops being CORS-enabled, so the browser cannot verify the hash and
+blocks the script — and an undeclared identifier, which is the more common
+cause when no script tag was touched (see the `check_identifiers.py` step).
+
+CI has a **CDN hashes still match** job that catches a stale hash before a
+person sees it, so a release that passed CI and still shows a blank page is
+more likely the identifier case.
 
 ### `check_jsx.sh` fails with `ERESOLVE` or mentions `@babel/preset-react`
 

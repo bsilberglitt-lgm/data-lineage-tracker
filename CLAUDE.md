@@ -286,9 +286,11 @@ actually run it.
 - **Backend:** Python + Tornado, PostgreSQL via `db.py` (a thin shim that keeps
   sqlite-style `?` placeholders and row access working).
 - **Frontend:** a single `static/index.html` — React compiled in the browser by
-  Babel. React and Babel are **pinned** by version in the script tags; do not
-  un-pin them. An unpinned Babel once switched to the automatic JSX runtime,
-  emitted an `import` statement, and produced a blank page.
+  Babel. React and Babel are **pinned by version and by `integrity` hash** in
+  the script tags; do not un-pin either. An unpinned Babel once switched to the
+  automatic JSX runtime, emitted an `import` statement, and produced a blank
+  page. Changing one of those three versions means recomputing its hash — see
+  below.
 - **Schema:** Alembic migrations in `alembic/versions/`. Never edit tables by
   hand; add a migration.
 
@@ -390,6 +392,58 @@ page rather than a 404 otherwise surfaces as a baffling syntax error inside
 `require()`. And the module is read as `loaded.transform ? loaded :
 global.Babel`, because standalone is UMD and which of the two a future build
 prefers is not worth depending on.
+
+#### Pinning, finished: exact versions and SRI hashes (0.9.2)
+
+0.9.2 did nothing a user can see, and closed the two remaining places where
+something outside the repository could change what runs.
+
+**`requirements.txt` pins with `==`.** Every line was `>=`, so any
+`docker compose up --build` or deploy could install a version nobody had
+tested, and the symptom would be a runtime failure on whichever machine
+rebuilt first. The versions written there are the ones the running application
+was verified against, read out of `pip freeze` in the container rather than
+chosen. Moving them is now a deliberate act with a checklist run attached.
+Note that `psycopg[binary]` is one line here and two in `pip freeze` — the
+extra pulls the binary wheel at the same version, so pinning the extra states
+the intent and the wheel must not be listed separately.
+
+**The three CDN script tags carry `integrity` hashes.** This was the last item
+in `SECURITY.md`'s own list of gaps. Three things about it are worth keeping:
+
+- **`crossorigin="anonymous"` is required, not decoration.** Without it the
+  request is not CORS-enabled, the browser cannot verify the hash, and it
+  blocks the script — which here is a blank page. unpkg sends
+  `Access-Control-Allow-Origin: *`, so it works.
+- **It is trust-on-first-use, and the document says so.** The hashes attest to
+  what unpkg served when they were taken; a CDN already compromised at that
+  moment would have been pinned in that state. What it prevents is a *future*
+  substitution, which is the realistic threat for a deployment that runs for
+  years. Claiming more than that in `SECURITY.md` would be the
+  confidently-wrong-sentence failure this file keeps recording.
+- **A wrong hash is a blank page**, with the reason only in the console — the
+  worst failure shape in this project, and invisible to all four static
+  checks. So CI gained a fifth job that downloads each pinned file and
+  compares its real digest against the one in the page, and **also fails on a
+  `src` tag with no `integrity` at all**, so adding a fourth script without a
+  hash is a decision rather than an oversight. A mismatch is either a stale
+  digest somebody forgot to recompute or an immutable version whose bytes
+  changed, and the failure message says to treat the second as an attack
+  rather than a mistake.
+
+**The release had no release notes, deliberately**, and that is a departure
+from reminder 1 worth recording rather than repeating by accident. Reminder 1
+says draft notes every release; it also forbids internal detail and
+specifically forbids reassuring users that a guard now exists. Nothing in
+0.9.2 is visible from inside the application, so any notes it could carry would
+break the second rule, and publishing them would fire the what's-new modal with
+nothing to say. `version.py` moved to 0.9.2 and `SEED_RELEASES` gained no row.
+Verified rather than assumed: `unseen` is computed from published `app_release`
+rows against the user's `last_seen_release` sort key, and `VERSION` is only
+reported as `current_version` — so no row means no modal. The one visible
+consequence, stated to Ben at the time: the version in the corner reads 0.9.2
+while the newest notes say 0.9.1. Adding a row later is one edit, so this is
+reversible if that mismatch ever bothers anybody.
 
 `check_jsx.py` decides whether a `<` begins JSX by looking at the character
 before it. During 0.5.1 a comment placed between `return (` and the root
