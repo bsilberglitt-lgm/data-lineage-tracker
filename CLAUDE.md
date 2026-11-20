@@ -1994,6 +1994,42 @@ Scope the worry correctly when reading about this elsewhere: the deprecation
 affects **M365 as the relay**. It does not touch SES, ACS, Resend, SendGrid,
 Google Workspace or an internal relay.
 
+#### The Resend HTTP path needs a User-Agent, and a 403 is not always auth
+
+Two faults, found when Ben pressed **Send test message** on production with a
+correct API key and a verified domain.
+
+**`api.resend.com` is behind Cloudflare, and `urllib`'s default User-Agent is
+banned.** `Python-urllib/3.x` trips the Browser Integrity Check, which answers
+**403 with Cloudflare error 1010** — "banned your access based on your
+browser's signature". The request never reaches Resend, so nothing about the
+key, the domain or the payload is involved. `USER_AGENT` is sent now, as an
+honest description of this application rather than a browser string:
+impersonating Chrome would also work and is the wrong trade, because it makes
+our traffic indistinguishable from a scraper to whoever debugs it next and is
+a lie that then has to be maintained.
+
+**And our error message blamed the credential.** The handler mapped any 401 or
+403 to "Resend rejected the API key", so the one thing that was correct is
+what Ben was sent to check. **A 403 from a CDN and a 403 from an API are the
+same status code and different problems**, and the status alone cannot tell
+them apart — so `_looks_like_edge_block` reads the **body**: Resend answers
+with JSON, Cloudflare with an HTML page naming its own numeric code. It wants
+both the vendor name and an error number, because Resend's own JSON could
+legitimately mention Cloudflare.
+
+The general lesson is the one this file keeps recording from new directions:
+**an error message that names a cause confidently is worse than one that does
+not, when the cause is wrong.** It does not merely fail to help — it spends
+somebody's time proving a correct thing correct. The detail strings here are
+read by an administrator who cannot see the code, so a confident wrong
+sentence is the whole of what they have.
+
+Worth knowing for the future: **SMTP avoids this path entirely.** Resend
+speaks SMTP at `smtp.resend.com` with username `resend` and the API key as the
+password, with no CDN in front of it, which is another small argument for the
+SMTP-first shape of this module.
+
 **`mailer.send` returns `(ok, detail)` and never raises.** Every caller has to
 carry on either way: a reset must answer the browser without revealing whether
 the address exists, and the test button needs the real reason to show. The

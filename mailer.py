@@ -71,6 +71,25 @@ SMTP_SECURITY = ("starttls", "ssl", "none")
 
 RESEND_ENDPOINT = "https://api.resend.com/emails"
 
+# **Send a User-Agent, or Cloudflare refuses the request.**
+#
+# `api.resend.com` sits behind Cloudflare, whose Browser Integrity Check is on
+# by default and rejects `urllib`'s own default header — `Python-urllib/3.x` —
+# with **403 and Cloudflare error 1010**, "banned your access based on your
+# browser's signature". Nothing to do with the API key, the domain or the
+# payload: the request never reaches Resend.
+#
+# Deliberately an honest description of what this is rather than a browser
+# string. Pretending to be Chrome would also work and is the wrong trade: it
+# makes our traffic indistinguishable from a scraper to the next person
+# debugging it, and it is a lie that has to be maintained. Ordinary tool
+# signatures pass the check; only a handful of library defaults do not.
+#
+# No version number in it, deliberately: that would couple this module to
+# `version.py` for a string nobody reads, and the point is only to be
+# something other than the library default.
+USER_AGENT = "DataLineageTracker (+https://github.com/topics/data-lineage)"
+
 # Where the secret comes from, per transport. Two forms, and the file form is
 # not a convenience — it is how the platforms this is likely to run on actually
 # deliver a secret to a container. AWS ECS task secrets, Azure Key Vault
@@ -379,6 +398,26 @@ def _send_smtp(cfg, to_address, subject, text_body):
                        f"({e}).")
 
 
+def _looks_like_edge_block(body):
+    """Whether this 403 came from the network in front of Resend, not Resend.
+
+    Keyed on the **body**, because the status code is identical either way: an
+    API rejecting a credential and a CDN rejecting a client both answer 403,
+    and calling the second one an authentication failure is what made a correct
+    API key look wrong.
+
+    Cheap and specific. Resend answers with JSON; Cloudflare answers with an
+    HTML error page naming its own numeric code. Matching "cloudflare" alone
+    would be too broad — their JSON could legitimately mention it — so this
+    wants an error number as well, which only appears on the block page.
+    """
+    low = (body or "").lower()
+    if "cloudflare" not in low and "attention required" not in low:
+        return False
+    return any(f"error code: {n}" in low or f"error {n}" in low
+               for n in (1010, 1020, 1015, 1012))
+
+
 def _send_resend(cfg, to_address, subject, text_body):
     payload = json.dumps({
         "from": (f'{cfg["from_name"]} <{cfg["from_address"]}>'
@@ -390,7 +429,9 @@ def _send_resend(cfg, to_address, subject, text_body):
     req = urllib.request.Request(
         RESEND_ENDPOINT, data=payload, method="POST",
         headers={"Content-Type": "application/json",
-                 "Authorization": f"Bearer {cfg['secret']}"})
+                 "Authorization": f"Bearer {cfg['secret']}",
+                 # Required, not decorative. See USER_AGENT above.
+                 "User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
             if 200 <= resp.status < 300:
@@ -404,6 +445,23 @@ def _send_resend(cfg, to_address, subject, text_body):
             body = e.read().decode("utf-8", "replace")[:300]
         except Exception:
             body = ""
+        # **A 403 is not necessarily an authentication failure**, and reading it
+        # as one sent Ben to check a credential that was correct. Cloudflare
+        # sits in front of this endpoint and answers 403 with its own error
+        # page when it dislikes the client — error 1010 for a banned client
+        # signature, 1020 for a firewall rule — and that page never reaches
+        # Resend at all. Told apart by the body, which is Cloudflare's HTML
+        # rather than Resend's JSON, because the status code alone cannot
+        # distinguish them.
+        if _looks_like_edge_block(body):
+            return False, ("The request was blocked before it reached Resend, "
+                           "by the network in front of their API rather than "
+                           "by Resend itself — so this is not a problem with "
+                           "the API key or the sending domain. If this appears "
+                           "after an upgrade, the User-Agent this app sends "
+                           "may have stopped being accepted. Using SMTP "
+                           "instead of the Resend API avoids this path "
+                           "entirely.")
         if e.code in (401, 403):
             return False, (f"Resend rejected the API key. Check the "
                            f"{SECRET_ENV['resend']} environment variable. {body}")
