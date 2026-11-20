@@ -21,8 +21,20 @@ but if the two ever disagree, believe this one.
 | **Test** | *not built yet* | — | See "Test environment" below |
 | **Production** | Render (auto-deploys from `main`) | Render PostgreSQL | What users see |
 
-Production URL: `https://data-lineage-tracker-7fa6.onrender.com`
+Production URL: `https://datalineagetracker.com`
 Repository: `github.com/bsilberglitt-lgm/data-lineage-tracker`
+
+**Use the custom domain, not the `.onrender.com` one.** Both reach the same
+service and the same database — adding a custom domain does not switch the
+original off — but only the custom domain exercises what a user actually goes
+through: DNS, the certificate, and Render's routing for that hostname. It is
+also what `app_base_url` is set to, so it is where reset links point.
+
+The `.onrender.com` address stays enabled on purpose, as a diagnostic: if the
+custom domain misbehaves, reaching the app that way tells you the fault is in
+the domain rather than in the application. That is the only reason to use it.
+Note that it is **blocked by DNS filtering on Maine equipment** (see
+Troubleshooting), which is why the custom domain exists.
 
 **Project folder** — every command below assumes you are in it:
 
@@ -775,17 +787,23 @@ Finally:
 ## Part 6 — Verify production
 
 - [ ] **Confirm the new code is live:** open
-  `https://<your-app>.onrender.com/api/version` and check the version
-  matches what you just released.
+  `https://datalineagetracker.com/api/version` and check the version matches
+  what you just released.
 
 - [ ] **Run the automated test against production:**
 
   ```bash
-  python3 selftest.py https://<your-app>.onrender.com --email <your email>
+  python3 selftest.py https://datalineagetracker.com --email <your email>
   ```
 
   It creates a temporary Viewer account to prove roles are enforced, then
   deactivates it. Expect all checks passed.
+
+  **Against the custom domain, not the `.onrender.com` one** — see
+  Environments at the top for why. One of these checks only means anything
+  here: `/reset-password` has to return the application rather than a 404, and
+  that route is the sort of thing that can be right locally and wrong in
+  production routing.
 
 - [ ] **Repeat the smoke test** against production. Migrations and real
   PostgreSQL behave differently from local in ways tests don't always catch.

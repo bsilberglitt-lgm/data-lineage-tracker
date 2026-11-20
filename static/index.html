@@ -949,13 +949,33 @@ function scopedUrl(url) {
   if (!path.startsWith('/api/')) return url;
   if (UNSCOPED_ENDPOINTS.some(p => path === p || path.startsWith(p + '/'))) return url;
   const parts = [];
-  if (viewScenario !== null) parts.push(`scenario=${viewScenario}`);
-  if (viewShowHidden) parts.push('include_hidden=1');
+  // **Never append a second `scenario`.** A URL that already names one was
+  // built by a caller who meant that scenario, and appending ours produced
+  // `?scenario=5&scenario=12` — which looks like it might merge or be ignored
+  // and does neither: Tornado's `get_argument` returns the LAST value, so the
+  // view silently overrode the caller every time. A duplicated query
+  // parameter is the worst shape for this, because the URL plainly contains
+  // the right answer and the server plainly reads the wrong one.
+  if (viewScenario !== null && !/[?&]scenario=/.test(url)) {
+    parts.push(`scenario=${viewScenario}`);
+  }
+  if (viewShowHidden && !/[?&]include_hidden=/.test(url)) parts.push('include_hidden=1');
+  if (!parts.length) return url;
   return url + (url.includes('?') ? '&' : '?') + parts.join('&');
 }
 
-async function request(method, url, data) {
-  url = scopedUrl(url);
+// `unscoped: true` opts a request out of view scoping entirely. Needed for a
+// list that is about a view the person is NOT standing in — the systems you
+// can focus a new scenario on, for instance, which belong to whatever you
+// chose to start from.
+//
+// It has to be an explicit flag rather than a second function, because the
+// previous attempt at this just called `request` and wrote a comment saying it
+// bypassed the scoping helper. `request` **is** the scoping helper, so the
+// bypass never existed and the bug it was meant to fix came straight back.
+// A comment cannot opt out of anything.
+async function request(method, url, data, { unscoped = false } = {}) {
+  url = unscoped ? url : scopedUrl(url);
   const opts = { method, credentials: 'same-origin', headers: {} };
   if (data !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
@@ -5470,7 +5490,12 @@ function ModalCheck({ entity, col, label, checked, onChange }) {
 // an environment variable, so the answer is not on this screen at all. Which
 // is also why it says to save first: pressing Send straight after typing a
 // host would test the host the server still has.
-function EmailStatus({ notify }) {
+// `reloadKey` changes whenever Preferences saves, which is what makes this
+// panel re-read. It reports whether mail is ready to send — derived from the
+// settings above it — so a fetch only on mount meant saving a correct
+// configuration left the panel describing the state the page loaded with,
+// Send test greyed out, and no way forward but a browser reload.
+function EmailStatus({ notify, reloadKey }) {
   const [info, setInfo] = useState(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -5478,7 +5503,7 @@ function EmailStatus({ notify }) {
   const load = useCallback(() => {
     api.get('/api/email/test').then(setInfo).catch(() => setInfo(null));
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, reloadKey]);
 
   const send = async () => {
     setBusy(true); setResult(null);
@@ -7754,6 +7779,16 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onTaskTypes
   const [logoLimits, setLogoLimits] = useState({});
   const [pendingLogo, setPendingLogo] = useState(null);   // {file,url,width,height,size}
   const [pendingRemove, setPendingRemove] = useState(false);
+  // Bumped on every successful save, so panels that report *derived* state
+  // re-read it. `EmailStatus` is the one that needs it: it reports whether
+  // mail is ready to send, which is exactly what saving these settings
+  // changes, and it was fetching once on mount. So saving a correct
+  // configuration left it still saying "No email transport is selected" with
+  // the Send test button greyed out — the settings were right, the panel was
+  // describing a state that no longer existed, and the only way out was to
+  // reload the page. A panel whose whole job is to report readiness has to
+  // notice the thing that changes readiness.
+  const [savedTick, setSavedTick] = useState(0);
 
   const load = useCallback(() => {
     api.get('/api/preferences').then(rows => {
@@ -7793,6 +7828,7 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onTaskTypes
       setPrefs(rows);
       setPendingLogo(null); setPendingRemove(false);
       loadBranding();
+      setSavedTick(t => t + 1);
       notify('Preferences saved.'); onSaved && onSaved();
     } catch (err) { notify(err.message, true); }
     finally { setBusy(false); }
@@ -7880,7 +7916,7 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onTaskTypes
             the server rather than worked out from the draft above, because
             the one thing that decides whether any of this can send — the
             credential — lives in the environment and is not on this screen. */}
-        {cat === 'Email' && <EmailStatus notify={notify} />}
+        {cat === 'Email' && <EmailStatus notify={notify} reloadKey={savedTick} />}
       </React.Fragment>
     ))}
     {/* Fallback: if the password category is ever renamed, still show the editor. */}
@@ -9769,9 +9805,13 @@ function AddScenarioModal({ scenarios, users, currentUserId, onClose, onSave }) 
       ? `/api/systems?scenario=${form.source_scenario_id}`
       : '/api/systems';
     setLoadingSystems(true);
-    // Bypass the view-scoping helper deliberately: this list is about the
-    // chosen source, not the view the person is standing in.
-    request('GET', url)
+    // `unscoped` is load-bearing, not tidiness: this list is about the chosen
+    // source, not the view the person is standing in. Without it, creating a
+    // scenario from inside another one offered the open scenario's systems —
+    // for BOTH choices. "Current Architecture" became `?scenario=<open>`, and
+    // naming a source became `?scenario=<source>&scenario=<open>`, where the
+    // server takes the last. See `request`.
+    request('GET', url, undefined, { unscoped: true })
       .then(rows => setSourceSystems(Array.isArray(rows) ? rows : []))
       .catch(() => setSourceSystems([]))
       .finally(() => setLoadingSystems(false));
