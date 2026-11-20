@@ -1088,12 +1088,12 @@ Only needed once per computer.
 
 ## Appendix B — Troubleshooting
 
-### `check_jsx.sh` prints nothing for minutes
+### `check_jsx.sh` prints nothing for a minute
 
-**It is working.** The npm install inside the container runs at
-`--loglevel=error`, so a *successful* install prints nothing at all — and the
-first run also pulls a Node image before that. One to three minutes of silence
-is normal, and it is indistinguishable from a hang, which is the problem.
+**It is probably working.** The first run pulls a Node image, which is silent.
+After that the script downloads one file and compiles, which is quick — so a
+*second* run that sits there for more than about twenty seconds is worth
+investigating, where the first one is not.
 
 To tell the difference, in a second terminal:
 
@@ -1102,13 +1102,26 @@ docker ps
 docker stats --no-stream
 ```
 
-A `node:20-alpine` container listed with `NET I/O` climbing between two runs
+A `node:22-alpine` container listed with `NET I/O` climbing between two runs
 means it is downloading. If `docker ps` **itself** hangs, the problem is not
 this script: the Docker daemon is unresponsive. See below.
 
-This script is the only thing in the project that needs the npm registry, so on
-a filtered network check `docker run --rm node:20-alpine npm ping` before
-blaming the app.
+**This no longer uses npm**, as of November 2026, so there is no registry
+resolution to go wrong — it downloads `@babel/standalone` from unpkg, which is
+the same file the page itself loads. On a filtered network, that one URL is
+what to check.
+
+### `check_jsx.sh` fails with `ERESOLVE` or mentions `@babel/preset-react`
+
+You are running the old version of the script, from before November 2026.
+`git pull` and try again.
+
+What happened: it used to `npm install` a pinned `@babel/core` alongside an
+**un-pinned** `@babel/preset-react`. When Babel 8 was published, that `*`
+started resolving to `@babel/preset-react@8.0.1`, which requires peer
+`@babel/core@^8` — an unresolvable tree beside the pinned 7.23.5. Nothing in
+this repository changed; the outside world did. The script no longer uses npm
+at all.
 
 ### `docker ps` hangs, or Compose does nothing
 

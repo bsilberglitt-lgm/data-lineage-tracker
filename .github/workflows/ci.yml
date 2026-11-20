@@ -70,52 +70,88 @@ jobs:
         with:
           node-version: '22'
 
-      # tools/check_jsx.sh does this inside Docker so a developer needs nothing
-      # installed. On a runner that is a container inside a container for no
-      # benefit, so the same compile is done directly — but the Babel version
-      # is read OUT OF THAT SCRIPT rather than written again here. Two places
-      # naming the version is how they come to disagree, and the point of this
-      # check is that it compiles with the version the browser actually loads.
-      - name: Read the pinned Babel version from check_jsx.sh
+      # This compiles with @babel/standalone - the exact file the browser
+      # loads - rather than reconstructing it from @babel/core plus a
+      # separately versioned @babel/preset-react, which is what
+      # tools/check_jsx.sh does. Three things follow from that choice:
+      #
+      #   - No npm. @babel/standalone is one CommonJS file with no RUNTIME
+      #     dependencies (every plugin and preset is a devDependency, bundled
+      #     into the published build), so it can be downloaded and required
+      #     directly. The npm registry is removed as a thing that can fail,
+      #     and so is the oddity of running npm install in a repository with
+      #     no package.json.
+      #   - The version is read from static/index.html itself, which is the
+      #     actual single source of truth. check_jsx.sh keeps its own
+      #     constant; this does not need a second copy of it.
+      #   - The preset is the one bundled in that build, named "react" the way
+      #     the page names it in data-presets. No separate version to drift.
+      - name: Read the pinned Babel version from index.html
         id: babel
         run: |
-          version=$(grep -oE 'BABEL_CORE_VERSION="[0-9.]+"' tools/check_jsx.sh \
-                    | head -1 | cut -d'"' -f2)
+          version=$(grep -oE '@babel/standalone@[0-9]+\.[0-9]+\.[0-9]+' \
+                    static/index.html | head -1 | cut -d'@' -f3)
           if [ -z "$version" ]; then
-            echo "Could not read BABEL_CORE_VERSION from tools/check_jsx.sh."
-            echo "If that variable was renamed, this step needs updating."
+            echo "Could not find a pinned @babel/standalone version in"
+            echo "static/index.html. If the script tag was changed or the"
+            echo "version un-pinned, that is the thing to look at - CLAUDE.md"
+            echo "explains why it must stay pinned."
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Using @babel/core@$version"
+          echo "Using @babel/standalone@$version - the same build the page loads."
 
-      - name: Install Babel
+      - name: Fetch Babel
         run: |
-          npm install --no-fund --no-audit --loglevel=error \
-            "@babel/core@${{ steps.babel.outputs.version }}" @babel/preset-react
+          url="https://unpkg.com/@babel/standalone@${{ steps.babel.outputs.version }}/babel.min.js"
+          if ! curl -fsSL --retry 3 --retry-delay 2 -o babel.min.js "$url"; then
+            echo "Could not download $url"
+            echo "This is a network or registry problem, not a problem with the app."
+            exit 1
+          fi
+          # A CDN that answers with an error page rather than a 404 would
+          # otherwise show up as a confusing syntax error inside require().
+          bytes=$(wc -c < babel.min.js)
+          echo "Downloaded $bytes bytes."
+          if [ "$bytes" -lt 100000 ]; then
+            echo "That is far too small to be Babel. First line:"
+            head -c 300 babel.min.js
+            exit 1
+          fi
 
       - name: Compile static/index.html
         run: |
           node -e '
             const fs = require("fs");
-            const babel = require("@babel/core");
+            const path = require("path");
+            // Standalone is UMD: it sets module.exports under CommonJS and
+            // also assigns a global. Accept either rather than depending on
+            // which one a future build prefers.
+            const loaded = require(path.resolve("babel.min.js"));
+            const Babel = (loaded && loaded.transform) ? loaded : global.Babel;
+            if (!Babel || !Babel.transform) {
+              console.error("Downloaded Babel but found no transform() on it.");
+              process.exit(1);
+            }
             const html = fs.readFileSync("static/index.html", "utf8");
             const m = html.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/);
             if (!m) { console.error("No <script type=text/babel> block found."); process.exit(1); }
+            // Line where the block starts, so errors map to the real file.
             const offset = html.slice(0, m.index).split("\n").length;
             try {
-              const out = babel.transform(m[1], {
-                presets: [["@babel/preset-react", { runtime: "classic" }]],
-                filename: "index.jsx", configFile: false, babelrc: false,
+              const out = Babel.transform(m[1], {
+                presets: ["react"],
+                filename: "index.jsx",
               });
               // The blank-page bug this exists to catch: an automatic JSX
               // runtime emits an import statement, which cannot run in a
               // classic script.
               if (/(^|\n)\s*import\s/.test(out.code)) {
-                console.error("FAILED - compiled output contains an import statement.");
+                console.error("FAILED - compiled output contains an import statement,");
+                console.error("which cannot run in a classic script. Check the JSX runtime.");
                 process.exit(1);
               }
-              console.log("OK - JSX compiles (" + out.code.length + " bytes).");
+              console.log("OK - JSX compiles (" + out.code.length + " bytes generated).");
             } catch (e) {
               const line = e.loc ? (e.loc.line + offset - 1) : null;
               console.error("FAILED - Babel could not compile the page.\n");

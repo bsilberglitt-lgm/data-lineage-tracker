@@ -347,6 +347,50 @@ Run the Python one after every frontend edit (it works in the assistant's
 sandbox, where npm and PyPI are blocked). Run the shell one before committing.
 Neither proves the page *renders* — only that it compiles.
 
+#### An un-pinned dependency broke the authoritative check, from outside
+
+`check_jsx.sh` used to `npm install` a **pinned** `@babel/core@7.23.5`
+alongside an **un-pinned** `@babel/preset-react`, with a comment saying the
+preset "has its own version line and is deliberately NOT pinned to the same
+number". That reasoning held right up until **Babel 8 was published**, at
+which point `*` resolved to `@babel/preset-react@8.0.1`, which declares a peer
+dependency on `@babel/core@^8`. npm cannot resolve that beside a pinned 7, so
+the authoritative frontend check started failing with `ERESOLVE` — everywhere
+at once, with nobody having touched this repository.
+
+**An un-pinned dependency is a decision that something outside the project
+gets to change later, at a time of its choosing.** That is the same argument
+this file already makes for pinning React and Babel in the page, and the
+exception was not justified.
+
+It was found by CI rather than by a person, which is the one thing CI has so
+far been better at than the checklist — and it had been broken for some time
+before that, silently, because the check nobody runs between releases is the
+check nobody notices has stopped working.
+
+The fix removes npm from the equation entirely rather than pinning a second
+version. **`@babel/standalone` is one CommonJS file with no runtime
+dependencies** — every plugin and preset is a devDependency, bundled into the
+published build — so both `check_jsx.sh` and the CI job download that file and
+`require` it. Three things improve:
+
+- **No registry resolution**, so there is no peer-dependency arithmetic left to
+  go stale, and no silent `npm install` to sit there looking like a hang, which
+  it did at checklist step 1b.
+- **It is the exact artifact the browser loads**, rather than a reconstruction
+  of it from two separately versioned packages. The preset is named `react`,
+  which is what the page's own `data-presets` attribute says.
+- **The version is read from `static/index.html`**, the real single source of
+  truth. `BABEL_CORE_VERSION` is gone; there is no longer a constant anywhere
+  that can disagree with the script tag.
+
+Two details worth keeping if this is ever rewritten. The download is checked
+for a plausible **size** before use, because a CDN that answers with an error
+page rather than a 404 otherwise surfaces as a baffling syntax error inside
+`require()`. And the module is read as `loaded.transform ? loaded :
+global.Babel`, because standalone is UMD and which of the two a future build
+prefers is not worth depending on.
+
 `check_jsx.py` decides whether a `<` begins JSX by looking at the character
 before it. During 0.5.1 a comment placed between `return (` and the root
 element of `App` broke that: the last character of the prose was a full stop,
@@ -641,8 +685,9 @@ Ben hit `node: command not found` at checklist step 1b-iii, and installing a
 runtime on his Mac to run four dependency-free test files is the wrong trade
 when Docker is already required for local development and for
 `tools/check_jsx.sh`. `run_geometry_tests.sh` mounts the project read-only into
-`node:20-alpine` and throws the container away; unlike `check_jsx.sh` there is
-no npm install, so there is no registry to fail.
+`node:22-alpine` and throws the container away. These suites need no network at
+all, which `check_jsx.sh` still does — it downloads one file — so this is the
+one of the two that cannot be stopped by anything outside the project.
 
 Its `SUITES` list is written out rather than globbed, deliberately: a new suite
 has to be added there on purpose, because a suite that silently stops being run
