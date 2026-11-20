@@ -124,6 +124,7 @@ security reviewer told something untrue.
 | `README.md` | The feature list, or a new top-level document to link |
 | `RELEASE_CHECKLIST.md` | Reminder 2 already covers this, in both formats |
 | `tools/tests/README.md` | A new suite, a renamed one, or a changed rule about what a suite may assume |
+| `.github/workflows/ci.yml` | A new check or suite; a changed Python, Node or PostgreSQL version; a new environment variable the app needs to start. Not prose, but it goes stale the same way — and a check that stops running is silent, which is why it derives the Babel version and the geometry list rather than keeping copies |
 
 Then **tell Ben what you found**, as a short list, the way reminder 3 wants it.
 "Nothing needs changing" is a valid answer and has to be said out loud; silence

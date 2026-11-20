@@ -913,6 +913,20 @@ everyone means to do and nobody does.
 
 ## Part 8 — After the release
 
+- [ ] **Check the CI run for the release commit is green** — the Actions tab on
+  GitHub, or the check mark beside the commit.
+
+  CI runs the four static checks, a real Babel compile, the geometry suites,
+  `selftest.py` against a fresh PostgreSQL, and every feature suite **twice**.
+  It runs on push, so for a release committed straight to `main` it is a
+  **backstop, not a gate**: by the time it answers, the commit exists. That is
+  why Parts 1 to 3 still have to be run locally first.
+
+  What it is genuinely good for: catching the suite that only passes on a
+  database nobody has used, and anything that depends on something present on
+  your Mac and nowhere else. If CI is red and your local run was green, the
+  difference is usually one of those two.
+
 - [ ] Note anything that went wrong, and **ask Claude to update this checklist**
   so the next release doesn't repeat it.
 - [ ] Stop the local stack if you're done: `docker compose down`
@@ -1364,6 +1378,7 @@ Worth understanding, because it explains why the manual step can't be skipped.
 | `tools/check_jsx.sh` | Babel compiles the page | That it renders correctly |
 | `selftest.py` | API, permissions, audit trail all work | That any screen displays properly |
 | Click-through | The app works for a person | Nothing beyond what you clicked |
+| GitHub Actions | All of the above ran on a clean machine with an unused database | Anything about rendering; and it answers *after* the commit |
 
 Every bug that has reached production in this project got past the first three
 and was caught by the fourth.
