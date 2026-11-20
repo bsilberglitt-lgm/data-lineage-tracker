@@ -1,0 +1,328 @@
+name: CI
+
+# What runs here is exactly what RELEASE_CHECKLIST.md asks a person to run
+# locally, minus the parts that need a human looking at the screen. Nothing in
+# CI proves the page renders — see the note at the bottom of this file.
+#
+# Four jobs, deliberately separate so a red build says which kind of thing
+# broke rather than just "tests failed":
+#
+#   checks     the four static checks; no network, no database, seconds
+#   babel      the authoritative JSX compile; needs the npm registry
+#   geometry   the pure-function suites in Node; no network
+#   integration  PostgreSQL, the app booted, selftest.py and the feature suites
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch cancels the first: the older answer is not
+# worth waiting for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  checks:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Every one of these is standard library only, which is why there is no
+      # pip install in this job. That property is worth keeping: these are the
+      # checks that have to run in an environment where PyPI is blocked.
+      - name: JSX structure
+        run: python3 tools/check_jsx.py
+
+      - name: Undeclared identifiers
+        run: python3 tools/check_identifiers.py --check
+
+      - name: Payload coverage
+        run: python3 tools/check_payloads.py --check
+
+      - name: Field catalog is not stale
+        run: python3 tools/gen_field_catalog.py --check
+
+      # Runs the migration's real SQL against SQLite with a stub `op`, so it
+      # needs no server and belongs here rather than in the integration job.
+      - name: Migration 0010 data conversion
+        run: python3 tools/tests/t_migration_0010.py
+
+  # ---------------------------------------------------------------------------
+  babel:
+    name: JSX compiles (real Babel)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # tools/check_jsx.sh does this inside Docker so a developer needs nothing
+      # installed. On a runner that is a container inside a container for no
+      # benefit, so the same compile is done directly — but the Babel version
+      # is read OUT OF THAT SCRIPT rather than written again here. Two places
+      # naming the version is how they come to disagree, and the point of this
+      # check is that it compiles with the version the browser actually loads.
+      - name: Read the pinned Babel version from check_jsx.sh
+        id: babel
+        run: |
+          version=$(grep -oE 'BABEL_CORE_VERSION="[0-9.]+"' tools/check_jsx.sh \
+                    | head -1 | cut -d'"' -f2)
+          if [ -z "$version" ]; then
+            echo "Could not read BABEL_CORE_VERSION from tools/check_jsx.sh."
+            echo "If that variable was renamed, this step needs updating."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Using @babel/core@$version"
+
+      - name: Install Babel
+        run: |
+          npm install --no-fund --no-audit --loglevel=error \
+            "@babel/core@${{ steps.babel.outputs.version }}" @babel/preset-react
+
+      - name: Compile static/index.html
+        run: |
+          node -e '
+            const fs = require("fs");
+            const babel = require("@babel/core");
+            const html = fs.readFileSync("static/index.html", "utf8");
+            const m = html.match(/<script type="text\/babel"[^>]*>([\s\S]*?)<\/script>/);
+            if (!m) { console.error("No <script type=text/babel> block found."); process.exit(1); }
+            const offset = html.slice(0, m.index).split("\n").length;
+            try {
+              const out = babel.transform(m[1], {
+                presets: [["@babel/preset-react", { runtime: "classic" }]],
+                filename: "index.jsx", configFile: false, babelrc: false,
+              });
+              // The blank-page bug this exists to catch: an automatic JSX
+              // runtime emits an import statement, which cannot run in a
+              // classic script.
+              if (/(^|\n)\s*import\s/.test(out.code)) {
+                console.error("FAILED - compiled output contains an import statement.");
+                process.exit(1);
+              }
+              console.log("OK - JSX compiles (" + out.code.length + " bytes).");
+            } catch (e) {
+              const line = e.loc ? (e.loc.line + offset - 1) : null;
+              console.error("FAILED - Babel could not compile the page.\n");
+              console.error(e.message.replace(/^index\.jsx: /, ""));
+              if (line) console.error("\n-> static/index.html line " + line);
+              process.exit(1);
+            }
+          '
+
+  # ---------------------------------------------------------------------------
+  geometry:
+    name: Geometry suites (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The list comes out of run_geometry_tests.sh, which is the one place it
+      # is maintained. A hand-kept copy here would be a second list to forget,
+      # and the failure would be a suite silently not running in CI while the
+      # script claims it passed locally - the exact thing that list's comment
+      # warns about.
+      - name: Run every suite named in SUITES
+        run: |
+          suites=$(sed -n '/^SUITES=(/,/^)/p' tools/run_geometry_tests.sh \
+                   | grep -oE 'tools/tests/[A-Za-z0-9_]+\.js')
+          if [ -z "$suites" ]; then
+            echo "Could not parse SUITES out of tools/run_geometry_tests.sh."
+            exit 1
+          fi
+          fail=0
+          for s in $suites; do
+            echo "== $s"
+            if [ ! -f "$s" ]; then echo "MISSING $s"; fail=1; continue; fi
+            # Every suite runs even after one fails: which ones broke is the
+            # information worth having.
+            node "$s" || fail=1
+            echo
+          done
+          exit $fail
+
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Release gate (PostgreSQL + app)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Match INSTALL.md. The restore procedure assumes the dump and the
+        # server are the same major version, so CI should not quietly test
+        # against a different one.
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: lineage
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/lineage
+      PORT: '8765'
+      BOOTSTRAP_SUPERADMIN_EMAIL: ci@example.gov
+      # The runner's database is created and destroyed inside this job, so the
+      # forced password change at first sign-in protects nothing here and would
+      # stop every suite from signing in. This is the case the flag's own
+      # docstring describes; it must never be set on a deployment.
+      BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE: 'true'
+      # Mail is intercepted and written to a file. Both variables are required
+      # - the app refuses to start on the path alone, deliberately - and a
+      # credential is required even so, because mailer.send checks that the
+      # transport is configured before it looks at the sink.
+      EMAIL_SINK_PATH: ${{ github.workspace }}/.mail-test.jsonl
+      EMAIL_SINK_CONFIRM: discard-all-mail
+      SMTP_PASSWORD: ci-sink-intercepts-before-any-socket-is-opened
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Generated rather than written into this file: a literal password in a
+      # public repository is a thing a reviewer has to stop and think about,
+      # even when the database it opens lives for four minutes. It has to
+      # satisfy the default policy - 12 characters with upper, lower, digit and
+      # symbol - or the bootstrap account cannot be created.
+      #
+      # The fixed prefix deliberately shares no letters with ci@example.gov:
+      # the policy also refuses a password containing the account's own email,
+      # and a generator that happened to satisfy that only because the local
+      # part is two characters long is a trap for whoever changes the address.
+      - name: Generate a throwaway SuperAdmin password
+        run: |
+          echo "CI_PASSWORD=$(python3 -c '
+          import secrets, string
+          alphabet = string.ascii_letters + string.digits
+          print("Qz7!" + "".join(secrets.choice(alphabet) for _ in range(20)))
+          ')" >> "$GITHUB_ENV"
+
+      - name: Start the app
+        run: |
+          BOOTSTRAP_SUPERADMIN_PASSWORD="$CI_PASSWORD" \
+            python3 app.py > app.log 2>&1 &
+          echo $! > app.pid
+          # Migrations and seeding run on the way up, so this can take a few
+          # seconds. /api/branding/public is unauthenticated by design, which
+          # makes it the right thing to poll.
+          for i in $(seq 1 60); do
+            if curl -fsS "http://localhost:8765/api/branding/public" >/dev/null 2>&1; then
+              echo "App is up after ${i}s."
+              exit 0
+            fi
+            if ! kill -0 "$(cat app.pid)" 2>/dev/null; then
+              echo "The app exited before binding a port. Its output:"
+              cat app.log
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Timed out waiting for the app. Its output:"
+          cat app.log
+          exit 1
+
+      # The gate. Authentication, role enforcement, the governance inheritance
+      # chain, the audit trail, and that /reset-password serves the application
+      # rather than 404ing - which is the check added after an emailed reset
+      # link landed on an error page for a whole release because every other
+      # check in the project talked to the API and nothing loaded a page.
+      - name: selftest.py
+        run: python3 selftest.py --email ci@example.gov --password "$CI_PASSWORD"
+
+      # Every suite, twice, in one pass each. Twice because the rule this
+      # project learned the hard way is that a suite which only works on a
+      # database nobody has used is a suite that reports a sign-in failure as
+      # nine broken permission checks. Running the whole set twice is what
+      # caught two further suites with that bug after the first was fixed.
+      - name: Feature suites, run twice
+        env:
+          TEST_PASSWORD: ${{ env.CI_PASSWORD }}
+        run: |
+          # Derived from the directory rather than listed, so a new suite is
+          # run by existing. That is the opposite choice from SUITES in
+          # run_geometry_tests.sh, on purpose: there, a hand-kept list makes
+          # adding a suite deliberate; here, the risk worth guarding against
+          # is a new suite that never runs in CI at all. A new suite that does
+          # not belong fails loudly, which is the cheap direction.
+          #
+          # Two exclusions, each for a stated reason:
+          #   t_publish.py        harness-only by design - imports app and
+          #                       reads the SQLite file directly. Its docstring
+          #                       says so and it is absent from the checklist.
+          #   t_migration_0010.py needs no server; it runs in the checks job.
+          exclude='t_publish.py t_migration_0010.py'
+          suites=''
+          for f in tools/tests/t_*.py; do
+            name=$(basename "$f")
+            case " $exclude " in *" $name "*) continue ;; esac
+            suites="$suites $f"
+          done
+          echo "Suites:$suites"
+          echo
+
+          fail=0
+          for pass in 1 2; do
+            echo "###############  pass $pass of 2  ###############"
+            echo
+            for s in $suites; do
+              echo "== $s (pass $pass)"
+              python3 "$s" --email ci@example.gov || fail=1
+              echo
+            done
+          done
+          exit $fail
+
+      - name: App log
+        if: always()
+        run: |
+          echo "=== app.log ==="
+          cat app.log || true
+          echo
+          echo "=== intercepted mail (count) ==="
+          wc -l < "$EMAIL_SINK_PATH" 2>/dev/null || echo "none"
+
+      - name: Stop the app
+        if: always()
+        run: kill "$(cat app.pid)" 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# What a green build does NOT mean.
+#
+# None of this loads the page in a browser. The static checks prove the JSX is
+# structurally sound and the identifiers are declared; the Babel job proves it
+# compiles; the integration job proves the server behaves. A control that is
+# correct and never renders, a reused CSS class that stretches a checkbox
+# across a form, a caption sitting closer to the wrong field - every one of
+# those passes all four jobs. CONTRIBUTING.md has the list, under "What the
+# checks cannot see". Click through what you touched.

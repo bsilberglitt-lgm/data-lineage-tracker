@@ -145,6 +145,41 @@ The focused suites in `tools/tests/` are not the gate; each was written to
 reproduce one bug before fixing it, and they are kept so it cannot come back
 quietly. See `tools/tests/README.md`.
 
+### What CI does
+
+`.github/workflows/ci.yml` runs on every push and pull request to `main`, in
+four separate jobs so a red build says which *kind* of thing broke:
+
+| Job | Runs | Needs |
+|---|---|---|
+| **Static checks** | The four checks above, plus `t_migration_0010.py` | Nothing |
+| **JSX compiles** | The real Babel compile | The npm registry |
+| **Geometry suites** | Every suite named in `SUITES` | Nothing |
+| **Release gate** | `selftest.py` and every feature suite, **twice** | A PostgreSQL service |
+
+Three things about it are worth knowing before you edit it:
+
+- **It derives both lists rather than keeping its own.** The Babel version is
+  read out of `tools/check_jsx.sh`, and the geometry suites out of the `SUITES`
+  array. A copy here would be a second list to forget — and the failure would
+  be a check that silently stops running in CI while the local script still
+  claims it passes.
+- **The feature suites are globbed, not listed** — the opposite choice from
+  `SUITES`, deliberately. There, a hand-kept list makes *adding* a suite a
+  decision. Here, the risk worth guarding against is a new suite that never
+  runs in CI at all, so a new file runs by existing. The two exclusions are
+  named in the workflow with their reasons.
+- **Every feature suite runs twice.** That is the borrows-the-database rule
+  enforced mechanically: a suite that only works against a database nobody has
+  used reports a sign-in that never happened as a pile of broken permission
+  checks, and running the set twice is what caught two further suites with that
+  bug after the first was fixed.
+
+CI is a **backstop, not a gate**, for anything committed straight to `main`: it
+answers after the commit exists. Run the checks locally first.
+
+And a green build still does not mean the page renders — see below.
+
 ---
 
 ## Rules that are not negotiable
