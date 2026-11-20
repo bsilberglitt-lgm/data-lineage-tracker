@@ -7,7 +7,7 @@ restores anything it changed.
 
 Usage:
     python3 selftest.py --email you@example.gov --password 'YourPassword'
-    python3 selftest.py https://app.onrender.com --email ... --password ...
+    python3 selftest.py https://datalineagetracker.com --email ... --password ...
 
 Credentials may also come from SELFTEST_EMAIL / SELFTEST_PASSWORD.
 Add --insecure to skip TLS verification (see the note about macOS below).

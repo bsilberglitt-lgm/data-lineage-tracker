@@ -2288,6 +2288,67 @@ at the sink. That ordering is deliberate — a test environment must not be able
 to mask a misconfigured transport — so the fix is a throwaway value, not a
 reordering.
 
+### A comment cannot opt out of anything
+
+`AddScenarioModal` needs the systems belonging to whatever you chose to start
+from — not the view you are standing in. It said so, in a comment:
+
+```js
+// Bypass the view-scoping helper deliberately: this list is about the
+// chosen source, not the view the person is standing in.
+request('GET', url)
+```
+
+**`request` IS the view-scoping helper.** Line one of it is
+`url = scopedUrl(url)`, unconditionally, so nothing was bypassed and the bug
+the comment describes fixing was still there. Creating a scenario from inside
+another one went on offering the open scenario's systems — which is what Ben
+reported, a release after it was supposedly fixed.
+
+Two shapes, and the second is the one worth remembering:
+
+* **"Current Architecture"** asked for `/api/systems` and got
+  `?scenario=<open>`.
+* **Naming a source** asked for `?scenario=5` and got
+  `?scenario=5&scenario=<open>`. A **duplicated query parameter**, and
+  Tornado's `get_argument` returns the LAST value — so the URL plainly
+  contained the right answer and the server plainly read the wrong one. That is
+  a worse failure than an outright error, because every part of it looks
+  correct in isolation: the caller built the URL it meant, the helper added
+  what it always adds, and the server read a parameter that was really there.
+
+Both closed, and it takes both:
+
+* **`request` accepts `{ unscoped: true }`** — an actual flag the function
+  honors, rather than a claim about what the call does. This is the whole
+  lesson: **a bypass has to be executable.** A comment asserting one is just a
+  comment agreeing with you.
+* **`scopedUrl` refuses to append a parameter the URL already carries.** A URL
+  that names a scenario was built by a caller who meant it.
+
+`tools/tests/t_scopedurl.js` covers both, and is in `SUITES`. It extracts
+`scopedUrl` from `index.html` and passes its module-level globals in as
+function parameters, because `let` does not escape an `eval` — and it **greps
+the call site** for `{ unscoped: true }`, because a correct `scopedUrl` is not
+enough on its own: the live branch has no parameter to protect, so only the
+explicit opt-out saves it. Reverting either half fails the suite, which was
+checked by reverting them.
+
+### Panels that report derived state need telling when it changes
+
+`EmailStatus` reports whether mail is ready to send and fetched once on mount,
+so saving the settings directly above it left the panel describing the state
+the page loaded with — **Send test** greyed out over a configuration that was
+complete, and no way forward but a browser reload. Ben hit it twice while
+setting up 0.9.0, and the second time spent a round checking a credential that
+was already correct.
+
+`PreferencesScreen` now bumps a `savedTick` on every successful save and
+passes it as `reloadKey`, which `EmailStatus` includes in its effect's
+dependencies. The general shape: **a panel whose job is to report readiness
+has to notice the thing that changes readiness.** Worth checking the next time
+a screen computes a verdict from values edited elsewhere on the same page.
+
 ### `selftest.py` accepts a bare port
 
 `python3 selftest.py 8900` used to die inside urllib with

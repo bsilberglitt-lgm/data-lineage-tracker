@@ -29,6 +29,7 @@ SUITES=(
   tools/tests/t_labelpos.js   # where a data flow's label sits
   tools/tests/t_autoname.js   # the auto-filled flow name
   tools/tests/t_tasksignal.js  # which color a task's circle takes
+  tools/tests/t_scopedurl.js  # which view an API request is about
 )
 
 echo "Running the geometry suites in Docker (no local Node needed)…"

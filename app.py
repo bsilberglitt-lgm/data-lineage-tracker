@@ -2068,7 +2068,15 @@ SEED_RELEASES = [
     # Reviewed and approved by Ben, November 2026, so published. From here it
     # is live and `ensure_releases` will never overwrite it — any further
     # change has to be made in the app, not in this file.
-    (VERSION, "Password reset by email", None, 1, 1900, """\
+    #
+    # Note the literal "0.9.0" rather than VERSION: this entry is pinned to the
+    # release it describes. It used to read VERSION, which was correct only
+    # while 0.9.0 was current — the next bump would have silently relabeled
+    # these notes as belonging to the new version, and a published release is
+    # never re-seeded, so the database would have disagreed with the code with
+    # nothing to show why. Only the newest, still-draft entry should use
+    # VERSION.
+    ("0.9.0", "Password reset by email", None, 1, 1900, """\
 ## What's new in this release
 
 **Forgotten passwords**
@@ -2090,6 +2098,20 @@ SEED_RELEASES = [
   message** button that reports exactly what went wrong.
 * The link on the sign-in screen stays hidden until email is working, so it
   cannot offer something that quietly fails.
+"""),
+    # Reviewed and approved by Ben, November 2026, so published. Pinned to the
+    # literal version rather than VERSION for the reason given above: the next
+    # bump would otherwise relabel these notes as belonging to the new
+    # release, and a published release is never re-seeded.
+    ("0.9.1", "Scenario focus, and email status", None, 1, 2000, """\
+## Fixes
+
+* Creating a scenario while another one was open offered **that** scenario's
+  systems to focus on, whichever starting point you had chosen. It now offers
+  the systems belonging to what you picked.
+* **Email status** updates when you save the settings above it, rather than
+  waiting for a page reload — so **Send test message** becomes available as
+  soon as the configuration is complete.
 """),
 ]
 
