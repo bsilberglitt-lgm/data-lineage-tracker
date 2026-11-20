@@ -56,10 +56,21 @@ not an ORM, and there is no model layer; handlers write SQL.
 
 **The frontend is one file.** `static/index.html` holds the entire interface as
 a single inline `<script type="text/babel">` block, compiled in the browser.
-React, ReactDOM and Babel are loaded from a CDN and **pinned by version** — do
-not un-pin them. An unpinned Babel once switched to the automatic JSX runtime,
-emitted an `import` statement, and produced a blank page with the reason buried
-in the browser console.
+React, ReactDOM and Babel are loaded from a CDN, **pinned by version and by
+`integrity` hash** — do not un-pin either. An unpinned Babel once switched to
+the automatic JSX runtime, emitted an `import` statement, and produced a blank
+page with the reason buried in the browser console.
+
+**Changing one of those three versions means recomputing its hash**, or the
+browser refuses the script and you get a blank page:
+
+```bash
+curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+```
+
+CI compares the hashes in the page against what the CDN currently serves, so a
+stale hash fails the build rather than reaching anybody — but load the app
+yourself after touching those lines anyway.
 
 **The schema is Alembic migrations**, in `alembic/versions/`. Never change a
 table by hand.
@@ -154,6 +165,7 @@ four separate jobs so a red build says which *kind* of thing broke:
 |---|---|---|
 | **Static checks** | The four checks above, plus `t_migration_0010.py` | Nothing |
 | **JSX compiles** | The real Babel compile | One download from unpkg |
+| **CDN hashes still match** | Every pinned `integrity` hash against what unpkg serves now, and that no `src` tag lacks one | Three downloads from unpkg |
 | **Geometry suites** | Every suite named in `SUITES` | Nothing |
 | **Release gate** | `selftest.py` and every feature suite, **twice** | A PostgreSQL service |
 

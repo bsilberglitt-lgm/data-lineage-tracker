@@ -879,9 +879,35 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 </head>
 <body>
 <div id="root"></div>
-<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+<!-- React, ReactDOM and Babel come from a CDN, pinned by version AND by hash.
+     Do not un-pin either. The version pin stops a surprise upgrade (an
+     unpinned Babel once switched to the automatic JSX runtime and produced a
+     blank page); the `integrity` hash stops the CDN serving different bytes
+     for the same version, which is the one way a third party could run code
+     in a signed-in user's browser. npm versions are immutable, so after these
+     hashes were taken any change to these files is an attack, and the browser
+     will refuse to execute it.
+
+     `crossorigin="anonymous"` is required, not decoration: without it the
+     request is not CORS-enabled, the browser cannot verify the hash, and it
+     blocks the script outright — which here means a blank page. unpkg sends
+     `Access-Control-Allow-Origin: *`, so this works.
+
+     Changing a version means recomputing its hash. A wrong hash is a blank
+     page with the reason in the console, so always load the app after
+     touching these three lines:
+
+       curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+-->
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
+        integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
+        integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"
+        integrity="sha384-1qlE7MZPM2pHD/pBZCU/yB8UCP52RYL8bge/qNdfNBCWToySp8/M+JL2waXU4hjJ"
+        crossorigin="anonymous"></script>
 <script type="text/babel" data-presets="react">
 /* @jsxRuntime classic */
 // Uses the classic JSX runtime (React.createElement) — React is loaded globally
@@ -5494,7 +5520,7 @@ function ModalCheck({ entity, col, label, checked, onChange }) {
 // panel re-read. It reports whether mail is ready to send — derived from the
 // settings above it — so a fetch only on mount meant saving a correct
 // configuration left the panel describing the state the page loaded with,
-// Send test greyed out, and no way forward but a browser reload.
+// Send test grayed out, and no way forward but a browser reload.
 function EmailStatus({ notify, reloadKey }) {
   const [info, setInfo] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -7784,7 +7810,7 @@ function PreferencesScreen({ notify, onSaved, roles, onTypesChanged, onTaskTypes
   // mail is ready to send, which is exactly what saving these settings
   // changes, and it was fetching once on mount. So saving a correct
   // configuration left it still saying "No email transport is selected" with
-  // the Send test button greyed out — the settings were right, the panel was
+  // the Send test button grayed out — the settings were right, the panel was
   // describing a state that no longer existed, and the only way out was to
   // reload the page. A panel whose whole job is to report readiness has to
   // notice the thing that changes readiness.

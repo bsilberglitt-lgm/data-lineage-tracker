@@ -162,6 +162,81 @@ jobs:
           '
 
   # ---------------------------------------------------------------------------
+  sri:
+    name: CDN hashes still match
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The three script tags in static/index.html carry Subresource Integrity
+      # hashes, so the browser refuses to run anything else. Two failures this
+      # turns into a red build instead of something a person finds:
+      #
+      #   - A hash that does not match the file - a wrong or stale digest after
+      #     somebody changed a version. In a browser that is a BLANK PAGE with
+      #     the reason only in the console, which is the single worst failure
+      #     mode this project has, and no other check can see it.
+      #   - The CDN serving different bytes for a version it already published.
+      #     npm versions are immutable, so that is an attack, and it should
+      #     stop a release rather than be noticed later.
+      #
+      # It also fails on a src tag with NO integrity attribute, so adding a
+      # fourth script without a hash is a decision rather than an oversight.
+      - name: Compare every pinned hash against the CDN
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, re, sys, urllib.request
+
+          html = open("static/index.html", encoding="utf-8").read()
+          pairs = re.findall(
+              r'<script\s[^>]*?src="([^"]+)"[^>]*?integrity="(sha384-[^"]+)"',
+              html, re.S)
+          all_src = re.findall(r'<script\s[^>]*?src="([^"]+)"', html, re.S)
+
+          missing = [u for u in all_src if u not in dict(pairs)]
+          if missing:
+              print("These script tags have no integrity hash:")
+              for u in missing:
+                  print("  " + u)
+              print("\nAdd one (and crossorigin=\"anonymous\"), or this check "
+                    "is not protecting the page.")
+              sys.exit(1)
+          if not pairs:
+              print("Found no pinned script tags at all in static/index.html.")
+              print("If the tags were restructured, this check needs updating.")
+              sys.exit(1)
+
+          bad = 0
+          for url, expected in pairs:
+              req = urllib.request.Request(
+                  url, headers={"User-Agent": "DataLineageTracker-CI"})
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  body = r.read()
+              actual = "sha384-" + base64.b64encode(
+                  hashlib.sha384(body).digest()).decode()
+              ok = actual == expected
+              print(("OK   " if ok else "FAIL ") + url)
+              if not ok:
+                  print("       in the page: " + expected)
+                  print("       from the CDN: " + actual)
+                  bad += 1
+
+          if bad:
+              print("\n%d hash(es) do not match." % bad)
+              print("If you just changed a version, recompute it:")
+              print("  curl -sL <url> | openssl dgst -sha384 -binary | "
+                    "openssl base64 -A")
+              print("If you did NOT change anything, stop: the bytes behind an "
+                    "immutable version changed, and that is not a mistake.")
+              sys.exit(1)
+          print("\nAll %d pinned files match what the CDN serves." % len(pairs))
+          PY
+
+  # ---------------------------------------------------------------------------
   geometry:
     name: Geometry suites (Node)
     runs-on: ubuntu-latest

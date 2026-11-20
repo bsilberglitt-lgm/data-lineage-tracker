@@ -1,5 +1,28 @@
-tornado>=6.0
-psycopg[binary]>=3.1
-psycopg-pool>=3.2
-alembic>=1.13
-SQLAlchemy>=2.0
+# Pinned exactly, on purpose.
+#
+# These were `>=` until 0.9.2, which meant every `docker compose up --build`
+# and every deploy could install a version nobody had tested — and the
+# difference would show up as a runtime failure on whichever machine rebuilt
+# first. The project already pins React and Babel in static/index.html for the
+# same reason, and in November 2026 an un-pinned @babel/preset-react broke the
+# frontend check from outside the repository when Babel 8 was published.
+#
+# **An un-pinned dependency is a decision to let something outside the project
+# change at a time of its choosing.** These versions are the ones the running
+# application was verified against.
+#
+# To move them, deliberately: upgrade in the container, re-run the release
+# checklist, and write the new output here —
+#
+#     docker compose exec app pip list --outdated
+#     docker compose exec app pip freeze
+#
+# Note that `psycopg[binary]` is one line here but two in `pip freeze`: the
+# extra pulls in `psycopg-binary` at the same version, so pinning the extra is
+# what states the intent. Do not list the binary wheel separately.
+
+tornado==6.6.1
+psycopg[binary]==3.3.9
+psycopg-pool==3.3.3
+alembic==1.20.1
+SQLAlchemy==2.1.9
