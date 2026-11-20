@@ -10,7 +10,8 @@
 # project is mounted read-only and the container is thrown away.
 #
 # These suites are plain Node with no dependencies, so unlike check_jsx.sh
-# there is no npm install and nothing to go wrong with the registry.
+# these need no network at all: nothing is downloaded and there is no registry
+# to go wrong. check_jsx.sh fetches one file; this fetches none.
 #
 # Node 22, not 20: everything before 22.x is end-of-life and was not patched
 # for the October 2026 TLS and Brotli issues. This container is a local test

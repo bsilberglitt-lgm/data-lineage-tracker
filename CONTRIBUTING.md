@@ -153,17 +153,17 @@ four separate jobs so a red build says which *kind* of thing broke:
 | Job | Runs | Needs |
 |---|---|---|
 | **Static checks** | The four checks above, plus `t_migration_0010.py` | Nothing |
-| **JSX compiles** | The real Babel compile | The npm registry |
+| **JSX compiles** | The real Babel compile | One download from unpkg |
 | **Geometry suites** | Every suite named in `SUITES` | Nothing |
 | **Release gate** | `selftest.py` and every feature suite, **twice** | A PostgreSQL service |
 
 Three things about it are worth knowing before you edit it:
 
 - **It derives both lists rather than keeping its own.** The Babel version is
-  read out of `tools/check_jsx.sh`, and the geometry suites out of the `SUITES`
-  array. A copy here would be a second list to forget — and the failure would
-  be a check that silently stops running in CI while the local script still
-  claims it passes.
+  read out of `static/index.html`'s own script tag, and the geometry suites out
+  of the `SUITES` array in `run_geometry_tests.sh`. A copy here would be a
+  second list to forget — and the failure would be a check that silently stops
+  running in CI while the local script still claims it passes.
 - **The feature suites are globbed, not listed** — the opposite choice from
   `SUITES`, deliberately. There, a hand-kept list makes *adding* a suite a
   decision. Here, the risk worth guarding against is a new suite that never
