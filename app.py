@@ -2294,11 +2294,18 @@ def ensure_releases(conn=None):
 def reset_superadmin_if_requested(conn):
     """Emergency password reset for a SuperAdmin, driven by environment variables.
 
-    Until self-service password reset exists (Phase 2), an administrator who
-    loses access has no way back in. Setting BOOTSTRAP_SUPERADMIN_RESET=true
-    together with BOOTSTRAP_SUPERADMIN_EMAIL and BOOTSTRAP_SUPERADMIN_PASSWORD
-    resets that account's password on the next start and forces a change at the
-    next sign-in.
+    Setting BOOTSTRAP_SUPERADMIN_RESET=true together with
+    BOOTSTRAP_SUPERADMIN_EMAIL and BOOTSTRAP_SUPERADMIN_PASSWORD resets that
+    account's password on the next start and forces a change at the next
+    sign-in.
+
+    This was written as the only way back in before self-service reset existed,
+    and that is no longer the reason to keep it. Self-service reset (0.9.0)
+    covers a forgotten password, but it needs working mail, a public address
+    and the preference switched on — so it cannot help the deployment where
+    mail was never configured, where it has broken, or where the last
+    SuperAdmin's mailbox is itself unreachable. This is the floor under that:
+    it needs nothing but the ability to set an environment variable.
 
     Only someone who can already change the deployment's environment variables
     can trigger this, and every use is written to the audit log. Remove the

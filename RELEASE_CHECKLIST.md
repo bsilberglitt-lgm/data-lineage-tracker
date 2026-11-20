@@ -693,6 +693,30 @@ Finally:
   once the commit goes out, the article is what users read. This review is the
   only one there is.
 
+- [ ] **Adopter documentation review.** The other audience: `INSTALL.md`,
+  `SECURITY.md`, `CONTRIBUTING.md`, `GETTING_STARTED.md`, `README.md` and
+  `tools/tests/README.md` are what an adopting organization reads to decide
+  whether to run this, how to run it, and how to work on it. Claude should
+  offer this unasked, in the same shape as the knowledge base review — a short
+  list, with "nothing needs changing" said out loud rather than left silent.
+
+  Worth knowing why it is a standing step rather than a judgment call: **a
+  document can be made wrong by a change that never touches it.** `INSTALL.md`
+  says email is used for one thing, password reset. The release that adds task
+  notifications makes that false without editing a line of it, and nothing
+  will fail. The releases that invalidate documentation are exactly the ones
+  where documentation is not what you are thinking about.
+
+  `tools/tests/README.md` is on the list because it had **already** gone stale
+  without anyone noticing: it was missing five suites, and it still told the
+  reader that every suite changes the bootstrap password as its first act —
+  which is the fault `_client.py` exists to prevent. A stale document that
+  instructs the next person to reintroduce a fixed bug is worse than a missing
+  one.
+
+  These are ordinary commits, not published like release notes, so the review
+  has to happen **before** the commit.
+
 - [ ] **Read the draft notes and edit them.** They are written for users, not
   developers. This is your review step and it is deliberate — publishing is
   what shows the notes to everyone.

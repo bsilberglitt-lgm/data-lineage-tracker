@@ -25,11 +25,22 @@ it, and they are kept so the same bug cannot come back quietly:
 | `t_060.py` | The self-service profile's boundary: name and title only, everything else refused by name, a mixed request refused whole, and the title resolving from a linked account |
 | `t_052.py` | The payload fix proved by round trip using the real payload shape, contributor deactivation keeping its assignments, and the delete confirmation's counts and blockers |
 | `t_fieldhide.py` | Field hiding: a required field cannot be switched off, the shared `*` scope is refused, the stored value survives, every label resolves to its column, permissions, and the audit trail |
+| `t_taskpos.js` | Where a task's circle sits on a flow or inside a system, and that dragging it round-trips to the nearest point on its line |
+| `t_tasks.py` | Tasks: the derived status and its two asymmetries, what a copy carries and what it drops, one parent inside the view being written, dependencies refused three ways, the date order rule, and that dragging a circle is not audited |
+| `t_tasksignal.js` | Which color a task's circle takes: the precedence in full, both routes to "not started", the automated blue, and the labels read out of the source so a color change cannot pass |
+| `t_email.py` | Password reset: a forged `Host` header ignored, the token in the fragment and not the query string, the same response for an address that exists and one that does not, the rate limit, and no mail setting or credential in any public response |
+| `t_scopedurl.js` | Which view an API request is about: the scenario parameter never duplicated, and the explicit opt-out actually honored at its call site |
 
-Four need no running server. `t_publish.py` and `t_migration_0010.py` drive the
-code directly rather than the HTTP API; the two JavaScript suites read geometry
-and naming rules straight out of `index.html` and replay them in Node, which is
-the only way to exercise browser-only logic here.
+Several need no running server. `t_publish.py` and `t_migration_0010.py` drive
+the code directly rather than the HTTP API; the JavaScript suites read geometry,
+naming and scoping rules straight out of `index.html` and replay them in Node,
+which is the only way to exercise browser-only logic here.
+
+All six `.js` suites are also run together, in Docker, by
+`tools/run_geometry_tests.sh` — which is what the release checklist calls. Their
+`SUITES` list there is hand-kept on purpose; **a new JavaScript suite has to be
+added to it**, or it silently stops being run while the checklist claims it
+passed.
 
 `t_migration_0010.py` is worth a note: the harness builds its schema by
 extracting DDL from the migrations, so a migration that only moves *data* is
@@ -53,5 +64,31 @@ Run one of the others:
       BOOTSTRAP_SUPERADMIN_PASSWORD='Bootstrap-Temp-7xQ!' python3 app.py &
     python3 tools/tests/t_route.py 8900
 
-Each expects a freshly reset database and changes the bootstrap password as its
-first act, so run `reset_db.py` between suites.
+## Credentials, and what a suite may not assume
+
+The paragraph that used to sit here said each suite "changes the bootstrap
+password as its first act" and needed a freshly reset database. Both were true
+and both were faults, fixed by `_client.py` — read its docstring before writing
+a suite. Three rules follow from it:
+
+- **Sign-in goes through `_client`.** Credentials come from `--email` plus a
+  prompt. **Nothing changes the password of an account the suite borrows**: a
+  test that rewrites a real person's credentials is a footgun, and it stayed
+  harmless only because it could not get in.
+- **A suite borrows the database; it does not own it.** It may not assert a
+  starting state it does not control — not "nothing is hidden", not "nothing is
+  defined". Assert the *relationship* the check is reaching for, and restore
+  anything you change, in a `finally` so a crash cannot skip it.
+  "You do not control it" includes the suite that ran before yours.
+- **A suite's own accounts go through `_client.ensure_account`**, which creates
+  or resets them so a second run behaves like the first. Use
+  `_client.unique_email` where resetting is not enough — a check about an
+  account nobody has touched cannot be repeated on one the last run linked.
+
+**Run every suite twice, in any order, before believing it.** Three suites had
+the same second-run failure, and each reported it as nine permission checks
+failing rather than as a sign-in that never happened.
+
+A missing precondition should **stop** the suite with the reason and the exact
+command to fix it — not be checked with an ordinary assertion, which reports
+the cause everywhere except where it is.
