@@ -89,10 +89,17 @@ cp .env.example .env          # set BOOTSTRAP_SUPERADMIN_EMAIL and _PASSWORD
 docker compose up
 ```
 
-Open **http://localhost:8765** and sign in. Migrations run on startup, and an
-empty database is seeded with a small **fictional** school district so there is
-something to look at. Everything in it is invented; delete it once you have
-seen what the features do.
+Open **http://localhost:8765** and sign in with the email and password you put
+in `.env`. You will be made to choose a new password immediately, which is
+expected.
+
+The `.env` step is optional — skip it and you get `admin@example.gov` with a
+generated password printed once in the startup log, which you then have to go
+and find. Setting it is easier.
+
+Migrations run on startup, and an empty database is seeded with a small
+**fictional** school district so there is something to look at. Everything in
+it is invented; delete it once you have seen what the features do.
 
 ```bash
 python3 selftest.py --email you@example.gov   # verify, prompts for the password
