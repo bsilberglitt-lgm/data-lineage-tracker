@@ -103,6 +103,32 @@ upgrading — read [`INSTALL.md`](INSTALL.md).
 
 ---
 
+## Running this at another agency
+
+You host it yourself. There is no hosted service and no account to create: you
+clone the code, deploy it on your own infrastructure, and it is your database.
+Nothing reports back here.
+
+**To hear about new versions**, use the **Watch** button above → **Custom** →
+**Releases**. Every release is tagged and published with notes written for
+whoever has to deploy it — whether it contains a database migration, whether
+it adds an environment variable, and anything a fork needs to know. Watching
+*everything* instead will also mail you every issue and commit, which is
+probably not what you want.
+
+Upgrading is `git pull`, rebuild, restart; migrations run on the next start.
+
+**If you modify the code**, fork it and track this repository as `upstream` so
+you can still take fixes — [`CONTRIBUTING.md`](CONTRIBUTING.md) has the
+commands. Changes that would help other agencies are welcome back as pull
+requests, and anything specific to your state is yours to keep in your fork.
+
+There is no obligation to tell anyone you are using this. But if you deploy it,
+the maintainer would like to hear — what breaks for you is the fastest way to
+find out what the documentation assumes.
+
+---
+
 ## Documentation
 
 | Document | For |

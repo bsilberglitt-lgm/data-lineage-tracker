@@ -928,6 +928,33 @@ everyone means to do and nobody does.
   your Mac and nowhere else. If CI is red and your local run was green, the
   difference is usually one of those two.
 
+- [ ] **Tag the release and publish it on GitHub.** This is how adopting
+  agencies find out a release exists — they subscribe with
+  **Watch → Custom → Releases**, so a release that is never tagged is a
+  release nobody outside this repository hears about.
+
+  ```bash
+  git tag -a v0.9.3 -m "0.9.3 — <the release's own title>"
+  git push origin v0.9.3
+  ```
+
+  Then **Releases → Draft a new release**, choose the tag, and title it the
+  way the in-app notes are titled: `0.9.3 — Scenario focus, and email status`.
+
+  **The body is written for a different reader than the in-app notes.** Those
+  are for users, and reminder 1 keeps internal detail out of them. A GitHub
+  Release is read by whoever has to deploy it, so it *should* say the things
+  reminder 1 excludes:
+
+  - whether the release contains a **migration** (and so whether to back up
+    first);
+  - any **new or renamed environment variable**;
+  - anything a **fork** needs to do by hand;
+  - and only then, briefly, what changed for users.
+
+  The commit message is usually the raw material for this — it already has
+  that material in it.
+
 - [ ] Note anything that went wrong, and **ask Claude to update this checklist**
   so the next release doesn't repeat it.
 - [ ] Stop the local stack if you're done: `docker compose down`

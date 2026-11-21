@@ -12,8 +12,13 @@ do](#what-this-does-not-do).
 
 ## Reporting a vulnerability
 
-**Email `bsilberglitt@gmail.com`** with enough detail to reproduce it. Please
-do not open a public issue for a security problem.
+Use **"Report a vulnerability"** on this repository's
+[Security tab](../../security/advisories/new). That opens a private advisory
+visible only to you and the maintainer — not a public issue, and not email.
+
+**Please do not open a normal issue for a security problem.** If you have no
+GitHub account and cannot create one, open an issue saying only that you have
+a security report and asking how to send it; leave the details out of it.
 
 This is a small project with one maintainer, so set your expectations
 accordingly: you will get an acknowledgement, and a fix if the report is

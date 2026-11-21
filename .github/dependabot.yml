@@ -1,0 +1,74 @@
+# Dependabot is the companion to pinning everything exactly in 0.9.2.
+#
+# Exact pins mean nothing upgrades on its own — which is the point, and also
+# means a CVE in a pinned version would never announce itself. Dependabot
+# opens a pull request instead, so an upgrade stays a decision somebody makes
+# rather than one that happens during a rebuild.
+#
+# A PR here is not a release. Merging one means running the release checklist:
+# the pinned version is the version that was tested, and that property is the
+# whole reason the pins exist.
+
+version: 2
+updates:
+
+  # Python packages in requirements.txt.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      # Outside 08:00-11:00 local, like the scheduled tasks, so a queue of
+      # runs is not all competing at the same busy hour.
+      time: "14:00"
+      timezone: America/New_York
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels: ["dependencies"]
+
+  # The actions used by .github/workflows/ci.yml. Worth watching separately:
+  # actions/checkout@v4 and friends are a moving target behind a major tag, so
+  # this is where a v4-to-v5 move gets noticed deliberately.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "14:00"
+      timezone: America/New_York
+    commit-message:
+      prefix: "ci"
+    labels: ["dependencies"]
+
+  # The app's base image, python:3.12-slim.
+  #
+  # Written as two separate entries rather than one with a `directories` list:
+  # the plural form is newer, and a dependabot.yml that fails schema
+  # validation does not run at all — the silent-check failure this project
+  # keeps recording. Two entries with the long-standing singular key cannot
+  # fail that way.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "14:00"
+      timezone: America/New_York
+    commit-message:
+      prefix: "docker"
+    labels: ["dependencies"]
+
+  # The backup job's image. This is the one that matters most for a CA
+  # advisory: it is the only thing in the project making outbound HTTPS, and
+  # what it carries is a full database dump. See reminder 8 in CLAUDE.md.
+  - package-ecosystem: docker
+    directory: "/backup"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "14:00"
+      timezone: America/New_York
+    commit-message:
+      prefix: "docker"
+    labels: ["dependencies"]
