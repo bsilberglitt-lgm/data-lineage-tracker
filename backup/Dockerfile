@@ -22,7 +22,7 @@
 # than by anything watching for it — a mismatched pg_dump exits non-zero but
 # the gzip downstream of it still succeeds.
 
-FROM alpine:3.23
+FROM alpine:3.24
 
 # `ca-certificates` is named explicitly even though aws-cli pulls it in: this
 # is the one service here that makes outbound HTTPS — `aws s3 cp` to the backup
