@@ -8,7 +8,7 @@
 #   DATABASE_URL  PostgreSQL connection string (required)
 #   PORT          Port to listen on (default 8765)
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
