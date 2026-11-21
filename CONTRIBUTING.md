@@ -28,7 +28,7 @@ You do **not** need Node, and you do **not** need a local PostgreSQL — both
 live in containers that the scripts start and throw away.
 
 ```bash
-git clone <your fork>
+git clone https://github.com/<you>/data-lineage-tracker.git
 cd data-lineage-tracker
 cp .env.example .env     # then set BOOTSTRAP_SUPERADMIN_EMAIL and _PASSWORD
 docker compose up
@@ -340,6 +340,43 @@ reasoning is the part that survives; a bare rule gets optimized away by the
 next person who cannot see why it is there.
 
 ---
+
+## Running a fork, and still taking fixes
+
+If you are an adopting agency that has changed the code, add this repository as
+a second remote so you can pull fixes without losing your changes:
+
+```bash
+git remote add upstream https://github.com/bsilberglitt-lgm/data-lineage-tracker.git
+git fetch upstream --tags
+```
+
+Then, to take a release:
+
+```bash
+git fetch upstream --tags
+git merge v0.9.3          # whatever the latest tag is
+```
+
+Merging a **tag** rather than `upstream/main` is the point: a tag is a release
+that was run through the checklist, and `main` between releases is not
+promised to be anything. `git log --oneline v0.9.2..v0.9.3` shows what you are
+about to take.
+
+Two things worth knowing before your first merge:
+
+- **`static/index.html` is one file**, so any change you have made to the
+  frontend conflicts with any change upstream makes to the frontend. That is
+  the cost of the single-file design. Keeping your edits few and clearly
+  commented is what makes those conflicts readable.
+- **Migrations are numbered sequentially**, so if you added your own migration
+  you will eventually collide with an upstream number. Number yours from a
+  high block — `9001_`, say — so the two never compete. Alembic orders by the
+  `down_revision` chain rather than the filename, but the harness orders by
+  filename, so keep the `NNNN_` prefix either way.
+
+Changes that would help other agencies are welcome back as pull requests.
+Anything specific to your state is yours to keep.
 
 ## Pull requests
 

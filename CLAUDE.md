@@ -628,6 +628,38 @@ guarantee, because an unreferenced commit stays reachable by SHA until GitHub
 garbage-collects. A pre-rewrite mirror is archived locally and off any public
 service; it is the only remaining copy of the department's pre-auth database.
 
+**And rewritten a second time, immediately before going public**, to replace
+the author identities. Every commit had carried either a personal address or a
+locally-generated one of the `name@machine.local` shape; both are now
+`bsilberglitt-lgm <bsilberglitt-lgm@users.noreply.github.com>`. Making a
+repository public exposes every author line as surely as every file, and the
+`.local` form additionally leaks a machine name. The GitHub per-account
+noreply address is what keeps commits linked to the account — contribution
+graph, avatars — while exposing nothing.
+
+(The old addresses are deliberately not written out here. A file that names
+what it just finished scrubbing has not scrubbed it.)
+
+So **commit hashes changed again**: anything referring to a pre-November-2026
+hash is wrong twice over. The one identity deliberately left alone is
+`GitHub <noreply@github.com>` as the *committer* of the single commit made
+through the web interface; that is GitHub's own identity, not the
+maintainer's.
+
+Two things to keep right if this is ever done again:
+
+- **Set `git config user.email` to the noreply address before committing
+  again.** Otherwise the next commit reintroduces exactly what the rewrite
+  removed, and nobody notices until the next sweep.
+- **`git filter-branch` leaves `refs/original/*`**, which still hold the old
+  identities and will be found by any check that reads `git log --all`. That
+  is not a leftover of the rewrite failing — it is the backup it makes on
+  purpose. It cost a false alarm here: a check over `--all` reported 47
+  remaining traces when the real refs were clean, because it was reading the
+  backup. Measure over `--branches --tags`, then delete those refs and
+  `git reflog expire --expire=now --all && git gc --prune=now`.
+  `git filter-repo` does not create them, which is one reason to prefer it.
+
 #### The generator was dropping every REFERENCES clause
 
 Generating 0001 exposed it. `gen_harness_schema.py` translated the column type,
