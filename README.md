@@ -83,7 +83,7 @@ working transport exist.
 Docker is the only requirement.
 
 ```bash
-git clone <this repository>
+git clone https://github.com/bsilberglitt-lgm/data-lineage-tracker.git
 cd data-lineage-tracker
 cp .env.example .env          # set BOOTSTRAP_SUPERADMIN_EMAIL and _PASSWORD
 docker compose up
