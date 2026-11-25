@@ -853,7 +853,16 @@ Finally:
   git add -A
   git status                    # read this — nothing unexpected should be listed
   git commit -F COMMIT_MSG.txt && git push
+  git log --oneline -1 origin/main    # must show the commit you just made
   ```
+
+  **That last line is not optional, and 0.10.0 is why.** The push failed —
+  `main` had no upstream branch — and because the push is chained after the
+  commit, what you get is a successful commit and an error about `--set-upstream`
+  that is easy to read as advice rather than as *nothing was pushed*. Render had
+  nothing to deploy and looked broken; it was not. If that line shows the wrong
+  commit, see *Troubleshooting → The push appeared to work and Render never
+  deployed*.
 
   `-F` reads the message from the file, which is the only reliable way to get a
   long one in. A message pasted straight into Terminal breaks on the first
@@ -1009,7 +1018,14 @@ everyone means to do and nobody does.
   ```bash
   git tag -a v0.9.3 -m "0.9.3 — <the release's own title>"
   git push origin v0.9.3
+  git ls-remote --tags origin v0.9.3    # must print the tag
   ```
+
+  **Check the tag reached GitHub rather than assuming it did.** `git push origin
+  v0.9.3` names the remote explicitly, so it cannot hit the missing-upstream
+  failure the commit push did in 0.10.0 — but a tag that exists only locally
+  fails exactly the same way: silently, and the release is invisible to everyone
+  watching the repository.
 
   Then **Releases → Draft a new release**, choose the tag, and title it the
   way the in-app notes are titled: `0.9.3 — Scenario focus, and email status`.
@@ -1300,6 +1316,36 @@ docker compose logs db | tail -8
 Overriding the entrypoint with `sh` means no Postgres starts — the container
 only mounts the data. Expect a line or two about recovery as the write-ahead
 log is replayed on the way up; that is the mechanism that makes this safe.
+
+### The push appeared to work and Render never deployed
+
+Check what the remote actually has before touching Render at all:
+
+```bash
+git log --oneline -1 origin/main
+git log --oneline -1
+```
+
+If those disagree, the push did not happen and Render is not the problem —
+there was nothing for it to build. The cause in 0.10.0 was a branch with **no
+upstream configured**, so `git push` refused with *"The current branch main has
+no upstream branch"*. Because the push is chained after the commit with `&&`,
+the commit succeeded and the push never ran:
+
+```bash
+git push -u origin main     # -u sets the upstream, so plain `git push` works after this
+```
+
+Two things make this worth a section of its own. **The output does not look
+like a failure** — the commit is reported as made, and the error reads as a
+suggestion about `--set-upstream`. And `git status` then says the branch is up
+to date with nothing, because there is no tracking branch to be behind. It is
+the same shape as the `-F` without `git add` trap in Part 5: *the release
+simply has not happened*, and nothing is damaged.
+
+It also hid a second commit. Two releases' worth of work was sitting unpushed,
+because an earlier commit had hit the same thing and nobody noticed. Run
+`git log --oneline origin/main..HEAD` to see everything that is about to go up.
 
 ### A dropdown shows only its current value
 

@@ -302,6 +302,40 @@ database, AWS account or Docker. The restore procedure is Part 3 of
 `backup/README.md`, and the release checklist carries a quarterly reminder to
 actually run it.
 
+### 9. Remind Ben to tag and publish the release on GitHub
+
+**Every release, without being asked**, once the deploy is verified: tell him
+the release is not finished until the tag is pushed and a GitHub Release is
+published, and give him the three commands with that release's version filled
+in. Ben asked for this reminder in November 2026.
+
+```bash
+git tag -a v0.10.0 -m "0.10.0 — Two-factor authentication"
+git push origin v0.10.0
+git ls-remote --tags origin v0.10.0    # must print the tag
+```
+
+Then offer to draft the Release body, because **it has a different reader from
+the in-app notes**. Reminder 1 keeps internal detail out of those; a GitHub
+Release is read by whoever has to deploy it, so it *should* name the migration,
+any new or renamed environment variable, and anything a fork must do by hand.
+The commit message is the raw material — it already contains all three.
+
+This is a reminder rather than a step he will remember because of how it fails:
+an untagged release works perfectly for him and is **invisible to everybody
+else**. Adopting agencies subscribe with *Watch → Custom → Releases*, so no tag
+means no notification, and nothing anywhere reports that. Part 8 of
+`RELEASE_CHECKLIST.md` carries the same step; this reminder exists so it is
+raised in the conversation as well, since the checklist's last part is the one
+most easily abandoned once production is up and working.
+
+**Verify the tag reached GitHub, do not assume.** `git push origin v0.10.0`
+names the remote, so it cannot hit the missing-upstream failure that stopped
+0.10.0's commit push — but a tag that exists only locally fails the same silent
+way. See *Troubleshooting → The push appeared to work and Render never
+deployed* for that one; the general rule it earned is that **after any push,
+read what the remote has rather than what the local branch says.**
+
 ## Architecture
 
 - **Backend:** Python + Tornado, PostgreSQL via `db.py` (a thin shim that keeps
