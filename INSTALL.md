@@ -17,7 +17,7 @@ decisions.
 | **A container host** | Anything that runs a Docker image and gives it a port. Render, AWS App Runner or ECS, Azure App Service or Container Apps, Google Cloud Run, or your own VM with Docker. |
 | **PostgreSQL** | Developed and run against **18**. Nothing in the schema is known to require it, but 18 is what is tested, and the restore procedure assumes the dump and the server are the same major version. |
 | **A hostname with TLS** | See [Choosing a hostname](#choosing-a-hostname-this-matters-more-than-it-sounds) — there is a trap here. |
-| **Somewhere to send mail** *(optional)* | Needed only for self-service password reset. Your own relay, Amazon SES, Azure Communication Services or Resend. |
+| **Somewhere to send mail** *(optional)* | Needed for self-service password reset, and for two-factor codes sent by email if you allow those. Your own relay, Amazon SES, Azure Communication Services or Resend. |
 | **An S3-compatible bucket** *(optional)* | For the nightly backup job. See `backup/README.md`. |
 
 The application itself is Python and Tornado with a single-file React
@@ -106,6 +106,34 @@ image, so the same image runs locally, on Render, and on AWS or Azure.
 
 **If you do not set the email**, the first start prints a line saying so and
 serves an application nobody can sign in to. Set it and restart.
+
+### Two-factor authentication
+
+| Variable | What it is |
+|---|---|
+| `TWOFA_SECRET_KEY` | Required before anybody can enroll an authenticator app. At least 32 characters. |
+
+Generate one and keep it with your other secrets:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+**Read this before you set it.** Every user's TOTP secret is *derived* from
+this key rather than stored, so a stolen database or backup contains no secret
+at all — there is nothing in it to decrypt. The consequence is the other side
+of the same coin:
+
+- **Losing this key voids every enrollment.** Everyone has to set up their
+  authenticator app again.
+- **Changing it does the same.** Treat it as permanent, and back it up
+  wherever you keep things whose loss costs you a day.
+- It never needs rotating on a schedule: it is not a credential anybody
+  authenticates with, and it is useless without the database.
+
+Until it is set, enrollment refuses and says so, and two-factor authentication
+cannot be made mandatory. The `_FILE` convention below is not available for
+this one: it is read at process start rather than per use.
 
 ### Mail credentials
 
@@ -216,10 +244,17 @@ it, which is what every managed platform does. Two things to get right:
 
 ## Email
 
-Optional, and the only thing it is used for today is self-service password
-reset. Without it, a forgotten password means an administrator issuing a
-temporary one — workable for a handful of people and the first thing a larger
-department will hit.
+Optional, and used for two things:
+
+- **self-service password reset** — without it, a forgotten password means an
+  administrator issuing a temporary one, which is workable for a handful of
+  people and the first thing a larger department will hit;
+- **two-factor codes sent by email**, if a SuperAdmin allows them. That is off
+  until switched on, and an authenticator app needs no mail at all.
+
+Neither is offered while mail is not working, rather than offered and failing.
+`Preferences → Email status` says which of the conditions for the reset link is
+missing.
 
 **Configured in two places on purpose.** The host, port, encryption, username,
 from address and public address are settings a SuperAdmin edits in

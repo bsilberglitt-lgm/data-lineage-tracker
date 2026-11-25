@@ -99,13 +99,17 @@ before you wonder why a button is missing. Your name is at the top right.
 |---|---|
 | **Viewer** | Read the diagram, the catalogs and the schema drill-down |
 | **Editor** | Also create, change and delete records |
-| **Administrator** | Also manage user accounts and roles |
+| **Administrator** | Also manage user accounts and roles, and clear somebody's second factor |
 | **SuperAdmin** | Also Preferences and the Audit Log |
 
 Two things that follow:
 
 - **Every role check is enforced on the server.** A hidden button is a
   convenience, not the boundary — so there is no harm in exploring.
+- **Everybody sets up their own second factor**, whatever their role, from
+  **Your profile** under your name in the top right. An administrator can
+  clear somebody's when the phone and the recovery codes are both gone, and
+  cannot clear one for anybody who outranks them.
 - **Administrators cannot create or change SuperAdmins**, and the application
   refuses to remove or demote the **last** SuperAdmin, so a deployment cannot
   be left with nobody able to administer it.
@@ -185,8 +189,16 @@ For a SuperAdmin, in **Preferences**:
   be written once and shared everywhere that field appears, or kept different
   per record type.
 - **Configure email**, if you want self-service password reset. It is off until
-  both the setting and a working mail transport exist, because a reset link that
-  promises an email and delivers nothing is worse than no link.
+  the setting, a working mail transport and the public address of the
+  application are all in place, because a reset link that promises an email
+  and delivers nothing is worse than no link. **Email status** has a row that
+  says which of the three is missing.
+- **Require two-factor authentication**, if you want it. Everybody is then
+  asked to set up an authenticator app at their next sign-in and the
+  application stays closed until they have; enrolling takes a couple of
+  minutes and needs nothing from an administrator. Leave it off and people can
+  still set it up voluntarily from their own profile. Codes by email are a
+  separate setting, off by default and needing mail to work.
 - **System types and their colors** are configured here too. The palette has
   been measured for contrast; prefer it to arbitrary colors.
 

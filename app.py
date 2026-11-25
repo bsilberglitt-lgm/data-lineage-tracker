@@ -9,7 +9,7 @@ Uses Tornado + PostgreSQL. The schema is managed by Alembic migrations
 the sqlite3-style calling convention used throughout this file.
 """
 
-import asyncio, csv, hashlib, io, json, os, datetime, re, struct, sys, time
+import asyncio, csv, hashlib, hmac, io, json, os, datetime, re, struct, sys, time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -46,6 +46,21 @@ MAX_LOGO_BYTES = 512 * 1024
 # color compresses to a few kilobytes and still has to be decoded into ~400 MB
 # of bitmap. Cap the pixels as well.
 MAX_LOGO_DIMENSION = 2000
+
+# Same two caps as the logo, for the same two reasons: bytes because every one
+# of them is carried through 45 nightly backups, and pixels because a byte cap
+# alone does not stop a decompression bomb (a 10000x10000 PNG of flat color
+# compresses to almost nothing and still decodes to hundreds of megabytes).
+#
+# **These are the refusal, not the resize.** Doubled from 256 KB / 1500px at
+# Ben's request, and the browser now downscales before uploading
+# (`shrinkImage` in index.html), so a phone photo arrives at a few tens of
+# kilobytes and these numbers are the backstop for a client that did not do
+# that — a hand-rolled request, or a browser where the canvas path failed.
+# Never relax them on the grounds that the browser already shrinks it: the
+# browser is not the thing to trust here.
+MAX_AVATAR_BYTES = 512 * 1024
+MAX_AVATAR_DIMENSION = 3000
 
 # Where the logo may sit in relation to the title in the sidebar.
 LOGO_POSITIONS = ["left", "right", "above", "below"]
@@ -266,6 +281,31 @@ def _jpeg_dimensions(body):
             break                         # malformed: would not advance
         i += length
     raise ImageRejected("That JPEG file appears to be damaged.")
+
+
+def validate_avatar(body):
+    """Full check for an uploaded profile picture.
+
+    The same shape as `validate_logo` and deliberately not the same function:
+    the two differ only in their caps and in the sentence a person reads when
+    the upload is refused, and a shared one taking the numbers as arguments
+    would have to take the wording too. What they genuinely share —
+    identifying the file from its bytes, and refusing SVG — is
+    `inspect_image`, which both call.
+    """
+    if len(body) > MAX_AVATAR_BYTES:
+        raise ImageRejected(
+            f"That image is {len(body)//1024} KB. The limit is "
+            f"{MAX_AVATAR_BYTES//1024} KB — a profile picture is displayed "
+            f"about 28 pixels across, so it does not need to be large.")
+    content_type, width, height = inspect_image(body)
+    if width <= 0 or height <= 0:
+        raise ImageRejected("That image reports no size and cannot be used.")
+    if width > MAX_AVATAR_DIMENSION or height > MAX_AVATAR_DIMENSION:
+        raise ImageRejected(
+            f"That image is {width}x{height} pixels. The limit is "
+            f"{MAX_AVATAR_DIMENSION} pixels on either side.")
+    return content_type, width, height
 
 
 def validate_logo(body):
@@ -527,14 +567,30 @@ def contributor_references(conn, cid):
 
 
 def linked_accounts(conn):
-    """{contributor_id: {email, title}} for contributors with an account.
+    """{contributor_id: {user_id, email, title, avatar_etag}} for contributors
+    with an account.
 
     Only active accounts. A deactivated account's address is no longer one
     anybody should be emailing, and its title is no longer current.
+
+    `user_id` and `avatar_etag` are here because a contributor's picture is the
+    **account's** picture: a contributor who will never sign in has no avatar to
+    show, and one who does maintains it in their own profile. This is the single
+    place a contributor learns anything about its account, which is what keeps
+    the two from disagreeing \u2014 see the title, which resolves the same way.
+
+    `avatar_data` is deliberately not selected. This runs for every contributor
+    list, so reading the bytes would be half a megabyte per person to draw a
+    28px circle; the digest is all the browser needs, and the image has its own
+    endpoint.
     """
-    return {r["contributor_id"]: {"email": r["email"], "title": r["title"]}
+    return {r["contributor_id"]: {"user_id": r["user_id"],
+                                  "email": r["email"],
+                                  "title": r["title"],
+                                  "avatar_etag": r["avatar_etag"]}
             for r in conn.execute(
-                "SELECT contributor_id, email, title FROM app_user "
+                "SELECT contributor_id, user_id, email, title, avatar_etag "
+                "FROM app_user "
                 "WHERE contributor_id IS NOT NULL AND is_active=1").fetchall()}
 
 
@@ -819,6 +875,11 @@ def with_contact(rows, conn):
         acct = accounts.get(cid) or {}
         r["contact_email"] = emails.get(cid)
         r["account_title"] = acct.get("title")
+        # The account that supplies the picture, and the digest that says
+        # whether there is one. Both or neither: a browser given an id with no
+        # digest would request an image that is a 404.
+        r["account_user_id"] = acct.get("user_id")
+        r["avatar_etag"] = acct.get("avatar_etag")
         # The account's title wins where there is one; a contributor who will
         # never sign in keeps their own.
         r["effective_title"] = acct.get("title") or r.get("title")
@@ -1398,9 +1459,8 @@ DEFAULT_PREFERENCES = [
     ("app_base_url", "", "string", "Public address of this app",
      "e.g. https://lineage.example.gov \u2014 used to build the link in a "
      "password reset email. Required for reset email to work, and read from "
-     "this setting rather than from the browser's request on purpose, so that "
-     "a forged request cannot send somebody a reset link pointing somewhere "
-     "else.", "Email", 1, 230),
+     "this setting rather than from the browser's request.",
+     "Email", 1, 230),
     ("smtp_host", "", "string", "SMTP host",
      "e.g. smtp.example.gov. Only used when delivery is set to SMTP.",
      "Email", 1, 240),
@@ -1420,13 +1480,25 @@ DEFAULT_PREFERENCES = [
      "Allow self-service password reset",
      "Lets anyone who has forgotten their password request a reset link by "
      "email. Requires email delivery above to be working \u2014 the link on the "
-     "sign-in screen stays hidden until it is, so it cannot offer something "
-     "that quietly fails.", "Email", 1, 280),
+     "sign-in screen stays hidden until it is.", "Email", 1, 280),
 
-    # Phase 2 — the plumbing is in place; the flow is not built yet, so this
-    # is shown but locked off.
+    # Ben shortened both of these descriptions in November 2026. The long
+    # versions explained the reasoning behind the setting; a Preferences screen
+    # is read while somebody is deciding one thing, and the reasoning belongs
+    # in the help article, which is where it now lives.
     ("require_2fa", "false", "boolean", "Require two-factor authentication",
-     "Not yet available.", "Coming soon", 0, 310),
+     "Turning on will require second factor to be set up at next sign in for "
+     "all users.",
+     "Two-factor authentication", 1, 300),
+
+    # Deliberately separate from require_2fa, because some organizations will
+    # want the requirement and refuse this method: an attacker who controls
+    # the mailbox gets the code AND the password reset link, so email is a
+    # second factor against password reuse and credential stuffing rather than
+    # against a compromised inbox.
+    ("allow_email_2fa", "false", "boolean", "Allow codes sent by email",
+     "Adds email as an option for 2FA.",
+     "Two-factor authentication", 1, 310),
 ]
 
 _PREF_CACHE = {"values": None, "loaded_at": 0}
@@ -2113,6 +2185,39 @@ SEED_RELEASES = [
   waiting for a page reload — so **Send test message** becomes available as
   soon as the configuration is complete.
 """),
+    # Published after review (reminder 1 in CLAUDE.md). `ensure_releases()`
+    # never overwrites a published row, so any further edit to these notes has
+    # to be made in the app — editing the wording here now does nothing.
+    ("0.10.0", "Two-factor authentication", None, 1, 2100, """\
+## Fixes
+
+* Signing in with the wrong password provides a clearer message, instead of
+  reporting that your session has ended.
+* Switching accounts in the same browser no longer leaves the previous
+  person's scenario on the diagram while the picker reads Current
+  Architecture.
+
+## Your profile
+
+* Add a picture and it appears instead of your initials in the corner, and
+  beside your name on the Users and Contributors screens. Click one there to
+  see it larger.
+* Choose which part of the picture to show, with a circle over it and a size
+  slider \u2014 so a photo that is not square keeps the part you meant.
+* Clean up layout of the Your Profile window.
+
+## Two-factor authentication
+
+* Set up an authenticator app from your profile window (your organization can
+  make this optional or required, by a SuperAdmin in Preferences). Scan the QR
+  code, or type the key in by hand.
+* Emailing authentication codes is also an option that can be set by a
+  SuperAdmin.
+* Provide "remember this device for 30 days" option on login.
+* Changing your password revokes every remembered device.
+* Turning your own second factor off asks for your password again.
+* An administrator can clear somebody's second factor, if needed.
+"""),
 ]
 
 
@@ -2508,6 +2613,9 @@ if HAS_TORNADO:
         # Endpoints usable while an account still has a forced password change
         # pending (otherwise the user could never clear the flag).
         allow_when_password_expired = False
+        # Mirrors the above for a user who must enroll a second factor
+        # before going anywhere. Set on the handlers enrollment needs.
+        allow_when_2fa_pending = False
         SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
         # Whether this endpoint understands ``?scenario=N``. Off by default so
         # an endpoint that has not been scoped cannot be handed a scenario and
@@ -2585,12 +2693,18 @@ if HAS_TORNADO:
             token_hash = auth.hash_session_token(raw)
             conn = get_db()
             try:
+                # `avatar_etag` is selected and `avatar_data` deliberately is
+                # not: this query runs on **every request**, and reading a
+                # quarter of a megabyte of image out of the database to answer
+                # "who is signed in" would be a cost paid on every API call for
+                # a picture nobody asked for. The bytes have their own endpoint.
                 row = conn.execute(
                     """SELECT s.session_id, s.user_id, s.csrf_token, s.created_at,
                               s.expires_at, s.revoked_at, s.last_seen_at,
                               u.email, u.first_name, u.last_name, u.title,
                               u.role, u.is_active, u.must_change_password,
-                              u.contributor_id
+                              u.contributor_id, u.totp_confirmed_date,
+                              u.avatar_etag
                          FROM user_session s
                          JOIN app_user u ON u.user_id = s.user_id
                         WHERE s.token_hash = ?""",
@@ -2631,14 +2745,7 @@ if HAS_TORNADO:
                 # added to the join does not silently become part of what the
                 # browser is handed. `title` is here because the account chip
                 # and the profile window both show it.
-                user = {
-                    "user_id": data["user_id"], "email": data["email"],
-                    "first_name": data["first_name"], "last_name": data["last_name"],
-                    "title": data["title"],
-                    "role": data["role"], "is_active": data["is_active"],
-                    "must_change_password": data["must_change_password"],
-                    "contributor_id": data["contributor_id"],
-                }
+                user = public_user(conn, data)
                 return user, data
             finally:
                 conn.close()
@@ -2679,6 +2786,16 @@ if HAS_TORNADO:
                     and not self.allow_when_password_expired):
                 return self.fail(403, "Password change required",
                                  must_change_password=True)
+
+            # Same shape for a required second factor. The password gate
+            # runs first on purpose: somebody with both pending changes
+            # their password, then enrolls, which is the order that leaves
+            # no window where a temporary password is the only thing
+            # protecting a newly enrolled account.
+            if (self.current_user.get("must_enroll_2fa")
+                    and not self.allow_when_2fa_pending):
+                return self.fail(403, "Two-factor enrollment required",
+                                 must_enroll_2fa=True)
 
             # Which view is this request about? NULL/absent means the live
             # diagram; anything else is a scenario.
@@ -4865,6 +4982,161 @@ if HAS_TORNADO:
             "self_service_reset": reset_enabled(conn),
         }
 
+    # -----------------------------------------------------------------------
+    # Two-factor authentication (0.10.0)
+    # -----------------------------------------------------------------------
+
+    def twofa_required(conn):
+        return str(get_preferences(conn).get("require_2fa", "false")).lower() == "true"
+
+    def email_2fa_allowed(conn):
+        """Both switches, for the same reason the reset link needs both.
+
+        The preference is the organization's decision; a working transport is
+        whether that decision can be honored. Offering an emailed code with no
+        mail configured would strand somebody on a screen waiting for a message
+        that is never sent — and unlike the reset link, they would be stranded
+        *mid-sign-in*, having already given a correct password.
+
+        No `app_base_url` requirement here, unlike reset: a code is read out of
+        the message, not clicked, so there is no link to build.
+        """
+        prefs = get_preferences(conn)
+        on = str(prefs.get("allow_email_2fa", "false")).lower() == "true"
+        return on and mailer.is_configured(mailer.config_from_preferences(prefs))
+
+    def twofa_methods(conn, user_row):
+        """Which second factors this person can actually use, right now.
+
+        Derived rather than stored — see migration 0023. An authenticator app
+        is available once enrollment was *confirmed*; a mere salt means
+        somebody started and closed the window, and treating that as enrolled
+        would challenge them for a code they cannot produce.
+        """
+        methods = []
+        if user_row["totp_confirmed_date"]:
+            methods.append("totp")
+        if email_2fa_allowed(conn):
+            methods.append("email")
+        return methods
+
+    def recovery_codes_left(conn, user_id):
+        return conn.execute(
+            "SELECT COUNT(*) FROM recovery_code WHERE user_id=? AND used_date IS NULL",
+            (user_id,)).fetchone()[0]
+
+    def public_user(conn, row):
+        """The user object the browser is handed, built in exactly one place.
+
+        There were two builders — `load_session` for /api/auth/me and
+        `issue_session` for a sign-in — and they disagreed the moment
+        `must_enroll_2fa` was added to one of them: a forced enrollment showed
+        up on a page refresh and not on the sign-in that preceded it, so the
+        first thing a new user saw was the application they were supposed to be
+        held out of. That is the hand-kept-list-tracking-another-hand-kept-list
+        failure from CLAUDE.md, in a new place, and the fix is to have one
+        list.
+
+        `must_enroll_2fa` is computed rather than stored, for the reason given
+        in migration 0023: enrollment is required when the organization says so
+        and this account has not *confirmed* an authenticator app.
+        """
+        return {
+            "user_id": row["user_id"], "email": row["email"],
+            "first_name": row["first_name"], "last_name": row["last_name"],
+            "title": row["title"],
+            "role": row["role"], "is_active": row["is_active"],
+            "must_change_password": row["must_change_password"],
+            "contributor_id": row["contributor_id"],
+            "must_enroll_2fa": bool(
+                twofa_required(conn) and not row["totp_confirmed_date"]),
+            # The digest rather than a boolean: it says whether there is a
+            # picture AND changes when the picture does, which is what makes a
+            # replaced avatar appear immediately instead of after a cache
+            # expires. The bytes come from /api/users/<id>/avatar.
+            "avatar_etag": row["avatar_etag"],
+        }
+
+    def issue_session(self_handler, conn, user, ip, ua, now):
+        """Create a session row, set the cookie, and return the body to send.
+
+        Factored out of the login handler because there are now two ways in —
+        a password alone when no second factor applies, and a verified
+        challenge when one does — and a second copy of this is how the two
+        would drift apart.
+        """
+        prefs = get_preferences(conn)
+        hours = float(prefs.get("idle_timeout_hours",
+                                auth.IDLE_TIMEOUT_HOURS_DEFAULT) or 8)
+        raw, token_hash = auth.new_session_token()
+        csrf = auth.new_csrf_token()
+        conn.execute(
+            """INSERT INTO user_session
+                 (user_id, token_hash, csrf_token, created_at, last_seen_at,
+                  expires_at, ip_address, user_agent)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (user["user_id"], token_hash, csrf, iso(now), iso(now),
+             iso(now + datetime.timedelta(hours=hours)), ip, ua))
+        conn.execute("UPDATE app_user SET last_login_at=? WHERE user_id=?",
+                     (iso(now), user["user_id"]))
+        actor = {"user_id": user["user_id"], "email": user["email"]}
+        audit.record_event(conn, actor, audit.LOGIN, "user", user["user_id"],
+                           summary="Signed in", ip_address=ip, user_agent=ua)
+        self_handler.set_session_cookie(raw)
+        return {
+            "user": public_user(conn, user),
+            "csrf_token": csrf,
+            "settings": public_settings(conn),
+        }
+
+    def trusted_device_ok(conn, user_id, raw_token, now):
+        """Does this browser hold a live, unrevoked trust for this account?
+
+        Touches `last_seen_date` so the list a person revokes from can say when
+        each device was last used — which is the only way to recognize one.
+        """
+        if not raw_token:
+            return False
+        row = conn.execute(
+            "SELECT * FROM trusted_device WHERE token_hash=? AND user_id=?",
+            (auth.hash_token(raw_token), user_id)).fetchone()
+        if not row or row["revoked_date"] or row["expires_date"] <= iso(now):
+            return False
+        conn.execute("UPDATE trusted_device SET last_seen_date=? WHERE token_hash=?",
+                     (iso(now), row["token_hash"]))
+        return True
+
+    def revoke_trusted_devices(conn, user_id, now, reason="revoked"):
+        """Used by the password change, and by an administrator's 2FA reset.
+
+        A browser that no longer needs your second factor is exactly what you
+        want gone when you are changing your password because you fear
+        somebody else has it.
+        """
+        return conn.execute(
+            "UPDATE trusted_device SET revoked_date=? "
+            "WHERE user_id=? AND revoked_date IS NULL",
+            (iso(now), user_id)).rowcount
+
+    def send_2fa_code(conn, user, code):
+        """Mail a one-time code. Returns (ok, detail) and never raises.
+
+        The message deliberately says nothing about what the code unlocks
+        beyond the application's own name, and the body is never logged — it
+        is a live credential for the next ten minutes.
+        """
+        cfg = mailer.config_from_preferences(get_preferences(conn))
+        subject = "Your sign-in code"
+        body = (
+            f"Your sign-in code is {code}\n\n"
+            f"It expires in {auth.EMAIL_CODE_MINUTES} minutes and can be used "
+            f"once.\n\n"
+            f"If you did not just try to sign in, somebody else may know your "
+            f"password. Change it, and tell whoever administers this "
+            f"application.\n"
+        )
+        return mailer.send(cfg, user["email"], subject, body)
+
     class AuthLoginHandler(BaseAPIHandler):
         requires_auth = False
 
@@ -4918,37 +5190,86 @@ if HAS_TORNADO:
                     conn.commit()
                     return self.fail(401, "Incorrect email or password.")
 
-                prefs = get_preferences(conn)
-                hours = float(prefs.get("idle_timeout_hours",
-                                        auth.IDLE_TIMEOUT_HOURS_DEFAULT) or 8)
-                raw, token_hash = auth.new_session_token()
-                csrf = auth.new_csrf_token()
-                conn.execute(
-                    """INSERT INTO user_session
-                         (user_id, token_hash, csrf_token, created_at, last_seen_at,
-                          expires_at, ip_address, user_agent)
-                       VALUES (?,?,?,?,?,?,?,?)""",
-                    (user["user_id"], token_hash, csrf, iso(now), iso(now),
-                     iso(now + datetime.timedelta(hours=hours)), ip, ua))
-                conn.execute("UPDATE app_user SET last_login_at=? WHERE user_id=?",
-                             (iso(now), user["user_id"]))
-                actor = {"user_id": user["user_id"], "email": user["email"]}
-                audit.record_event(conn, actor, audit.LOGIN, "user", user["user_id"],
-                                   summary="Signed in", ip_address=ip, user_agent=ua)
-                conn.commit()
+                # --- Second factor ----------------------------------------
+                #
+                # A correct password now buys one of three things:
+                #
+                #   * a session, if no second factor applies to this account;
+                #   * a session with `must_enroll_2fa`, when the organization
+                #     requires a factor and this person has none yet — they
+                #     have to be let in far enough to enroll, and `prepare()`
+                #     holds them to exactly that;
+                #   * a **challenge**, which is not a session and grants
+                #     nothing, when a factor applies and can be used.
+                #
+                # A trusted device short-circuits the third case.
+                methods = twofa_methods(conn, user)
+                if methods and trusted_device_ok(
+                        conn, user["user_id"],
+                        self.get_cookie(auth.TRUSTED_DEVICE_COOKIE), now):
+                    audit.record_event(
+                        conn, {"user_id": user["user_id"], "email": user["email"]},
+                        audit.LOGIN, "user", user["user_id"],
+                        summary="Second factor skipped: remembered device",
+                        ip_address=ip, user_agent=ua)
+                    methods = []
 
-                self.set_session_cookie(raw)
-                self.write_json({
-                    "user": {
-                        "user_id": user["user_id"], "email": user["email"],
-                        "first_name": user["first_name"], "last_name": user["last_name"],
-                        "role": user["role"],
-                        "must_change_password": user["must_change_password"],
-                        "contributor_id": user["contributor_id"],
-                    },
-                    "csrf_token": csrf,
-                    "settings": public_settings(conn),
-                })
+                if methods:
+                    token = auth.new_challenge_token()
+                    # An emailed code is only sent when that is the only way
+                    # in. Somebody with an authenticator app should not get a
+                    # message every time they sign in — they can ask for one
+                    # from the challenge screen if the phone is unavailable.
+                    method = "totp" if "totp" in methods else "email"
+                    code_hash = None
+                    if method == "email":
+                        code = auth.new_email_code()
+                        code_hash = auth.hash_code(code)
+                        sent_ok, detail = send_2fa_code(conn, user, code)
+                        if not sent_ok:
+                            # Unlike a password reset, there is nothing to
+                            # protect by staying vague here: the password was
+                            # already correct, so the person in front of us is
+                            # almost certainly the account owner, and telling
+                            # them mail is broken is what lets them go and ask
+                            # somebody. The detail is written for an
+                            # administrator and never echoes a relay's text.
+                            audit.record_event(
+                                conn, {"user_id": user["user_id"],
+                                       "email": user["email"]},
+                                audit.LOGIN_FAILED, "user", user["user_id"],
+                                summary=f"Could not send a sign-in code: {detail}",
+                                ip_address=ip, user_agent=ua)
+                            conn.commit()
+                            return self.fail(
+                                503, "A sign-in code could not be sent. Ask an "
+                                     "administrator to check the email settings.")
+                    conn.execute(
+                        """INSERT INTO twofa_challenge
+                             (token_hash, user_id, method, code_hash,
+                              created_date, expires_date, attempts, ip_address)
+                           VALUES (?,?,?,?,?,?,0,?)""",
+                        (auth.hash_token(token), user["user_id"], method, code_hash,
+                         iso(now),
+                         iso(now + datetime.timedelta(minutes=auth.CHALLENGE_MINUTES)),
+                         ip))
+                    conn.commit()
+                    # No session cookie, and nothing about the account beyond
+                    # what the person already proved they know.
+                    return self.write_json({
+                        "twofa": {
+                            "challenge": token,
+                            "method": method,
+                            "methods": methods,
+                            "recovery_available": recovery_codes_left(
+                                conn, user["user_id"]) > 0,
+                            "expires_in_minutes": auth.CHALLENGE_MINUTES,
+                        }
+                    })
+
+                body = issue_session(self, conn, user, ip, ua, now)
+                conn.commit()
+                self.write_json(body)
             finally:
                 conn.close()
 
@@ -5022,7 +5343,13 @@ if HAS_TORNADO:
                        WHERE user_id=?""",
                     (auth.hash_password(new), now, now,
                      self.current_user["user_id"], self.current_user["user_id"]))
-                # Changing a password invalidates other sessions.
+                # Changing a password invalidates other sessions — and
+                # every remembered device, which is a second credential
+                # class doing the same job. Somebody changing their
+                # password because they fear it is known wants the browser
+                # that skips their second factor gone most of all.
+                revoke_trusted_devices(conn, self.current_user["user_id"],
+                                       utcnow())
                 conn.execute(
                     "UPDATE user_session SET revoked_at=? WHERE user_id=? "
                     "AND session_id<>? AND revoked_at IS NULL",
@@ -5033,6 +5360,589 @@ if HAS_TORNADO:
                                    summary="Password changed",
                                    ip_address=self.client_ip(),
                                    user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"ok": True})
+
+    # -----------------------------------------------------------------------
+    # Two-factor: finishing a sign-in
+    # -----------------------------------------------------------------------
+
+    def load_challenge(conn, token, now):
+        """Return (row, error_message). A dead challenge is never reusable.
+
+        Callers answer with **400 and `restart: true`**, never 401. That is a
+        deliberate choice about a detail of the browser client: its shared
+        `request()` helper treats *any* 401 as "your session has ended" and
+        resets the app to the sign-in screen. A wrong second factor answered
+        with 401 would therefore tear down the very screen the person is
+        typing into, losing the challenge, and they would have no idea why.
+        400 keeps the conversation alive; `restart` says when it genuinely is
+        over.
+        """
+        if not token:
+            return None, "That sign-in attempt is no longer valid. Sign in again."
+        row = conn.execute("SELECT * FROM twofa_challenge WHERE token_hash=?",
+                           (auth.hash_token(token),)).fetchone()
+        if not row:
+            return None, "That sign-in attempt is no longer valid. Sign in again."
+        if row["consumed_date"]:
+            return None, "That code has already been used. Sign in again."
+        if row["expires_date"] <= iso(now):
+            return None, "That sign-in attempt has expired. Sign in again."
+        if row["attempts"] >= auth.CHALLENGE_MAX_ATTEMPTS:
+            return None, "Too many incorrect codes. Sign in again."
+        return row, None
+
+    class TwoFactorVerifyHandler(BaseAPIHandler):
+        """Exchange a challenge plus a code for a session.
+
+        Three kinds of code are accepted and the difference matters:
+
+        * **An authenticator code** is checked against the derived secret over
+          a one-step window.
+        * **An emailed code** is checked against the hash stored on the
+          challenge. It does not move, so the attempt cap is the only thing
+          bounding guesses — and the cap is spent against the challenge, not
+          the code.
+        * **A recovery code** is accepted whatever the challenge's method was,
+          because the situation it exists for is "the method I was given is
+          unavailable". It is marked used immediately.
+
+        A wrong code increments `attempts` and **commits that increment even
+        though the request failed**, which is the whole point: a counter rolled
+        back with the transaction would bound nothing.
+        """
+        requires_auth = False
+
+        def post(self):
+            data = self.get_json_body()
+            token = data.get("challenge") or ""
+            code = data.get("code") or ""
+            remember = bool(data.get("remember"))
+            ip, ua = self.client_ip(), self.user_agent()
+            now = utcnow()
+
+            conn = get_db()
+            try:
+                row, problem = load_challenge(conn, token, now)
+                if problem:
+                    return self.fail(400, problem, restart=True)
+
+                user = conn.execute("SELECT * FROM app_user WHERE user_id=?",
+                                    (row["user_id"],)).fetchone()
+                if not user or not user["is_active"]:
+                    return self.fail(400, "That account is not available.",
+                                     restart=True)
+
+                actor = {"user_id": user["user_id"], "email": user["email"]}
+                normalized = auth.normalize_recovery_code(code)
+                used_recovery = None
+                ok = False
+
+                # A recovery code is tried first, and only when it looks like
+                # one: they are eight base32 characters, so a six-digit code
+                # can never be mistaken for one.
+                if len(normalized) == 8 and not normalized.isdigit():
+                    rec = conn.execute(
+                        "SELECT * FROM recovery_code WHERE code_hash=? AND user_id=?",
+                        (auth.hash_recovery_code(code), user["user_id"])).fetchone()
+                    if rec and not rec["used_date"]:
+                        ok = True
+                        used_recovery = rec["code_hash"]
+                elif row["method"] == "email":
+                    ok = bool(row["code_hash"]) and hmac.compare_digest(
+                        row["code_hash"], auth.hash_code(code))
+                else:
+                    key_problem = auth.twofa_key_problem()
+                    if key_problem:
+                        # The secret cannot be derived, so no code can be
+                        # checked. Say so rather than reporting a wrong code:
+                        # this is a server misconfiguration, and blaming the
+                        # person's phone would send them to debug the one
+                        # thing that is fine.
+                        audit.record_event(
+                            conn, actor, audit.TWOFA_FAILED, "user", user["user_id"],
+                            summary=f"Could not verify a code: {key_problem}",
+                            ip_address=ip, user_agent=ua)
+                        conn.commit()
+                        return self.fail(
+                            503, "Two-factor authentication is misconfigured on "
+                                 "this server. Ask an administrator.")
+                    secret = auth.derive_totp_secret(user["user_id"], user["totp_salt"])
+                    ok = auth.verify_totp(secret, code)
+
+                if not ok:
+                    conn.execute(
+                        "UPDATE twofa_challenge SET attempts=attempts+1 "
+                        "WHERE token_hash=?", (row["token_hash"],))
+                    left = auth.CHALLENGE_MAX_ATTEMPTS - (row["attempts"] + 1)
+                    audit.record_event(
+                        conn, actor, audit.TWOFA_FAILED, "user", user["user_id"],
+                        summary="Incorrect second factor", ip_address=ip,
+                        user_agent=ua)
+                    conn.commit()   # the increment has to survive the failure
+                    if left <= 0:
+                        return self.fail(400, "Too many incorrect codes. "
+                                              "Sign in again.", restart=True)
+                    # "Code not recognized" rather than wording about a wrong
+                    # code, at Ben's request. A recovery code is accepted at
+                    # this box too, so "wrong code" is not even accurate about
+                    # what was refused — and the person has typed something
+                    # they believe in, which "not recognized" allows for.
+                    return self.fail(400, "Code not recognized.",
+                                     attempts_left=left)
+
+                conn.execute(
+                    "UPDATE twofa_challenge SET consumed_date=? WHERE token_hash=?",
+                    (iso(now), row["token_hash"]))
+                if used_recovery:
+                    conn.execute(
+                        "UPDATE recovery_code SET used_date=? WHERE code_hash=?",
+                        (iso(now), used_recovery))
+                    remaining = recovery_codes_left(conn, user["user_id"])
+                    audit.record_event(
+                        conn, actor, audit.RECOVERY_CODE_USED, "user",
+                        user["user_id"],
+                        summary=f"Signed in with a recovery code; {remaining} left",
+                        ip_address=ip, user_agent=ua)
+
+                body = issue_session(self, conn, user, ip, ua, now)
+
+                # "Remember this device" is only offered, and only honored,
+                # when a real second factor was just proved. Allowing it off
+                # the back of a recovery code would let somebody who found a
+                # printed list turn it into thirty days of access.
+                if remember and not used_recovery:
+                    device = auth.new_device_token()
+                    conn.execute(
+                        """INSERT INTO trusted_device
+                             (token_hash, user_id, created_date, expires_date,
+                              last_seen_date, user_agent, ip_address)
+                           VALUES (?,?,?,?,?,?,?)""",
+                        (auth.hash_token(device), user["user_id"], iso(now),
+                         iso(now + datetime.timedelta(days=auth.TRUSTED_DEVICE_DAYS)),
+                         iso(now), ua, ip))
+                    self.set_cookie(
+                        auth.TRUSTED_DEVICE_COOKIE, device, path="/", httponly=True,
+                        secure=self.is_secure_request(), samesite="Strict",
+                        expires_days=auth.TRUSTED_DEVICE_DAYS)
+                    audit.record_event(
+                        conn, actor, audit.TRUSTED_DEVICE_ADDED, "user",
+                        user["user_id"],
+                        summary=f"Device remembered for "
+                                f"{auth.TRUSTED_DEVICE_DAYS} days",
+                        ip_address=ip, user_agent=ua)
+
+                body["recovery_codes_left"] = recovery_codes_left(
+                    conn, user["user_id"])
+                conn.commit()
+                self.write_json(body)
+            finally:
+                conn.close()
+
+    class TwoFactorResendHandler(BaseAPIHandler):
+        """Send a code to the account's address for a challenge in progress.
+
+        Reachable with a challenge token alone, which is why it is rate
+        limited per account the same way reset is: the thing being prevented is
+        somebody's inbox being flooded by whoever holds a stolen password.
+
+        It also switches the challenge's method to email, so a person whose
+        phone is flat can finish without starting again.
+        """
+        requires_auth = False
+
+        def post(self):
+            data = self.get_json_body()
+            now = utcnow()
+            conn = get_db()
+            try:
+                row, problem = load_challenge(conn, data.get("challenge"), now)
+                if problem:
+                    return self.fail(400, problem, restart=True)
+                if not email_2fa_allowed(conn):
+                    return self.fail(400, "Codes by email are not enabled here.")
+
+                cutoff = iso(now - datetime.timedelta(
+                    minutes=auth.RESET_RATE_WINDOW_MINUTES))
+                recent = conn.execute(
+                    "SELECT COUNT(*) FROM twofa_challenge "
+                    "WHERE user_id=? AND method='email' AND created_date>=?",
+                    (row["user_id"], cutoff)).fetchone()[0]
+                if recent >= auth.RESET_RATE_LIMIT:
+                    # Deliberately not an error the caller can distinguish
+                    # from success: an attacker learns nothing, and the person
+                    # who really is waiting has already had several.
+                    return self.write_json({"ok": True})
+
+                user = conn.execute("SELECT * FROM app_user WHERE user_id=?",
+                                    (row["user_id"],)).fetchone()
+                if not user or not user["is_active"]:
+                    return self.fail(400, "That account is not available.",
+                                     restart=True)
+                code = auth.new_email_code()
+                sent_ok, detail = send_2fa_code(conn, user, code)
+                if not sent_ok:
+                    return self.fail(503, "That code could not be sent.")
+                conn.execute(
+                    "UPDATE twofa_challenge SET method='email', code_hash=?, "
+                    "expires_date=? WHERE token_hash=?",
+                    (auth.hash_code(code),
+                     iso(now + datetime.timedelta(minutes=auth.CHALLENGE_MINUTES)),
+                     row["token_hash"]))
+                conn.commit()
+                self.write_json({"ok": True, "method": "email"})
+            finally:
+                conn.close()
+
+    # -----------------------------------------------------------------------
+    # Two-factor: enrollment and recovery, for the signed-in user
+    # -----------------------------------------------------------------------
+
+    def qr_svg(uri):
+        """An inline SVG QR code, or None when segno is unavailable.
+
+        **Returned in the JSON body rather than served from its own URL**, and
+        that is a security decision rather than a convenience: a
+        `/qr?secret=...` endpoint would write the TOTP secret into the access
+        log of every proxy in front of this app, which is exactly the mistake
+        the reset token avoided by moving into the URL fragment.
+
+        None rather than an exception, because the QR is an enhancement —
+        enrollment still works from the key and the otpauth:// link, and the
+        screen says so rather than silently losing a control.
+
+        **The try covers the generation, not just the import**, and that is a
+        fix for a 500 rather than a nicety. The first version wrapped only
+        `import segno`, so this docstring promised graceful degradation while
+        the code delivered it for one of the two ways this can fail.
+        Enrollment then returned a 500 the moment the package was really
+        present — which is how it shipped, because the sandbox it was written
+        in has no segno, so the path that ran everywhere else was the one never
+        exercised. A guard has to cover the thing that actually breaks.
+
+        `BytesIO`, not `StringIO`: segno's SVG writer emits **bytes**, so a
+        text buffer raises TypeError. And `xmldecl=False`, because this is
+        inlined into an HTML document where an XML declaration does not belong.
+
+        **The size comes from `scale`, and nothing may size this in CSS.** The
+        first version drew the code at `scale=5` and then pinned the `<svg>` to
+        180px in the stylesheet, which renders a QR code that a phone will not
+        read — and it looks perfectly fine on screen, which is why it reached
+        Ben. An `<svg>` carrying `width`/`height` attributes and **no
+        `viewBox`** has no notion of how to scale its contents, so a smaller
+        CSS box does not shrink the drawing, it **crops** it. This URI runs to
+        about 175 characters, which is a version 9 symbol — 53 modules square,
+        285px at that scale — so roughly a third of it was cut off, finder
+        pattern included. A scanner needs the whole symbol and had two thirds
+        of one.
+
+        **`border=4`, because that is the quiet zone the spec requires.** It
+        was 2. Halving the margin is the other way to produce a code that
+        renders and does not scan, and the two faults together left nothing to
+        read at all. `light` is stated explicitly rather than left transparent,
+        so the quiet zone is white whatever sits behind it.
+        """
+        try:
+            import segno
+            buf = io.BytesIO()
+            segno.make(uri, error="m").save(
+                buf, kind="svg", scale=4, border=4,
+                dark="#000000", light="#ffffff", xmldecl=False)
+            return buf.getvalue().decode("utf-8")
+        except Exception as e:
+            # Logged rather than swallowed: the screen says a QR could not be
+            # generated, but only this line says why.
+            print(f"  QR code generation failed ({type(e).__name__}: {e}); "
+                  f"enrollment will offer the key instead.", flush=True)
+            return None
+
+    class TwoFactorStatusHandler(BaseAPIHandler):
+        """What this account's second factor looks like, for the profile window."""
+        allow_when_password_expired = True
+        allow_when_2fa_pending = True
+        READ_ROLE = permissions.VIEWER
+
+        def get(self):
+            conn = get_db()
+            try:
+                row = conn.execute(
+                    "SELECT totp_salt, totp_confirmed_date FROM app_user "
+                    "WHERE user_id=?", (self.current_user["user_id"],)).fetchone()
+                devices = conn.execute(
+                    "SELECT token_hash, created_date, expires_date, last_seen_date,"
+                    "       user_agent FROM trusted_device "
+                    " WHERE user_id=? AND revoked_date IS NULL AND expires_date>? "
+                    " ORDER BY last_seen_date DESC",
+                    (self.current_user["user_id"], iso(utcnow()))).fetchall()
+                self.write_json({
+                    "enrolled": bool(row and row["totp_confirmed_date"]),
+                    "required": twofa_required(conn),
+                    "email_allowed": email_2fa_allowed(conn),
+                    # Named so an administrator reading Preferences and a user
+                    # reading this screen are told the same thing.
+                    "totp_unavailable": auth.twofa_key_problem(),
+                    "recovery_codes_left": recovery_codes_left(
+                        conn, self.current_user["user_id"]),
+                    "recovery_code_total": auth.RECOVERY_CODE_COUNT,
+                    "trusted_devices": [
+                        {
+                            # A prefix, never the whole hash: enough to revoke
+                            # one specific row without handing out a value that
+                            # is itself the lookup key for a live credential.
+                            "id": d["token_hash"][:16],
+                            "created_date": d["created_date"],
+                            "expires_date": d["expires_date"],
+                            "last_seen_date": d["last_seen_date"],
+                            "user_agent": d["user_agent"],
+                        } for d in rows_to_list(devices)
+                    ],
+                    "device_days": auth.TRUSTED_DEVICE_DAYS,
+                })
+            finally:
+                conn.close()
+
+    class TwoFactorEnrollHandler(BaseAPIHandler):
+        """Start enrollment: a fresh salt, and the three ways to receive it.
+
+        Starting again simply replaces the salt, so a half-finished attempt is
+        never something to clean up — and because the salt changes, the old
+        secret stops working, which is what you want if somebody got as far as
+        adding it to the wrong phone.
+        """
+        allow_when_password_expired = True
+        allow_when_2fa_pending = True
+        WRITE_ROLE = permissions.VIEWER
+
+        def post(self):
+            problem = auth.twofa_key_problem()
+            if problem:
+                return self.fail(503, problem)
+            conn = get_db()
+            try:
+                uid = self.current_user["user_id"]
+                salt = auth.new_totp_salt()
+                conn.execute(
+                    "UPDATE app_user SET totp_salt=?, totp_confirmed_date=NULL "
+                    "WHERE user_id=?", (salt, uid))
+                conn.commit()
+                secret = auth.derive_totp_secret(uid, salt)
+                prefs = get_preferences(conn)
+                issuer = prefs.get("app_title") or "Data Lineage Tracker"
+                uri = auth.totp_uri(secret, self.current_user["email"], issuer)
+                self.write_json({
+                    "uri": uri,
+                    "secret_groups": auth.totp_secret_groups(secret),
+                    "qr_svg": qr_svg(uri),
+                    "digits": auth.TOTP_DIGITS,
+                    "period": auth.TOTP_PERIOD,
+                })
+            finally:
+                conn.close()
+
+    class TwoFactorConfirmHandler(BaseAPIHandler):
+        """Prove a code, then switch enrollment on and issue recovery codes.
+
+        The codes are returned **once**, in this response, and stored hashed.
+        There is deliberately no endpoint that shows them again — only one that
+        replaces them — because a list that can be re-read is a list an
+        attacker with a session can read too.
+        """
+        allow_when_password_expired = True
+        allow_when_2fa_pending = True
+        WRITE_ROLE = permissions.VIEWER
+
+        def post(self):
+            problem = auth.twofa_key_problem()
+            if problem:
+                return self.fail(503, problem)
+            code = (self.get_json_body() or {}).get("code") or ""
+            now = utcnow()
+            conn = get_db()
+            try:
+                uid = self.current_user["user_id"]
+                row = conn.execute(
+                    "SELECT totp_salt FROM app_user WHERE user_id=?", (uid,)).fetchone()
+                if not row or not row["totp_salt"]:
+                    return self.fail(400, "Start enrollment again.")
+                secret = auth.derive_totp_secret(uid, row["totp_salt"])
+                if not auth.verify_totp(secret, code):
+                    return self.fail(400, "Code not recognized. Check the time "
+                                          "on your phone if it keeps failing.")
+
+                conn.execute("UPDATE app_user SET totp_confirmed_date=? WHERE user_id=?",
+                             (iso(now), uid))
+                # Replace any codes from a previous enrollment: old ones were
+                # issued against a secret that no longer exists.
+                conn.execute("DELETE FROM recovery_code WHERE user_id=?", (uid,))
+                codes = auth.new_recovery_codes()
+                for c in codes:
+                    conn.execute(
+                        "INSERT INTO recovery_code (code_hash, user_id, created_date) "
+                        "VALUES (?,?,?)",
+                        (auth.hash_recovery_code(c), uid, iso(now)))
+                audit.record_event(
+                    conn, self.current_user, audit.TWOFA_ENROLLED, "user", uid,
+                    summary="Authenticator app enrolled",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                audit.record_event(
+                    conn, self.current_user, audit.RECOVERY_CODES_ISSUED, "user", uid,
+                    summary=f"{len(codes)} recovery codes issued",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                self.write_json({"ok": True, "recovery_codes": codes})
+            finally:
+                conn.close()
+
+    class TwoFactorDisableHandler(BaseAPIHandler):
+        """Turn your own second factor off. Needs the password again.
+
+        Re-asking for the password is the point: a session is exactly what an
+        attacker has if they borrowed an unlocked laptop, and removing the
+        second factor is the first thing they would want to do with it.
+        """
+        WRITE_ROLE = permissions.VIEWER
+
+        def post(self):
+            password = (self.get_json_body() or {}).get("password") or ""
+            now = utcnow()
+            conn = get_db()
+            try:
+                uid = self.current_user["user_id"]
+                row = conn.execute("SELECT * FROM app_user WHERE user_id=?",
+                                   (uid,)).fetchone()
+                if not row or not auth.verify_password(password, row["password_hash"]):
+                    return self.fail(400, "Your password is incorrect.")
+                if twofa_required(conn):
+                    return self.fail(
+                        400, "This organization requires two-factor "
+                             "authentication, so it cannot be switched off.")
+                conn.execute(
+                    "UPDATE app_user SET totp_salt=NULL, totp_confirmed_date=NULL "
+                    "WHERE user_id=?", (uid,))
+                conn.execute("DELETE FROM recovery_code WHERE user_id=?", (uid,))
+                revoke_trusted_devices(conn, uid, now)
+                audit.record_event(
+                    conn, self.current_user, audit.TWOFA_DISABLED, "user", uid,
+                    summary="Two-factor authentication turned off",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            self.clear_cookie(auth.TRUSTED_DEVICE_COOKIE, path="/")
+            self.write_json({"ok": True})
+
+    class RecoveryCodesHandler(BaseAPIHandler):
+        """Replace the recovery codes. Needs the password, like disabling does."""
+        allow_when_2fa_pending = True
+        WRITE_ROLE = permissions.VIEWER
+
+        def post(self):
+            password = (self.get_json_body() or {}).get("password") or ""
+            now = utcnow()
+            conn = get_db()
+            try:
+                uid = self.current_user["user_id"]
+                row = conn.execute("SELECT * FROM app_user WHERE user_id=?",
+                                   (uid,)).fetchone()
+                if not row or not auth.verify_password(password, row["password_hash"]):
+                    return self.fail(400, "Your password is incorrect.")
+                if not row["totp_confirmed_date"]:
+                    return self.fail(400, "Enroll an authenticator app first.")
+                conn.execute("DELETE FROM recovery_code WHERE user_id=?", (uid,))
+                codes = auth.new_recovery_codes()
+                for c in codes:
+                    conn.execute(
+                        "INSERT INTO recovery_code (code_hash, user_id, created_date) "
+                        "VALUES (?,?,?)",
+                        (auth.hash_recovery_code(c), uid, iso(now)))
+                audit.record_event(
+                    conn, self.current_user, audit.RECOVERY_CODES_ISSUED, "user", uid,
+                    summary=f"{len(codes)} recovery codes replaced",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+                self.write_json({"ok": True, "recovery_codes": codes})
+            finally:
+                conn.close()
+
+    class TrustedDevicesHandler(BaseAPIHandler):
+        """Revoke remembered devices: one by its id prefix, or all of them."""
+        WRITE_ROLE = permissions.VIEWER
+
+        def post(self):
+            data = self.get_json_body() or {}
+            device = data.get("id")
+            now = utcnow()
+            conn = get_db()
+            try:
+                uid = self.current_user["user_id"]
+                if device:
+                    # Matched on the prefix the status endpoint handed out, and
+                    # scoped to this user, so one person's id can never reach
+                    # another person's row.
+                    n = conn.execute(
+                        "UPDATE trusted_device SET revoked_date=? "
+                        "WHERE user_id=? AND revoked_date IS NULL "
+                        "  AND token_hash LIKE ?",
+                        (iso(now), uid, device + "%")).rowcount
+                else:
+                    n = revoke_trusted_devices(conn, uid, now)
+                audit.record_event(
+                    conn, self.current_user, audit.TRUSTED_DEVICES_REVOKED,
+                    "user", uid, summary=f"{n} remembered device(s) revoked",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            if not device:
+                self.clear_cookie(auth.TRUSTED_DEVICE_COOKIE, path="/")
+            self.write_json({"ok": True, "revoked": n})
+
+    class UserTwoFactorResetHandler(BaseAPIHandler):
+        """An administrator clears somebody's second factor.
+
+        The other half of recovery: codes cover the lost phone, this covers the
+        lost phone *and* lost codes. It deliberately does not set anything up —
+        it removes the enrollment so the person can enroll again, which is the
+        least an administrator can be given and still be useful.
+
+        `can_manage_user` is what stops an Administrator clearing a
+        SuperAdmin's second factor, which would otherwise be a quiet way to
+        weaken an account you are not allowed to manage.
+        """
+        READ_ROLE = permissions.ADMINISTRATOR
+        WRITE_ROLE = permissions.ADMINISTRATOR
+
+        def post(self, uid):
+            now = utcnow()
+            conn = get_db()
+            try:
+                target = conn.execute("SELECT * FROM app_user WHERE user_id=?",
+                                      (uid,)).fetchone()
+                if not target:
+                    return self.fail(404, "No such user.")
+                if not permissions.can_manage_user(self.current_user["role"],
+                                                   target["role"]):
+                    return self.fail(403, "You cannot manage that account.")
+                conn.execute(
+                    "UPDATE app_user SET totp_salt=NULL, totp_confirmed_date=NULL "
+                    "WHERE user_id=?", (uid,))
+                conn.execute("DELETE FROM recovery_code WHERE user_id=?", (uid,))
+                revoke_trusted_devices(conn, uid, now)
+                # Every session too: if the reason for this is a lost or stolen
+                # phone, a session that phone still holds is part of the
+                # problem.
+                conn.execute(
+                    "UPDATE user_session SET revoked_at=? WHERE user_id=? "
+                    "AND revoked_at IS NULL", (iso(now), uid))
+                audit.record_event(
+                    conn, self.current_user, audit.TWOFA_RESET, "user", uid,
+                    summary=f"Two-factor authentication cleared for "
+                            f"{target['email']}; sessions and remembered "
+                            f"devices revoked",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
                 conn.commit()
             finally:
                 conn.close()
@@ -5224,6 +6134,13 @@ if HAS_TORNADO:
                 conn.execute(
                     "UPDATE user_session SET revoked_at=? WHERE user_id=? "
                     "AND revoked_at IS NULL", (now, row["user_id"]))
+                # And every remembered device, for the same reason. A reset is
+                # used by somebody who has lost control of their password; a
+                # browser that skips their second factor is exactly what an
+                # attacker would want left behind.
+                conn.execute(
+                    "UPDATE trusted_device SET revoked_date=? WHERE user_id=? "
+                    "AND revoked_date IS NULL", (now, row["user_id"]))
                 audit.record_event(
                     conn, None, audit.PASSWORD_RESET, "user", row["user_id"],
                     summary=f"Password reset by email link for {row['email']}",
@@ -5248,7 +6165,25 @@ if HAS_TORNADO:
         def get(self):
             conn = get_db()
             try:
-                self.write_json(mailer.describe(email_config(conn)))
+                prefs = get_preferences(conn)
+                info = mailer.describe(email_config(conn))
+                # **Whether the sign-in link is actually being offered**, and
+                # if not, which of the three conditions is missing.
+                #
+                # This exists because Ben switched the preference on, saw no
+                # link, and had nothing on the screen to tell him why. The
+                # preference is one of three things `reset_enabled` requires —
+                # the others are a working transport and a public address —
+                # and a toggle that reads On while the feature is inert is the
+                # same failure 0.9.0 recorded for this very panel: **a screen
+                # that reports readiness has to report the thing that decides
+                # it.** Reported as the computed answer plus its parts, so the
+                # screen never has to re-derive the rule and disagree.
+                info["reset_preference_on"] = str(prefs.get(
+                    "enable_self_service_reset", "false")).lower() == "true"
+                info["app_base_url"] = (prefs.get("app_base_url") or "").strip()
+                info["reset_link_offered"] = reset_enabled(conn)
+                self.write_json(info)
             finally:
                 conn.close()
 
@@ -5277,7 +6212,19 @@ if HAS_TORNADO:
         "user_id", "email", "first_name", "last_name", "title", "role",
         "is_active", "must_change_password", "contributor_id", "last_login_at",
         "password_changed_at", "created_date", "updated_date",
+        # The digest, never the image. See USER_LIST_COLUMNS below.
+        "avatar_etag",
     )
+
+    # The list query names its columns rather than using `u.*`, which it used
+    # to. That mattered the moment an avatar column existed: `SELECT u.*` reads
+    # `avatar_data` for every account, so opening the Users screen in a
+    # department of thirty would have pulled up to fifteen megabytes of images
+    # out of the database to draw thirty circles 28 pixels across \u2014 and
+    # none of it would even have been sent, because `user_row_public` is a
+    # whitelist. Derived from that whitelist rather than written out again, so
+    # the two cannot drift.
+    USER_LIST_COLUMNS = ", ".join(f"u.{c}" for c in USER_PUBLIC_FIELDS)
 
     def user_row_public(row):
         d = dict(row)
@@ -5299,7 +6246,7 @@ if HAS_TORNADO:
         def get(self):
             conn = get_db()
             rows = conn.execute(
-                """SELECT u.*, c.name AS contributor_name
+                f"""SELECT {USER_LIST_COLUMNS}, c.name AS contributor_name
                      FROM app_user u
                      LEFT JOIN contributor c ON c.contributor_id = u.contributor_id
                     ORDER BY u.email""").fetchall()
@@ -5672,6 +6619,32 @@ if HAS_TORNADO:
                         return self.fail(
                             400, "SMTP encryption must be one of: "
                                  + ", ".join(mailer.SMTP_SECURITY) + ".")
+                    # Turning on a requirement nobody can satisfy locks
+                    # everybody out, including the person turning it on.
+                    #
+                    # Enabling require_2fa makes every account pending
+                    # enrollment at once — `prepare()` then allows only the
+                    # enrollment endpoints, Preferences among the things it
+                    # refuses. So if no method can actually work, the person
+                    # who just saved this cannot enroll AND cannot come back
+                    # here to undo it. Nobody can: it would take an
+                    # environment variable and a restart.
+                    #
+                    # An authenticator app needs TWOFA_SECRET_KEY; an emailed
+                    # code needs the preference and a working transport. One
+                    # of the two has to be available before this can be
+                    # switched on. Checked here rather than left to fail at
+                    # enrollment, because by then it is too late to tell
+                    # anybody.
+                    if key == "require_2fa" and new_value == "true":
+                        key_problem = auth.twofa_key_problem()
+                        if key_problem and not email_2fa_allowed(conn):
+                            return self.fail(
+                                400, "Two-factor authentication cannot be "
+                                     "required yet, because no second factor "
+                                     "would work: " + key_problem + " Codes by "
+                                     "email are an alternative, but they need "
+                                     "the setting below and working email.")
                     # A base URL that is not absolute produces a reset link
                     # nobody can click, and the failure shows up in somebody
                     # else's inbox rather than here.
@@ -6419,6 +7392,135 @@ if HAS_TORNADO:
             finally:
                 conn.close()
             self.write_json({"logo": None})
+
+    class AvatarHandler(BaseAPIHandler):
+        """Your own profile picture: upload or remove. Any signed-in user.
+
+        **Not a widened `/api/users/<id>`**, the same decision and the same
+        reasoning as `/api/auth/profile` in 0.6.0: that handler can change a
+        role, issue a temporary password and deactivate an account, and a
+        self-service path through it would put the protection in a list of
+        allowed keys rather than in a role check. This endpoint can do exactly
+        one thing to exactly one account — the caller's own — and there is no
+        id in the URL to get wrong.
+
+        Audited, because an avatar is what somebody's colleagues see beside
+        their name, and a picture appearing there is worth a record.
+        """
+        allow_when_2fa_pending = False
+        WRITE_ROLE = permissions.VIEWER
+
+        def post(self):
+            uploaded = self.request.files.get("file")
+            if not uploaded:
+                return self.fail(400, "Choose a .png or .jpg file to upload.")
+            f = uploaded[0]
+            body = f["body"]
+            try:
+                content_type, width, height = validate_avatar(body)
+            except ImageRejected as e:
+                return self.fail(400, str(e))
+
+            uid = self.current_user["user_id"]
+            etag = hashlib.sha256(body).hexdigest()[:32]
+            now = iso(utcnow())
+            conn = get_db()
+            try:
+                had = conn.execute(
+                    "SELECT avatar_etag FROM app_user WHERE user_id=?",
+                    (uid,)).fetchone()
+                conn.execute(
+                    """UPDATE app_user
+                          SET avatar_data=?, avatar_type=?, avatar_etag=?,
+                              avatar_updated=?
+                        WHERE user_id=?""",
+                    (body, content_type, etag, now, uid))
+                # The bytes never reach the audit log — the fact of the change
+                # and enough to identify it, nothing more. An audit row is not
+                # a file store.
+                audit.record_event(
+                    conn, self.current_user,
+                    audit.UPDATE if (had and had["avatar_etag"]) else audit.CREATE,
+                    entity_type="user", entity_id=uid,
+                    summary=("Replaced their profile picture"
+                             if (had and had["avatar_etag"])
+                             else "Added a profile picture")
+                            + f" ({width}x{height}, {len(body)//1024} KB)",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"avatar_etag": etag})
+
+        def delete(self):
+            uid = self.current_user["user_id"]
+            conn = get_db()
+            try:
+                row = conn.execute(
+                    "SELECT avatar_etag FROM app_user WHERE user_id=?",
+                    (uid,)).fetchone()
+                if not row or not row["avatar_etag"]:
+                    return self.fail(404, "There is no picture to remove.")
+                conn.execute(
+                    """UPDATE app_user
+                          SET avatar_data=NULL, avatar_type=NULL,
+                              avatar_etag=NULL, avatar_updated=NULL
+                        WHERE user_id=?""", (uid,))
+                audit.record_event(
+                    conn, self.current_user, audit.DELETE,
+                    entity_type="user", entity_id=uid,
+                    summary="Removed their profile picture",
+                    ip_address=self.client_ip(), user_agent=self.user_agent())
+                conn.commit()
+            finally:
+                conn.close()
+            self.write_json({"avatar_etag": None})
+
+    class UserAvatarHandler(BaseAPIHandler):
+        """The picture itself, for any account, to anyone signed in.
+
+        **Unlike the logo, this requires a session.** The logo is a brand mark
+        chosen for a public sign-in page; this is a photograph of a member of
+        staff, and an endpoint serving those to the open internet is a
+        directory of faces at a state agency. Readable by any signed-in user
+        because that is already true of the name it sits beside.
+
+        Served with the three headers the resource and logo endpoints use:
+        the content type established from the **bytes** at upload rather than
+        from the filename, `nosniff` so the browser does not reinterpret it,
+        and a content security policy of `default-src 'none'` so that even if
+        something got stored that a browser treats as a document, it can load
+        nothing and reach nowhere.
+        """
+        READ_ROLE = permissions.VIEWER
+        # Somebody held at the enrollment screen still has a chip in the
+        # corner with their own name in it.
+        allow_when_2fa_pending = True
+
+        def get(self, user_id):
+            conn = get_db()
+            try:
+                row = conn.execute(
+                    """SELECT avatar_data, avatar_type, avatar_etag
+                         FROM app_user WHERE user_id=?""",
+                    (user_id,)).fetchone()
+            finally:
+                conn.close()
+            if not row or row["avatar_data"] is None:
+                return self.fail(404, "No picture has been uploaded.")
+            etag = row["avatar_etag"]
+            self.set_header("ETag", f'"{etag}"')
+            # Revalidate rather than cache outright, for the same reason as the
+            # logo: somebody who replaces their picture should see the new one
+            # at once, and a stale one looks exactly like a bug. A 304 is cheap.
+            self.set_header("Cache-Control", "no-cache, must-revalidate")
+            if self.request.headers.get("If-None-Match", "").strip('"') == etag:
+                self.set_status(304)
+                return self.finish()
+            self.set_header("Content-Type", row["avatar_type"] or "image/png")
+            self.set_header("X-Content-Type-Options", "nosniff")
+            self.set_header("Content-Security-Policy", "default-src 'none'")
+            self.finish(bytes(row["avatar_data"]))
 
     class ReleasesHandler(BaseAPIHandler):
         """Published notes are readable by everyone; drafts and editing are SuperAdmin."""
@@ -8208,6 +9310,18 @@ if HAS_TORNADO:
             (r"/api/auth/profile", ProfileHandler),
             (r"/api/users/pickable", PickableUsersHandler),
             (r"/api/auth/change-password", ChangePasswordHandler),
+            # Two-factor (0.10.0). The first two are anonymous: they
+            # finish a sign-in that has passed the password and holds a
+            # challenge, which is not a session and grants nothing.
+            (r"/api/auth/2fa/verify", TwoFactorVerifyHandler),
+            (r"/api/auth/2fa/resend", TwoFactorResendHandler),
+            (r"/api/auth/2fa", TwoFactorStatusHandler),
+            (r"/api/auth/2fa/enroll", TwoFactorEnrollHandler),
+            (r"/api/auth/2fa/confirm", TwoFactorConfirmHandler),
+            (r"/api/auth/2fa/disable", TwoFactorDisableHandler),
+            (r"/api/auth/2fa/recovery-codes", RecoveryCodesHandler),
+            (r"/api/auth/devices", TrustedDevicesHandler),
+            (r"/api/users/([^/]+)/2fa-reset", UserTwoFactorResetHandler),
             (r"/api/auth/forgot-password", ForgotPasswordHandler),
             (r"/api/auth/reset-password", ResetPasswordHandler),
             (r"/api/email/test", EmailTestHandler),
@@ -8248,6 +9362,8 @@ if HAS_TORNADO:
             (r"/api/field-visibility", FieldVisibilityHandler),
             (r"/api/branding", BrandingHandler),
             (r"/api/branding/logo", BrandingLogoHandler),
+            (r"/api/auth/avatar", AvatarHandler),
+            (r"/api/users/([^/]+)/avatar", UserAvatarHandler),
             (r"/api/branding/public", PublicBrandingHandler),
             (r"/api/releases", ReleasesHandler),
             (r"/api/releases/([^/]+)", ReleaseHandler),

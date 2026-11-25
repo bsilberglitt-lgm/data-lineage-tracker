@@ -35,6 +35,12 @@ changed, and changing it is the owner's business.
 `--password` and `TEST_PASSWORD` exist for the assistant's harness, which has
 no terminal to prompt at. Prefer the prompt: a password on a command line ends
 up in shell history, and `!` or `#` in one is easily mangled.
+
+**An account with two-factor authentication is handled** (0.10.0): a correct
+password returns a challenge rather than a session, so `sign_in` completes it
+with a code from `--code`, `TEST_2FA_CODE`, or a prompt. See
+`finish_challenge` — it is written up there because the day Ben enrolled his
+own account, every suite in this directory stopped being able to sign in.
 """
 import getpass
 import time
@@ -47,12 +53,19 @@ import urllib.request
 
 
 def _args(argv):
-    """Port, email and password out of argv, in any order.
+    """Port, email, password and second-factor code out of argv, in any order.
 
     The port is positional because every suite has always taken it that way
     and the checklist is written with it; everything else is a flag.
+
+    An unknown flag is still an error. That is deliberate — a mistyped
+    `--emial` would otherwise prompt for an address and look like the suite
+    asking a reasonable question — and it is why a suite with an extra option
+    of its own reads an environment variable instead (`t_2fa.py` and
+    `TWOFA_GATE`): this runs at import time, from `base_url()`, so there is no
+    moment at which a suite could register one.
     """
-    port, email, password = None, None, None
+    port, email, password, code = None, None, None, None
     rest = list(argv[1:])
     while rest:
         a = rest.pop(0)
@@ -60,6 +73,8 @@ def _args(argv):
             email = rest.pop(0)
         elif a in ("--password", "-p") and rest:
             password = rest.pop(0)
+        elif a in ("--code", "-c") and rest:
+            code = rest.pop(0)
         elif a in ("--help", "-h"):
             print(__doc__)
             sys.exit(0)
@@ -70,11 +85,11 @@ def _args(argv):
             port = a
         elif a.startswith("http"):
             port = a                      # a whole base URL also works
-    return port, email, password
+    return port, email, password, code
 
 
 def base_url(argv=None):
-    port, _, _ = _args(argv or sys.argv)
+    port, _, _, _ = _args(argv or sys.argv)
     if port and str(port).startswith("http"):
         return str(port).rstrip("/")
     return "http://localhost:" + (port or os.environ.get("PORT") or "8765")
@@ -122,6 +137,58 @@ def request(s, method, path, body=None, extra_headers=None):
 BASE = base_url()
 
 
+def finish_challenge(s, rq, body, code=None):
+    """Complete a two-factor challenge, so an enrolled account can sign in.
+
+    **Added in 0.10.0 because shipping two-factor authentication broke every
+    entry point here.** A correct password no longer returns a session when
+    the account has a second factor: it returns a challenge, with no
+    `csrf_token` and no session cookie. So the moment Ben enrolled his own
+    account, `sign_in` reported "could not sign in" and `selftest.py` died
+    with `KeyError: 'user'` — nothing to do with either, and nothing in the
+    application wrong. A feature can break the tooling that tests it without
+    breaking the feature, and the tooling is where nobody is looking.
+
+    The code comes from `--code`, or `TEST_2FA_CODE` for the harness, or a
+    prompt. A **recovery code** is accepted at the same prompt, because the
+    reason somebody is typing here may be that the authenticator is not to
+    hand — but it is spent when used, so the prompt says so.
+
+    `remember` is deliberately absent: a test has no business asking for a
+    trusted-device cookie, which would then skip the factor for whatever
+    reused that jar.
+    """
+    tw = (body or {}).get("twofa") or {}
+    code = code or os.environ.get("TEST_2FA_CODE")
+    if not code:
+        print("\nThis account has two-factor authentication.")
+        if tw.get("method") == "email":
+            print("  A code has been emailed to it.")
+        print("  Enter the six-digit code from your authenticator app, or one")
+        print("  of your recovery codes — a recovery code is used up.")
+        try:
+            code = input("Code: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            sys.exit(2)
+    out = rq(s, "POST", "/api/auth/2fa/verify",
+             {"challenge": tw.get("challenge"), "code": code})
+    st, new_body = out[0], out[1]
+    if st != 200 or not isinstance(new_body, dict) \
+            or not new_body.get("csrf_token"):
+        print("\nThe second factor was not accepted.")
+        detail = new_body.get("error") if isinstance(new_body, dict) else new_body
+        if detail:
+            print(f"  {detail}")
+        if isinstance(new_body, dict) and new_body.get("restart"):
+            print("  The challenge has expired or been used up. Re-run.")
+        print("  A code is valid for about thirty seconds, so if it was typed\n"
+              "  slowly, try the next one.")
+        sys.exit(2)
+    s["t"] = new_body["csrf_token"]
+    return new_body
+
+
 def sign_in(argv=None):
     """A signed-in session, or a clear explanation and a non-zero exit.
 
@@ -129,7 +196,7 @@ def sign_in(argv=None):
     to its first request without checking anything.
     """
     argv = argv or sys.argv
-    _, email, password = _args(argv)
+    _, email, password, code = _args(argv)
     email = email or os.environ.get("TEST_EMAIL")
     password = password or os.environ.get("TEST_PASSWORD")
 
@@ -157,6 +224,8 @@ def sign_in(argv=None):
     # Checked rather than assumed: reaching into the response for a token that
     # is not there is what produced `KeyError: 'csrf_token'` and told nobody
     # anything.
+    if st == 200 and isinstance(body, dict) and body.get("twofa"):
+        body = finish_challenge(s, request, body, code)
     if st != 200 or not isinstance(body, dict) or not body.get("csrf_token"):
         print("\nCould not sign in.")
         detail = body.get("error") if isinstance(body, dict) else body
@@ -190,7 +259,7 @@ def sign_in_with(s, rq, argv=None):
     `(status, body)` or `(status, body, extra)`.
     """
     argv = argv or sys.argv
-    _, email, password = _args(argv)
+    _, email, password, code = _args(argv)
     email = email or os.environ.get("TEST_EMAIL")
     password = password or os.environ.get("TEST_PASSWORD")
 
@@ -214,6 +283,8 @@ def sign_in_with(s, rq, argv=None):
     out = rq(s, "POST", "/api/auth/login",
              {"email": email, "password": password})
     st, body = out[0], out[1]
+    if st == 200 and isinstance(body, dict) and body.get("twofa"):
+        body = finish_challenge(s, rq, body, code)
     if st != 200 or not isinstance(body, dict) or not body.get("csrf_token"):
         print("\nCould not sign in.")
         detail = body.get("error") if isinstance(body, dict) else body

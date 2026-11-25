@@ -31,6 +31,18 @@ PASSWORD_CHANGED = "password_changed"
 PASSWORD_RESET_REQUESTED = "password_reset_requested"
 PASSWORD_RESET = "password_reset"
 BACKFILL = "backfill"
+# Two-factor authentication (0.10.0). Separate actions rather than one
+# "twofa_changed", because these are the events somebody reads the audit
+# log to find: who turned a factor on, who turned one off, and above all
+# who cleared somebody else's.
+TWOFA_ENROLLED = "twofa_enrolled"
+TWOFA_DISABLED = "twofa_disabled"
+TWOFA_RESET = "twofa_reset"
+TWOFA_FAILED = "twofa_failed"
+RECOVERY_CODE_USED = "recovery_code_used"
+RECOVERY_CODES_ISSUED = "recovery_codes_issued"
+TRUSTED_DEVICE_ADDED = "trusted_device_added"
+TRUSTED_DEVICES_REVOKED = "trusted_devices_revoked"
 
 # Values that should never be written into the audit log, even though they
 # appear on the records being audited.

@@ -36,9 +36,15 @@ Keep blank lines between blocks, and indent lines that continue a bullet.
 import permissions
 
 # Screens an article can be tagged with. These match the frontend's view names.
+# "profile" is not a view in the sidebar: it is the Your profile window, which
+# names itself as the screen when it opens the help panel. It is here because
+# two-factor authentication is set up from that window and nowhere else, so an
+# article tagged only to Preferences or Users could not be found by the Viewers
+# and Editors who have to enroll — they cannot see either screen. That is the
+# silent gap this list exists to avoid: a screen with no entry offers nothing.
 SCREENS = ["diagram", "schema", "systems", "flows", "elements", "contributors",
            "tasks",
-           "audit", "users", "preferences", "releases", "scenario"]
+           "audit", "users", "preferences", "profile", "releases", "scenario"]
 
 
 ARTICLES = [
@@ -729,6 +735,17 @@ trail. A deactivated account cannot sign in and can be reactivated.
 
 New accounts get a temporary password and must change it at first sign-in.
 
+## Clearing somebody's second factor
+
+If two-factor authentication is set up and somebody has lost both their
+phone and their recovery codes, an administrator can clear it from the user
+list. They then sign in with their password alone and set it up again.
+
+You cannot do this to somebody who outranks you, which is the same rule
+that stops an Administrator editing a SuperAdmin. There is no way to see
+anybody else's codes or secret \u2014 clearing it is the only administrative
+action, and it is recorded in the audit log like any other.
+
 ## Forgotten passwords
 
 If email is set up on this deployment, the sign-in screen offers **Forgot your
@@ -787,6 +804,94 @@ is being planned without opening each one.
 """,
     },
     {
+        "id": "two-factor",
+        "title": "Two-factor authentication",
+        "summary": "Setting up an authenticator app, what the recovery codes "
+                   "are for, remembering a device, and what to do if you lose "
+                   "access to your authenticator.",
+        # Offered on the profile window, where everybody sets it up, and on
+        # Preferences and Users, where a SuperAdmin turns it on and an
+        # administrator clears somebody's. VIEWER, because every user enrolls
+        # regardless of role \u2014 an article only a SuperAdmin could read
+        # would be the one group that does not need it.
+        "screens": ["profile", "preferences", "users"],
+        "min_role": permissions.VIEWER,
+        "keywords": ["two-factor", "two factor", "2fa", "mfa", "totp",
+                     "authenticator", "google authenticator", "authy",
+                     "microsoft authenticator", "1password", "code",
+                     "six digit", "qr", "qr code", "recovery code",
+                     "backup code", "lost phone", "new phone", "remember this "
+                     "device", "trusted device", "require", "enroll",
+                     "second factor", "sign in", "security"],
+        "body": """\
+Improved security is available with two-factor authentication, including
+options for setting up how it works.
+
+## Setting it up
+
+Open **Your profile** from your name in the top right, then **Set up
+two-factor authentication**.
+
+You need an authenticator app on your phone. Any of them work \u2014 Google
+Authenticator, Microsoft Authenticator, Authy, 1Password, or whatever your
+organization already uses. Scan the QR code with it, or choose "enter a key
+manually" in the app and type the key shown beside it. Then type the six-digit
+code the authenticator app provides, to prove it is working before anything is
+switched on.
+
+**Nothing is switched on until you have typed a working code.** If you close
+the window halfway, nothing has changed and your next sign-in is unaffected.
+
+## Your recovery codes
+
+Setting up also shows you ten recovery codes, one time. **Save them somewhere
+that is not your phone** \u2014 a password manager, or printed and put where you
+keep important paper. Each one works once, in place of a code from the app.
+
+Recovery codes can get you back in if you lose access to your authenticator
+app. If you run low, or you think somebody has seen them, **Replace recovery
+codes** on the profile window issues a fresh ten and voids the old ones (it
+asks for your password first).
+
+## Signing in afterwards
+
+Your password, then the code. Two additional features:
+
+* **Remember this device for 30 days** skips the code on that one browser for
+  future logins, for 30 days. Never use this on a shared computer. You can see
+  what you have remembered, and forget any of it, on the profile window \u2014
+  and changing your password forgets all of them.
+* **A recovery code can be typed in the same box.** It is used up when you do.
+
+## If you lose access to your authenticator
+
+In order:
+
+1. **Use a recovery code**, if you have them. Then set up the authenticator
+   app again from your profile.
+2. **If emailed codes are allowed here**, choose "Email me a code instead" on
+   the sign-in screen. Whether email is offered is an organization-wide
+   decision.
+3. **Otherwise ask an administrator to clear your second factor.** You then
+   sign in with your password alone and set it up again. They cannot see your
+   codes or set it up for you.
+
+## If your organization requires it
+
+A SuperAdmin can turn on **Require two-factor authentication** in Preferences.
+Everybody is then asked to set it up at their next sign-in, and the
+application stays closed until they have. Enrolling takes a couple of minutes
+and needs nothing from an administrator. A SuperAdmin can also allow users to
+choose whether codes should be sent to the email address associated with your
+login, instead of an authenticator app. If that is enabled, you will see that
+option at setup.
+
+Where two-factor authentication is required, you cannot turn your own off.
+Where it is not, you can \u2014 it asks for your password, and your recovery
+codes and remembered devices are also removed.
+""",
+    },
+    {
         "id": "email-setup",
         "title": "Setting up email",
         "summary": "Connecting the tracker to your own mail server or Resend, "
@@ -801,10 +906,16 @@ is being planned without opening each one.
                      "microsoft 365", "office 365", "exchange online",
                      "oauth", "basic authentication", "secret", "rotate"],
         "body": """\
-The tracker sends email for one thing at present: a link that lets somebody
-who has forgotten their password set a new one. Until this is configured, a
-forgotten password means an administrator issuing a temporary one by hand,
-which works but does not scale past a handful of people.
+The tracker sends email for two things:
+
+* a link that lets somebody who has forgotten their password set a new one;
+* a six-digit sign-in code, when **Allow codes sent by email** is on and
+  somebody is using email as their second factor.
+
+Neither works until this is configured. Until then a forgotten password
+means an administrator issuing a temporary one by hand, which works but does
+not scale past a handful of people \u2014 and emailed codes are simply not
+offered, leaving an authenticator app as the only second factor.
 
 Only a SuperAdmin can see or change any of this.
 
@@ -889,12 +1000,37 @@ This button exists because nothing else will tell you. A reset request
 deliberately reveals nothing about whether it worked, so a wrong port is
 invisible from the sign-in screen.
 
+## Why the public address is a setting rather than read from the request
+
+The link in a reset email is built from **Public address of this app**, and
+never from the address the browser asked for. That is deliberate, and it is
+the reason the setting exists at all.
+
+If the link were built from the request, somebody could ask for a reset of
+**your** address while claiming to be a different site, and you would receive
+a real, working link pointing at a server of their choosing. Reading it from a
+setting only a SuperAdmin can change means there is nothing in the request for
+an attacker to influence.
+
+The practical consequence: if this is blank or wrong, reset links do not work
+or point somewhere useless, and no amount of correct mail configuration will
+fix it.
+
 ## Turning reset on
 
 Set **Allow self-service password reset** to On. The link appears on the
 sign-in screen only once email is actually working, so it can never offer
-something that quietly fails \u2014 if you have switched it on and the link is not
-there, look at Email status.
+something that quietly fails \u2014 if you have switched it on and the link is
+not there, the **Forgot-password link** row in Email status names which of
+the three conditions is missing: the setting, a working transport, or the
+public address of this application.
+
+## Emailed sign-in codes use the same settings
+
+**Allow codes sent by email**, under Two-factor authentication, needs
+nothing further here: it uses this transport, and stays unavailable while
+mail is not working. See the article on two-factor authentication for what
+it is for and when to leave it off.
 
 ## If mail is not arriving
 

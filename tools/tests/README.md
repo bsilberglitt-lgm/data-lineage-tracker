@@ -29,6 +29,9 @@ it, and they are kept so the same bug cannot come back quietly:
 | `t_tasks.py` | Tasks: the derived status and its two asymmetries, what a copy carries and what it drops, one parent inside the view being written, dependencies refused three ways, the date order rule, and that dragging a circle is not audited |
 | `t_tasksignal.js` | Which color a task's circle takes: the precedence in full, both routes to "not started", the automated blue, and the labels read out of the source so a color change cannot pass |
 | `t_email.py` | Password reset: a forged `Host` header ignored, the token in the fragment and not the query string, the same response for an address that exists and one that does not, the rate limit, and no mail setting or credential in any public response |
+| `t_avatarcrop.js` | The cropper's arithmetic in Node: zoom 1 fills the stage, no offset at any zoom leaves a gap, the rectangle drawn stays inside the source image, and zooming keeps the same point under the circle. Swept over many sizes and zooms rather than asserted at one, because an off-by-one that only shows on a portrait image at high zoom would pass a single example |
+| `t_avatar.py` | Profile pictures: the type taken from the bytes and not the filename, an SVG called .png refused, both caps, the existing picture surviving a refusal, the digest in the payload but never the image, a session required unlike the logo, and removal told apart from nothing-to-remove |
+| `t_2fa.py` | Two-factor authentication: enrollment only completing once a code is proved, a password buying a challenge rather than a session, the attempt cap, recovery codes used once and earning no remembered device, devices revoked by hand and by a password change, forced enrollment, and an administrator's reset stopping at somebody who outranks them |
 | `t_scopedurl.js` | Which view an API request is about: the scenario parameter never duplicated, and the explicit opt-out actually honored at its call site |
 
 Several need no running server. `t_publish.py` and `t_migration_0010.py` drive
@@ -75,6 +78,16 @@ a suite. Three rules follow from it:
   prompt. **Nothing changes the password of an account the suite borrows**: a
   test that rewrites a real person's credentials is a footgun, and it stayed
   harmless only because it could not get in.
+- **An account with two-factor authentication is handled, and that is new in
+  0.10.0.** A correct password returns a *challenge* rather than a session, so
+  `_client.finish_challenge` asks for a code — `--code`, `TEST_2FA_CODE` for
+  the harness, or a prompt; a recovery code works and is spent. Before it
+  existed, the day somebody enrolled their own account every suite here
+  reported "Could not sign in. Check the email and password", which is a
+  message about the one thing that was right. **Nothing changes the second
+  factor of a borrowed account either**, for the same reason as the password —
+  and that extends to `require_2fa`, which is deployment-wide: `t_2fa.py` will
+  not touch it unless the borrowed account is already enrolled.
 - **A suite borrows the database; it does not own it.** It may not assert a
   starting state it does not control — not "nothing is hidden", not "nothing is
   defined". Assert the *relationship* the check is reaching for, and restore
@@ -85,10 +98,20 @@ a suite. Three rules follow from it:
   `_client.unique_email` where resetting is not enough — a check about an
   account nobody has touched cannot be repeated on one the last run linked.
 
-**Run every suite twice, in any order, before believing it.** Three suites had
-the same second-run failure, and each reported it as nine permission checks
-failing rather than as a sign-in that never happened.
+  Three suites once had the same second-run failure, and each reported it as
+  nine permission checks failing rather than as a sign-in that never happened.
+
+- **A section must put back any deployment-wide switch it flips, before the
+  next section runs** — not only in the closing `finally`. `t_2fa.py` left
+  `allow_email_2fa` on, which made the next section's subject an account that
+  could be challenged by email, and ten assertions failed for a reason that
+  had nothing to do with what they were about.
+
+**Run every suite twice, in any order, before believing it.**
 
 A missing precondition should **stop** the suite with the reason and the exact
 command to fix it — not be checked with an ordinary assertion, which reports
-the cause everywhere except where it is.
+the cause everywhere except where it is. And a restore in a `finally` has to
+survive the state the crash left: reading a response as the shape it has when
+things went well is how `t_2fa.py` first crashed inside its own safety net,
+printing no summary at all.

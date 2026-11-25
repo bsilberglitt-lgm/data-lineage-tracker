@@ -37,6 +37,12 @@ and pan, and export as SVG, PNG or JPG — or print to PDF. Positions are saved.
 **Catalogs.** Systems, data flows, and a data elements glossary with PII and
 FERPA classification. Click any row for the full record.
 
+**Accounts and access.** Four roles, server-enforced on every request, with an
+append-only audit trail. Optional two-factor authentication — an authenticator
+app or an emailed code — which a SuperAdmin can require for everybody, with
+recovery codes and revocable remembered devices. Self-service password reset
+by email.
+
 **Governance inheritance.** A data element takes its owner and steward from the
 system or flow that carries it unless it overrides them, so accountability is
 recorded once. Every value shows whether it is inherited or overridden.
@@ -165,13 +171,16 @@ is the manual for using it.
 - **Schema:** Alembic migrations, applied automatically at startup.
 - **Configuration:** environment variables only, so the same container runs
   locally, on Render, and on AWS or Azure.
-- **Dependencies:** five Python packages, pinned to exact versions. The mail
-  module is standard library only, so adding email costs nothing to audit.
+- **Dependencies:** six Python packages, pinned to exact versions. The mail
+  module and the whole of the two-factor implementation are standard library
+  only; the sixth package, `segno`, draws the enrollment QR code and is pure
+  Python with no dependencies of its own.
 
 ```
 app.py            Backend: API handlers, seeding, startup
 db.py             Connection pool and the ? placeholder shim
-auth.py           Password hashing and policy, sessions, lockout, reset tokens
+auth.py           Password hashing and policy, sessions, lockout, reset tokens,
+                  TOTP and recovery codes
 permissions.py    Role hierarchy and permission checks
 audit.py          Append-only audit trail
 scenarios.py      Scenario scoping and copy-on-write
@@ -192,8 +201,6 @@ selftest.py       End-to-end verification
 
 Listed because knowing what is missing is part of deciding whether to adopt it.
 
-- **Two-factor authentication.** The preference exists and is locked off; TOTP
-  is the intended implementation.
 - **Single sign-on.** No OIDC or SAML — everyone has a local password. For an
   organization with an identity provider this is the most likely objection.
 - **Email notifications for tasks** — assignment and overdue. The mailer is

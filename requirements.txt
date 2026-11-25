@@ -26,3 +26,12 @@ psycopg[binary]==3.3.9
 psycopg-pool==3.3.3
 alembic==1.20.1
 SQLAlchemy==2.1.9
+
+# QR codes for two-factor enrollment (0.10.0). Pure Python with no
+# dependencies of its own, which is why it was acceptable here at all — the
+# alternative was writing a QR encoder, and a subtly wrong one still renders,
+# it just does not scan.
+#
+# It is used on exactly one screen, so enrollment degrades to the manual key
+# and the otpauth:// link if it is ever missing rather than failing outright.
+segno==1.6.6

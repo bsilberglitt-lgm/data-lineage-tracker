@@ -103,6 +103,27 @@ While you are in there: `SCREENS` maps a screen to the articles offered on it,
 so a new screen with no entry silently offers nothing, and a new article that
 names no screen can only be found by searching.
 
+**A setting's description says what it does; the article says why.** Ben asked
+for this in November 2026, trimming two Email descriptions and the two
+two-factor ones: "I'd prefer some of this deeper explanation to be in the KB
+articles, rather than on-screen — that way, it doesn't take up space and if
+someone really wants to dig in on why, they can find the article to learn
+about it."
+
+So a description in `DEFAULT_PREFERENCES` is one or two sentences: what the
+setting does, and any condition that stops it working. The reasoning behind it
+— why the public address is a setting rather than read from the request, why
+emailed codes are the weaker second factor, what a guard is protecting against
+— goes in the article. Somebody reading Preferences is deciding one thing; the
+paragraph explaining our threat model is for the person who went looking.
+
+**Move it rather than delete it.** When a description is shortened, the
+sentence that came out should land in the article covering that screen, in the
+same edit. Otherwise the reasoning is simply gone, and the next person to read
+the code has to reconstruct why the setting is shaped as it is. The forged-
+request explanation cut from `app_base_url` is now a section of `email-setup`
+for exactly that reason.
+
 ### 4. Check the adopter documentation at every release, too
 
 Reminder 3 covers `help_articles.py`, which is what a **user** reads. This is
@@ -2544,6 +2565,312 @@ positionally and always have, so a bare port is the obvious thing to type.
 A numeric positional is now expanded to `http://localhost:<port>`. The
 checklist passes a whole URL and did not hit this.
 
+### Two-factor authentication: nothing secret is stored
+
+0.10.0. The design notes live in migration `0023_two_factor.py`, which is the
+right place for them — the schema is the design. Four things are worth having
+here as well, because they are easy to undo from outside that file.
+
+**The TOTP secret is derived, not stored.**
+`HMAC-SHA256(TWOFA_SECRET_KEY, b"totp" || user_id || salt)[:20]`, with the salt
+in the clear in `app_user.totp_salt`. A symmetric secret cannot be hashed the
+way a password is — the server needs the same value the phone holds — so the
+choice was between encrypting a column and deriving the value. Encrypting means
+either a large compiled dependency or a cipher composed by hand out of HMAC,
+and it still leaves a ciphertext in all 45 nightly backups. Deriving leaves
+nothing: a stolen database contains no secret, not even an encrypted one. The
+cost is that `TWOFA_SECRET_KEY` must exist wherever the app runs and **losing
+or changing it voids every enrollment**, which `.env.example` and `INSTALL.md`
+both say.
+
+**A challenge is not a session.** A correct password buys one of three things:
+a session, a session flagged `must_enroll_2fa`, or a challenge — and a
+challenge grants nothing at all. `prepare()` gates every handler on the
+enrollment flag, which is why the preferences PUT needs the guard described
+below.
+
+**`require_2fa` can lock out the person who enables it.** Turning it on makes
+every account pending-enrollment, and `prepare()` refuses Preferences to a
+pending account — so with no working factor nobody can turn it back off. The
+PUT therefore refuses the change unless a factor could work. Worth remembering
+whenever a preference changes what `prepare()` allows: **a setting that gates
+the screen it is set from needs a way back.**
+
+**One builder for the user payload.** `load_session` and `issue_session` each
+built it, and only the first carried `must_enroll_2fa` — so forced enrollment
+appeared on a page refresh and not on the sign-in immediately before it. Both
+go through `public_user(conn, row)` now. The general shape is the hand-kept-list
+problem that `check_payloads.py` exists for, in a place that check cannot see.
+
+#### A 401 means something different inside a challenge
+
+`request()` in `index.html` calls `onAuthLost()` on **any** 401, which tears the
+app down to the sign-in screen. The challenge screen is not signed in, so a
+wrong code answered with a 401 would have destroyed the screen that was about
+to accept the right one. `/api/auth/2fa/verify` and `/resend` therefore answer
+**400 with `restart: true`** when the challenge itself is gone, and the screen
+sends the person back to sign-in with a sentence saying why. A status code is
+part of a contract with the client, not just a description of what happened.
+
+#### Shipping it broke every way of signing in to a test
+
+The worst thing 0.10.0 did was invisible from inside the application, and it
+was this: **a correct password stopped returning a session.** An enrolled
+account gets a challenge — no `csrf_token`, no cookie — and nothing in
+`tools/tests` or `selftest.py` knew that. So the moment Ben enrolled his own
+account, every suite that borrows it reported *"Could not sign in. Check the
+email and password"*, and `selftest.py` died with `KeyError: 'user'` at
+`me = body["user"]`. Both messages point at the credentials, which were
+correct, and neither mentions two-factor authentication.
+
+It is the same shape as the stale `tools/tests/README.md` and the un-pinned
+Babel preset: **a change can break the tooling that tests it without breaking
+the thing itself**, and the tooling is where nobody is looking. It is worse
+here because the feature arrives on *one account at a time* — it would have
+waited until Ben, or an adopter, happened to enroll, and then looked like the
+suites rotting rather than like a consequence of the release.
+
+`_client.finish_challenge` handles it in one place for the suites, and
+`Client.login` in `selftest.py` does the same for that script. Four details:
+
+- **The code comes from `--code`, `TEST_2FA_CODE` / `SELFTEST_2FA_CODE`, or a
+  prompt.** The prompt is the ordinary path, like the password; the variable
+  exists for the harness, which has no terminal.
+- **A recovery code is accepted at the same prompt**, because the reason
+  somebody is typing there may be that the phone is not to hand — and the
+  prompt says it will be spent, since it will.
+- **`remember` is never sent.** A test has no business acquiring a
+  trusted-device cookie; whatever reused that jar would silently skip the
+  factor it was meant to exercise.
+- **`--code` is a flag in `_client._args`, which is strict about unknown
+  options on purpose.** A mistyped `--emial` would otherwise fall through to a
+  prompt and read as the suite asking a fair question. That strictness is also
+  why `t_2fa.py` takes `TWOFA_GATE` as an environment variable rather than a
+  flag: `_args` runs at import time, from `base_url()`, so there is no moment
+  at which a suite could register one of its own.
+
+`t_2fa.py` covers the flow itself, 87 checks, run twice to prove it repeats.
+Three things it found that were assumptions rather than bugs, and one that was
+a bug in the suite:
+
+- **With emailed codes allowed, an account with no authenticator is challenged
+  by email rather than told to enroll.** Correct — whether email works is a
+  fact about the deployment, not the person — and ten assertions written on the
+  opposite belief failed at once. The behavior now has a check of its own, and
+  the email section turns `allow_email_2fa` back off before the next section,
+  because a section that leaves a deployment-wide switch flipped makes the
+  next one test something else.
+- **`require_2fa` is deployment-wide, so the suite refuses to touch it unless
+  the borrowed account is already enrolled.** Turning it on puts *every*
+  account into pending-enrollment, including the one the suite signed in with
+  — which would then be refused Preferences, so the restore could not run and
+  the suite would leave the requirement switched on. It is also the one thing
+  a suite must never do: change how a real person signs in to their own app.
+  Hence `TWOFA_GATE=yes` **and** an enrolled borrowed account, or the section
+  skips and says which.
+- **`mailer.problems()` refuses a password with no username**, which is why the
+  emailed-code section needs `smtp_username` set as well as `SMTP_PASSWORD`.
+- **The restore in the `finally` crashed inside the thing written to stop a
+  crash.** It read the preferences GET as a list of rows and died with
+  `TypeError: string indices must be integers` when that GET answered with an
+  error object instead — so no summary printed at all. It is shape-checked
+  now, and a restore it cannot *verify* says so rather than reporting success.
+
+#### A QR code can render perfectly and not scan
+
+Both faults that caused this were in how the image was *sized*, and neither is
+visible to any check in this project — the only test is a phone.
+
+- **Nothing may size the QR in CSS.** segno emits an `<svg>` with
+  `width`/`height` attributes and **no `viewBox`**, and an SVG with no viewBox
+  has no notion of how to scale its contents: a smaller CSS box **crops** the
+  drawing rather than shrinking it. `.qr-box svg` was pinned to 180px against a
+  version 9 symbol (53 modules, 285px as drawn), so about a third was clipped
+  off the right and bottom. It still looked like a QR code, because the part
+  that survived was one. The size comes from segno's `scale` in `app.py`; the
+  CSS rule carries a comment saying so, because tidying it is how this comes
+  back.
+- **`border=4`, the quiet zone the spec requires.** It was 2. Halving the
+  margin is the other way to produce a code that renders and does not scan.
+
+And the 500 that preceded it: `qr_svg` wrapped only `import segno` in its
+`try` while its own docstring promised enrollment would degrade to the manual
+key, and it used `io.StringIO` where segno's SVG writer emits **bytes**. That
+line had never executed — the assistant's sandbox has no `segno`, so every test
+took the not-installed path, and Ben's container was the first place the real
+call ran. Two lessons, both already in this file from other directions: **a
+guard has to cover the thing that actually breaks**, and a dependency the
+sandbox lacks means the success path is the one nobody has run.
+
+#### A 401 is only a lost session if there was a session
+
+Signing in with the wrong password answered **"Your session has ended."** —
+about the one thing that was not the problem. `request()` called `onAuthLost()`
+on any 401 and threw that sentence in place of the server's own, so the sign-in
+screen reported a session that had never existed.
+
+The fix is one clause, and the shape of it is the point: **a 401 means a
+session ended only if we believed we had one**, which is `session.csrf` being
+set. It is cleared the moment a session is lost and set when one is issued, so
+the anonymous screens — sign-in, forgot password, reset, the two-factor
+challenge — fall through to the server's message, which is the useful one. The
+alternative was a list of anonymous endpoints, which is the hand-kept list
+tracking another hand-kept list that `check_payloads.py` exists for.
+
+#### Two places held "which view am I in", and only one of them reset
+
+Ben: switching logins in the same browser showed the previous person's
+scenario on the diagram while the picker read **Current Architecture**.
+
+`viewScenario` is module-level — deliberately, so ~40 API calls do not each
+have to know about scoping — while the app shell holds `scenarioId` in React
+state, and `switchView` is the only thing that keeps the pair in step. Signing
+out unmounted the shell and left the module-level value where it was, so the
+next person's shell mounted with `scenarioId` null, correctly reading Current
+Architecture, while every fetch was still scoped to somebody else's scenario.
+
+`resetViewScope()` puts both back, and **where it is called is the part that
+was got wrong first.** It went into `loadSession`, which looked like "a session
+is starting" and is also what Preferences and the profile window call after a
+save (`onSettingsChanged` *is* `loadSession`) — so it dropped somebody out of
+the scenario they were working in the moment they saved their own name. The
+same bug, pointing the other way, introduced by the fix for it. It belongs at
+the session boundary and nowhere else: first load, sign-out, and a session lost
+underneath us.
+
+#### A toggle that reads On while the feature is inert
+
+`enable_self_service_reset` is one of three things `reset_enabled` requires —
+the others are a working transport and a public address — so Ben switched it
+on, saw no **Forgot your password?** link, and had nothing on the screen to
+tell him which of the three was missing. The answer was the credential, and a
+Preferences screen that shows a switch set to On is a confident wrong sentence
+about the state of the application.
+
+`Preferences → Email status` now has a **Forgot-password link** row carrying
+the computed answer *and* its parts, so the screen never re-derives the rule
+and disagrees with the server about it. This is the 0.9.0 lesson one level up:
+**a panel that reports readiness has to report the thing that decides it** —
+and the thing that decides it here was a setting on the same screen.
+
+#### Avatars: the logo's rules, minus the public endpoint
+
+A profile picture (0.10.0, migration 0024) reuses `inspect_image`, so it is
+identified by its **magic bytes** and SVG stays refused for the reason in
+reminder 7. Four columns on `app_user` rather than a table, because there is
+one per account, it is replaced rather than versioned, and it dies with the
+account. Caps are 256 KB and 1500px — lower than the logo's, because it is
+drawn about 28px across.
+
+Three things worth keeping:
+
+- **The endpoint requires a session, unlike the logo's.** The logo is a brand
+  mark on a page that is unauthenticated by definition; an avatar is a
+  photograph of a member of staff, and serving those anonymously is a
+  directory of faces at a state agency.
+- **`load_session` selects `avatar_etag` and not `avatar_data`.** That query
+  runs on every request; reading a quarter of a megabyte of image to answer
+  "who is signed in" would be a cost paid on every API call.
+- **The digest is in the image's URL, not only in its ETag header.** Replacing
+  the picture changes the URL, so a browser holding the old one by address
+  never has to be asked.
+
+**The person chooses which square is kept, because `object-fit: cover` does
+not.** The first version downscaled the whole image and let CSS crop it to the
+middle, so a photo that was not already square silently lost whatever fell
+outside the center. Ben: "websites I've used generally let you resize the
+picture (and move it left/right/up/down) with a circle showing the area that
+will remain in the display and the rest of the picture behind it a slightly
+faded version." `AvatarCropModal` does that — a 300px stage, a circular window
+with the rest dimmed, a size slider and drag to reposition.
+
+Four things about it are load-bearing:
+
+- **The stored image is the SQUARE, not the circle.** Every place an avatar is
+  drawn rounds it with `border-radius`, so storing a circle would mean
+  inventing a background color for the corners and baking it in. The circle is
+  a preview of what will be visible; the square around it is what is saved.
+- **The arithmetic is module-level, not inside the component**, so
+  `t_avatarcrop.js` can drive it in Node — the same rule the alignment and
+  task-circle geometry follow, for the same reason: arithmetic inside a
+  component is arithmetic nobody can check until Ben clicks on it. **No JSX in
+  that region**, or the suite's `eval` dies on a tag, which already happened
+  once to `TaskMark`.
+- **The clamp is what prevents a transparent wedge.** `cropClamp` keeps the
+  image covering the whole stage at every zoom, and `cropSourceRect` states
+  the same property in the units `drawImage` takes. Both are checked, swept
+  over many sizes and zooms, because an off-by-one that only shows on a
+  portrait image at high zoom would pass a single example — and the symptom is
+  a stored avatar with a transparent corner, baked in.
+- **Zoom is about the middle of the stage**, not the image's top-left, or the
+  picture lurches out from under the circle on every slider movement and
+  repositioning becomes a fight. The suite asserts the point under the circle
+  does not move, and that zooming in and back out returns the original
+  position.
+- **`CROP_STAGE` and the stylesheet are checked against each other.** The
+  stage size lives in both, and if they disagree the circle frames a different
+  square from the one that gets saved — which looks like the crop being
+  slightly wrong rather than like two numbers out of step.
+
+**`shrinkImage` is still the guard behind it.** It decodes with
+`createImageBitmap`, draws onto a canvas at 512px on the long side and uploads
+that. The cropper already hands back a 512px square, but if its canvas failed
+it hands back the **original** file, which may be several megabytes — so this
+is what keeps that fallback inside the server's caps rather than refused.
+Three things about it are load-bearing:
+
+- **Every failure path returns the original file.** No `createImageBitmap`, a
+  decode failure, a canvas the browser will not read back, a re-encode that
+  came out larger — all of them send what the person chose and let the server
+  judge it. The caps were doubled to 512 KB and 3000px at the same time, and
+  the comment at those constants says they are the refusal rather than the
+  resize, because the one thing not to conclude from a browser that shrinks
+  images is that the server can trust what it is sent.
+- **`imageOrientation: 'from-image'`**, with a retry without the option for
+  browsers that reject it rather than ignoring it. Canvas does not apply the
+  EXIF orientation tag that an `<img>` honors, so without this a photo taken
+  in portrait on a phone is stored on its side.
+- **PNG stays PNG and JPEG stays JPEG.** The server identifies the file from
+  its magic bytes, so re-encoding to a different type would make the content
+  type and the content disagree for a reason we introduced.
+
+**A contributor's picture is its linked account's picture**, resolved in
+`linked_accounts` — the one place a contributor learns anything about its
+account, which is what keeps the two from disagreeing, exactly as the title
+already does. The payload carries `account_user_id` and `avatar_etag`
+**together or not at all**: an id with no digest would have the browser request
+an image that is a 404, and a digest with no id gives it nowhere to ask.
+
+**The users list names its columns.** It was `SELECT u.*`, which the moment an
+avatar column existed meant reading `avatar_data` for every account to draw a
+26px circle — up to half a megabyte each, none of it sent, because
+`user_row_public` is a whitelist. `USER_LIST_COLUMNS` is derived from that
+whitelist rather than written out again, so the two cannot drift.
+
+`t_avatar.py` covers all of it, including that a refused upload leaves the
+existing picture alone — a rejected upload that wipes what was there is worse
+than one that simply fails — and that both lists carry the digest and no
+bytes.
+
+#### Python processes `\uXXXX` even inside a raw string
+
+A raw string does not protect a unicode escape: typing `r"` then a
+backslash, `u2014`, `"` gives you one em dash, not six characters.
+`help_articles.py` stores its dashes as backslash-`u2014` escapes in the
+source, so a script editing that file has to **double the backslash** to
+match them; the `r` prefix does not help, which cost two failed edits
+before it was measured rather than assumed.
+
+And this paragraph lost its own escapes the first time it was written,
+which is why it is now spelled out in words: the edit that recorded the
+lesson was interpreted by the very rule it describes, leaving a sentence
+claiming that an em dash is an em dash. **A note about escaping has to
+survive being written down.**
+
+And `tools/harness_setup.py` **ignores its argument** — it always builds at
+`/tmp/h2` on port 8900. Passing a different path silently gets you the same
+harness.
+
 ## Accessibility
 
 `ACCESSIBILITY.md` records the WCAG contrast measurements for every system-type
@@ -2554,9 +2881,6 @@ AA, so an arbitrary hex value would bypass that guarantee. The known gaps
 
 ## Not yet built
 
-- Two-factor authentication. TOTP via an authenticator app needs no email at
-  all, so this is no longer blocked on anything — the `require_2fa` preference
-  is in place and locked off. Email-based codes would use the 0.9.0 mailer.
 - Email notifications for tasks (assignment, overdue). The mailer is built and
   the only question left is the shape: per-event alerts raise who-opts-in and
   what-stops-a-mail-storm, so a scheduled digest is probably the better first

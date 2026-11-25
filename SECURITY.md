@@ -301,12 +301,90 @@ the application depends on them being remote.
 
 ---
 
+## Two-factor authentication
+
+Optional per user, or required for everybody by a SuperAdmin
+(`require_2fa`). An authenticator app (TOTP, RFC 6238) is the primary factor;
+a six-digit emailed code is a second option a deployment can allow or refuse
+(`allow_email_2fa`).
+
+**No secret is stored, which is the decision a reviewer should check first.**
+A TOTP secret is symmetric — the server needs the same value the phone holds —
+so unlike a password it cannot be hashed. Rather than encrypt a column, the
+secret is **derived** on demand:
+
+```
+secret = HMAC-SHA256(TWOFA_SECRET_KEY, "totp" || user_id || salt)[:20]
+```
+
+`app_user.totp_salt` holds the salt, which is random per enrollment and **not
+secret** — exactly like a password salt. So a stolen database, or any of the
+retained nightly backups, contains no secret at all: not even an encrypted
+one, because there is nothing to decrypt. `TWOFA_SECRET_KEY` lives only in the
+environment where the application runs, with the mail credential.
+
+The costs of that choice, stated rather than buried: the key must exist
+wherever the application runs, and **losing or changing it voids every
+enrollment** — everyone re-enrolls. It is not a credential anybody
+authenticates with and is useless without the database, so it does not need
+rotating on a schedule. `INSTALL.md` says the same thing where somebody
+deploying will read it.
+
+What else is worth knowing:
+
+- **Enrollment is not complete until a code has been proved.** A salt alone
+  means somebody started and closed the window; treating that as enrolled
+  would challenge them for a code they cannot produce.
+- **A correct password buys a challenge, not a session.** The challenge row
+  grants nothing, carries no cookie, and is identified by a token stored as a
+  SHA-256 hash. Five wrong answers kill it — counted against the challenge
+  rather than the code, because an emailed code sits still until it expires
+  instead of moving every thirty seconds.
+- **Ten recovery codes**, shown once and stored as SHA-256 hashes. SHA-256
+  rather than a slow hash for the same reason as the reset token: 40 bits of
+  random output has nothing to brute-force, and this check happens on a path
+  where somebody is already locked out.
+- **"Remember this device for 30 days" is a second credential class** and is
+  treated as one: the raw token lives only in the browser's cookie, the
+  database holds a SHA-256 of it, and it is revocable by the user. A password
+  change revokes every one of them. A recovery code **never** earns one —
+  somebody using one has lost their authenticator, which is the moment to
+  trust the browser less rather than more.
+- **An administrator can clear somebody's second factor but cannot read it**,
+  and cannot clear it for anybody who outranks them. Every enrollment,
+  disablement, reset, recovery-code use and device revocation is audited.
+- **Turning your own off asks for the password again**, because a session is
+  what an attacker has if they borrowed an unlocked laptop.
+
+## Profile pictures
+
+A user may upload a PNG or JPEG as their avatar. It is identified by its
+**magic bytes** rather than by filename or by the browser's content type, and
+the type established at upload is the type served, so the two can never
+disagree. SVG is deliberately not accepted: an SVG can carry script and this
+is served from our own origin. Capped at 512 KB and 3000 pixels a side — two
+caps rather than one, because a byte cap alone would not stop a decompression
+bomb (a huge image of flat color compresses to almost nothing and still has to
+be decoded).
+
+The browser downscales the image to 512 pixels on the long side before
+uploading, so an ordinary photo arrives well inside both caps. **That is a
+convenience and not a control**: the caps are enforced on the server, which
+assumes nothing about what the client did.
+
+Unlike the logo, **this endpoint requires a session.** The logo is a brand mark
+chosen for a public sign-in page; an avatar is a photograph of a member of
+staff, and serving those anonymously would be a directory of faces at a state
+agency. It is readable by any signed-in user, which is already true of the
+name it sits beside. Served with `nosniff` and `Content-Security-Policy:
+default-src 'none'`.
+
+---
+
 ## What this does not do
 
 Listed because a review will ask, and because finding out later is worse.
 
-- **No two-factor authentication.** The preference exists and is switched off;
-  TOTP is the intended implementation and is not built.
 - **No single sign-on.** No OIDC or SAML. Everyone has a local password. For an
   organization with an identity provider this is the most likely objection, and
   it is on the roadmap.

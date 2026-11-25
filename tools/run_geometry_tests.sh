@@ -31,6 +31,7 @@ SUITES=(
   tools/tests/t_autoname.js   # the auto-filled flow name
   tools/tests/t_tasksignal.js  # which color a task's circle takes
   tools/tests/t_scopedurl.js  # which view an API request is about
+  tools/tests/t_avatarcrop.js # the avatar cropper: zoom, pan, stored square
 )
 
 echo "Running the geometry suites in Docker (no local Node needed)…"

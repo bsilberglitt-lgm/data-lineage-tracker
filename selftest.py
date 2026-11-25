@@ -9,7 +9,8 @@ Usage:
     python3 selftest.py --email you@example.gov --password 'YourPassword'
     python3 selftest.py https://datalineagetracker.com --email ... --password ...
 
-Credentials may also come from SELFTEST_EMAIL / SELFTEST_PASSWORD.
+Credentials may also come from SELFTEST_EMAIL / SELFTEST_PASSWORD, and a
+second-factor code from --code or SELFTEST_2FA_CODE if the account has one.
 Add --insecure to skip TLS verification (see the note about macOS below).
 
 The account used must be an Administrator or SuperAdmin: the role-enforcement
@@ -54,6 +55,8 @@ BASE = _target.rstrip("/")
 INSECURE = "--insecure" in sys.argv
 EMAIL = arg_value("email", os.environ.get("SELFTEST_EMAIL"))
 PASSWORD = arg_value("password", os.environ.get("SELFTEST_PASSWORD"))
+# Only used when the account has a second factor; prompted for otherwise.
+CODE = arg_value("code", os.environ.get("SELFTEST_2FA_CODE"))
 
 passed = failed = 0
 failures = []
@@ -124,11 +127,49 @@ class Client:
             except ValueError:
                 return e.code, raw
 
-    def login(self, email, password):
+    def login(self, email, password, code=None):
+        """Sign in, completing a two-factor challenge if one comes back.
+
+        **A correct password stopped being enough in 0.10.0.** An account with
+        a second factor gets a challenge instead of a session — no
+        `csrf_token`, no cookie — so the line below that reads `body["user"]`
+        died with `KeyError: 'user'` the moment anybody enrolled. Nothing was
+        wrong with the application or with this script; shipping the feature
+        broke the thing that tests it, which is the one place nobody thinks to
+        look.
+
+        The code comes from `--code`, `SELFTEST_2FA_CODE`, or a prompt. A
+        recovery code works too and is spent when used, which the prompt says.
+        `remember` is not sent: a test has no business asking to be trusted.
+        """
         status, body = self.request("POST", "/api/auth/login",
                                     {"email": email, "password": password})
+        if status != 200 or not isinstance(body, dict) or not body.get("twofa"):
+            if status == 200:
+                self.csrf = body.get("csrf_token")
+            return status, body
+
+        tw = body["twofa"]
+        if not code:
+            print("\n  This account has two-factor authentication.")
+            if tw.get("method") == "email":
+                print("  A code has been emailed to it.")
+            print("  Enter the code from your authenticator app, or one of your")
+            print("  recovery codes — a recovery code is used up.")
+            try:
+                code = input("  Code: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                sys.exit(2)
+        status, body = self.request(
+            "POST", "/api/auth/2fa/verify",
+            {"challenge": tw.get("challenge"), "code": code})
         if status == 200:
             self.csrf = body.get("csrf_token")
+        elif isinstance(body, dict):
+            print(f"\n  The second factor was not accepted: "
+                  f"{body.get('error', status)}")
+            print("  A code lasts about thirty seconds; try the next one.")
         return status, body
 
 
@@ -191,7 +232,7 @@ try:
     section("Sign in")
     s, body = admin.login(EMAIL, "definitely-the-wrong-password")
     check("wrong password rejected", s == 401, f"got {s}")
-    s, body = admin.login(EMAIL, PASSWORD)
+    s, body = admin.login(EMAIL, PASSWORD, CODE)
     check("correct password accepted", s == 200, f"got {s}: {body}")
     if s != 200:
         raise SystemExit("Cannot continue without a session.")

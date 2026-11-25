@@ -73,6 +73,12 @@ services:
       # change it every time the database is recreated. Never set this on a
       # deployed environment.
       BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE: ${BOOTSTRAP_SUPERADMIN_SKIP_PASSWORD_CHANGE:-}
+      # Two-factor authentication (0.10.0). Every TOTP secret is DERIVED
+      # from this key rather than stored, so a stolen database holds no
+      # secret at all — and losing this key voids every enrollment.
+      # Authenticator-app enrollment refuses, with a message naming this
+      # variable, until it is set to at least 32 characters.
+      TWOFA_SECRET_KEY: ${TWOFA_SECRET_KEY:-}
       # Emergency password reset. Normally unset; see RELEASE_CHECKLIST.md.
       BOOTSTRAP_SUPERADMIN_RESET: ${BOOTSTRAP_SUPERADMIN_RESET:-}
       # Mail credentials, for testing email locally. Only the secret lives in

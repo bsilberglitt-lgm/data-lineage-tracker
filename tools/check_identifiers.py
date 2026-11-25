@@ -54,7 +54,10 @@ HANDLER_ATTRS = ("onClick", "onChange", "onSubmit", "onKeyDown", "onKeyUp",
                  "onMouseMove", "onMouseEnter", "onMouseLeave", "onDragStart",
                  "onDrop", "onDragOver", "onWheel", "onScroll", "onToggle")
 
-GLOBAL_FUNCS = {"alert", "confirm", "prompt", "fetch"}
+# `createImageBitmap` decodes an uploaded image off the main thread so the
+# avatar can be downscaled before it is sent. It is a browser global, which
+# is exactly what this set is for.
+GLOBAL_FUNCS = {"alert", "confirm", "prompt", "fetch", "createImageBitmap"}
 
 # Functions called in index.html that live somewhere else. React and the
 # browser globals are covered by GLOBALS below; these are the project's own

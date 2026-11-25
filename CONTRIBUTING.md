@@ -132,7 +132,7 @@ change, click through the part you touched.
 ./tools/run_geometry_tests.sh    # in Docker; no local Node needed
 ```
 
-Six suites covering the pure functions behind the diagram — alignment
+Seven suites covering the pure functions behind the diagram and the avatar cropper — alignment
 snapping, where a task's circle sits, where a flow's label sits, the generated
 flow name, which color a task takes, and which view an API request is about.
 
@@ -155,6 +155,15 @@ page actually serves. **It cannot catch rendering bugs.**
 The focused suites in `tools/tests/` are not the gate; each was written to
 reproduce one bug before fixing it, and they are kept so it cannot come back
 quietly. See `tools/tests/README.md`.
+
+**One thing to know before you run any of them** (0.10.0): once the account
+you sign in as has two-factor authentication set up, every suite and
+`selftest.py` will ask for a code, because a correct password no longer returns
+a session on its own. The prompt takes a code from your authenticator app or
+one of your recovery codes; `--code`, `TEST_2FA_CODE` and `SELFTEST_2FA_CODE`
+exist for anything without a terminal. Before that was handled, the suites
+answered "Could not sign in. Check the email and password" — a message about
+the one thing that was right.
 
 ### What CI does
 

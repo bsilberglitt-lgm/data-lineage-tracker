@@ -723,6 +723,20 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .user-menu .avatar { width: 28px; height: 28px; border-radius: 50%;
   background: #2E75B6; color: #fff; display: flex; align-items: center;
   justify-content: center; font-weight: 700; font-size: 11px; flex-shrink: 0; }
+/* The picture fills the same circle the initials sit in, so the chip does not
+   change size when somebody adds one. `object-fit: cover` crops to the circle
+   rather than squashing a rectangular photo — the alternative distorts faces,
+   which is the one subject where that is unmistakable. */
+.user-menu .avatar img { width: 100%; height: 100%; border-radius: 50%;
+  object-fit: cover; display: block; }
+.user-menu .avatar.has-photo { background: none; }
+/* The preview in the profile window: the same circle, larger, beside its
+   buttons. */
+.avatar-edit { display: flex; align-items: center; gap: 12px; margin: 4px 0 10px; }
+.avatar-preview { width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+  background: #2E75B6; color: #fff; display: flex; align-items: center;
+  justify-content: center; font-weight: 700; font-size: 18px; overflow: hidden; }
+.avatar-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .user-menu-who { min-width: 0; text-align: left; line-height: 1.25; }
 .user-menu-who b { display: block; font-size: 12.5px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
@@ -875,6 +889,95 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #
 .type-legend-row .tl-desc { font-size: 12px; color: #6b7684; line-height: 1.45; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* Two-factor authentication (0.10.0).
+   The enrollment box is wider than the sign-in box because a QR code at a
+   scannable size does not fit in 360px. */
+.login-box-wide { max-width: 460px; }
+/* `.check-inline` sets `gap: 6px`, which is right for a checkbox sitting in a
+   form row among other fields and too tight on the sign-in screen, where the
+   row stands on its own between an input and a button. Ben reported the
+   30-day caption as too close to its box. The reused-CSS lesson again: the
+   class carries the spacing of the place it was written for. */
+.login-box .check-inline { gap: 10px; margin: 2px 0 12px; }
+/* ===== The avatar cropper =====
+   A square stage with a circular window cut out of a dimmed cover. The hole is
+   made with `box-shadow` spreading outward from a border-radius circle rather
+   than with two stacked shapes: one element, and it cannot drift out of
+   register with the circle it is supposed to frame. The stage clips the
+   shadow, which is why the spread can be an arbitrary 9999px. */
+.crop-stage { position: relative; width: 300px; height: 300px; margin: 0 auto;
+  overflow: hidden; background: #22262b; border-radius: 6px;
+  touch-action: none; cursor: grab; user-select: none; }
+.crop-stage:active { cursor: grabbing; }
+.crop-stage img { position: absolute; transform-origin: top left;
+  /* Dragged, not selected or saved by a long press. */
+  -webkit-user-drag: none; user-select: none; pointer-events: none; }
+.crop-hole { position: absolute; left: 0; top: 0; width: 300px; height: 300px;
+  border-radius: 50%; box-shadow: 0 0 0 9999px rgba(255,255,255,0.62);
+  pointer-events: none; }
+/* A thin ring on the circle itself, so the edge of the visible area is legible
+   against a light photo as well as a dark one. */
+.crop-ring { position: absolute; left: 0; top: 0; width: 300px; height: 300px;
+  border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(27,58,92,0.55);
+  pointer-events: none; }
+.crop-stage:focus-visible { outline: 2px solid #2E75B6; outline-offset: 2px; }
+.crop-zoom { display: flex; align-items: center; gap: 10px; margin: 12px auto 0;
+  max-width: 300px; font-size: 12px; color: #555; }
+.crop-zoom input[type="range"] { flex: 1; }
+/* The circle beside a name in a list. Sized once here so the two tables and
+   the corner chip cannot drift apart in how big a person looks. */
+.avatar-cell { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  background: #2E75B6; color: #fff; display: flex; align-items: center;
+  justify-content: center; font-weight: 700; font-size: 10px; overflow: hidden; }
+.avatar-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Only a real picture is clickable \u2014 there is nothing to enlarge about two
+   letters, and a pointer cursor over one would promise something. */
+.avatar-cell.has-photo { cursor: zoom-in; background: none; }
+.avatar-col { width: 34px; padding-right: 0; }
+/* The enlarged view. `max-width`/`max-height` in viewport units rather than a
+   fixed size: the stored image may be anything from 56px to 3000px square, and
+   a fixed box would either blow up a small one or crop a large one. */
+.avatar-big { display: flex; justify-content: center; }
+.avatar-big img { max-width: min(360px, 70vw); max-height: 70vh;
+  border-radius: 8px; display: block; }
+/* A value somebody cannot change, drawn as a field so the window reads as one
+   form. `readOnly` keeps it selectable and keyboard-reachable, so the gray is
+   the only thing saying "not yours to edit" — which is why it is stated here
+   rather than left to the browser's own disabled styling, which varies. */
+/* Left of the buttons, which a modal footer pushes to the right. */
+.modal-help-link { margin-right: auto; font-size: 13px; }
+input.input-fixed, input.input-fixed:focus {
+  background: #f4f6f8; color: #555; cursor: default; border-color: #dfe3e8;
+  outline: none; box-shadow: none;
+}
+.qr-box { display: flex; justify-content: center; margin: 12px 0; }
+/* **Do not give this a width or a height.** The generated <svg> carries
+   width/height attributes and no viewBox, so a CSS box smaller than the
+   drawing crops it rather than scaling it — which yields a QR code that looks
+   right and cannot be scanned. A 180px pin here cut about a third off a
+   version 9 symbol and reached Ben. The size is set by segno's `scale` in
+   app.py; change it there. */
+.qr-box svg { display: block; background: #fff; }
+.key-box { margin: 10px 0; }
+/* The key is typed off the screen, so it gets a monospaced font with real
+   letter spacing: 32 characters of base32 are hard enough without O/0 and
+   I/1 sitting flush against each other. */
+.key-groups { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px; letter-spacing: 1px; background: #f4f6f8; border: 1px solid #dfe3e8;
+  border-radius: 6px; padding: 10px 12px; margin: 6px 0; word-break: break-all; }
+.rc-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px; margin: 10px 0; }
+.rc-list code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px; letter-spacing: 1px; background: #f4f6f8;
+  border: 1px solid #dfe3e8; border-radius: 4px; padding: 4px 8px; text-align: center; }
+.rc-actions { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+/* Recovery codes are the one thing in this app somebody prints, so the print
+   stylesheet keeps them and drops the furniture around them. */
+@media print {
+  .rc-actions, .login-sub, .check-inline { display: none; }
+  .rc-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 </style>
 </head>
 <body>
@@ -940,6 +1043,24 @@ let viewScenario = null;
 let viewShowHidden = false;
 const setViewScenario = (id) => { viewScenario = id === null ? null : Number(id); };
 const setViewShowHidden = (on) => { viewShowHidden = !!on; };
+
+// Put both back to Current Architecture. **Called whenever the signed-in user
+// changes**, and that is a bug fix rather than tidiness.
+//
+// These two are module-level while the app shell holds `scenarioId` in React
+// state, and `switchView` is the only thing that keeps the pair in step. So
+// signing out left a scenario id sitting here: the shell unmounted, the next
+// person signed in and their shell mounted with `scenarioId` null — the picker
+// correctly reading **Current Architecture** — while every fetch was still
+// scoped to the previous user's scenario. Ben reported it as the diagram
+// showing the other person's view with the right thing selected, which is
+// exactly what two places holding one fact looks like when only one of them
+// resets.
+//
+// Reset at the session boundary rather than on the shell's mount, because the
+// shell's first fetches happen in effects whose order relative to one another
+// is not something to depend on.
+const resetViewScope = () => { setViewScenario(null); setViewShowHidden(false); };
 
 // Endpoints that are the SAME whatever view you are in: accounts, settings,
 // release notes, and the scenario machinery itself.
@@ -1009,11 +1130,91 @@ async function request(method, url, data, { unscoped = false } = {}) {
   }
   if (method !== 'GET' && session.csrf) opts.headers['X-CSRF-Token'] = session.csrf;
   const r = await fetch(url, opts);
-  if (r.status === 401) { onAuthLost(); throw new ApiError(401, { error: 'Your session has ended.' }); }
+  // A 401 means a session has ended ONLY IF we believed we had one. Without
+  // that test, signing in with the wrong password answered "Your session has
+  // ended." — which is about the one thing that was not the problem, and sent
+  // Ben looking for a session that had never existed. Asking whether we hold a
+  // CSRF token is the executable form of "were we signed in": it is set when a
+  // session is issued and cleared the moment one is lost, so the anonymous
+  // screens (sign-in, forgot password, reset, the two-factor challenge) fall
+  // through to the server's own message, which is the useful one. A list of
+  // anonymous endpoints would be the same answer as a hand-kept list that has
+  // to track another one — see check_payloads.py.
+  if (r.status === 401 && session.csrf) {
+    onAuthLost();
+    throw new ApiError(401, { error: 'Your session has ended.' });
+  }
   const ctype = r.headers.get('Content-Type') || '';
   const payload = ctype.includes('json') ? await r.json().catch(() => ({})) : await r.text();
   if (!r.ok) throw new ApiError(r.status, typeof payload === 'object' ? payload : { error: payload });
   return payload;
+}
+
+// ===== Shrinking an image before it is uploaded =====
+// An avatar is drawn 28px across in the corner and 56px in the profile window,
+// so 512 on the long side is already generous for a high-resolution screen. A
+// photo straight off a phone is several thousand pixels and several megabytes;
+// sending that would be refused by the caps in app.py, and raising the caps far
+// enough to accept it would mean carrying those megabytes through all 45
+// nightly backups to draw a circle.
+//
+// So the browser resizes first. **The server caps are still the boundary** —
+// this is a convenience, and `MAX_AVATAR_BYTES` / `MAX_AVATAR_DIMENSION` say so
+// in a comment, because the one thing not to conclude from this function is
+// that the server can now trust what it is sent.
+const AVATAR_TARGET_PX = 512;
+
+async function shrinkImage(file, maxSide = AVATAR_TARGET_PX) {
+  // Returns a Blob to upload, or **the original file** if anything at all goes
+  // wrong. Every return path here is a working upload: a browser without
+  // createImageBitmap, a decode failure, a canvas the browser refuses to read
+  // back — all of them fall through to sending what the person chose, and the
+  // server then accepts or refuses it on its own terms. A guard has to cover
+  // the thing that actually breaks, and the thing that breaks in image code is
+  // the image.
+  try {
+    // Only the two types the server will store. Anything else is sent as-is so
+    // the refusal comes from the server, with its own wording, rather than from
+    // a silent conversion here.
+    if (!/^image\/(png|jpeg)$/.test(file.type || '')) return file;
+    let bitmap;
+    try {
+      // `from-image` applies the EXIF orientation. Without it a photo taken in
+      // portrait on a phone is drawn on its side, because canvas ignores the
+      // orientation tag that an <img> would honor.
+      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (e) {
+      // Older browsers reject the options argument rather than ignoring it.
+      bitmap = await createImageBitmap(file);
+    }
+    const side = Math.max(bitmap.width, bitmap.height);
+    if (!side || side <= maxSide) {
+      if (bitmap.close) bitmap.close();
+      return file;
+    }
+    const scale = maxSide / side;
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { if (bitmap.close) bitmap.close(); return file; }
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    if (bitmap.close) bitmap.close();
+    // PNG stays PNG and JPEG stays JPEG, so the bytes the server inspects are
+    // the type it was told about and the magic-byte check cannot disagree with
+    // the content type for a reason we introduced.
+    const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    const blob = await new Promise(res => canvas.toBlob(res, type, 0.9));
+    // A re-encode that came out LARGER is not a saving. This happens with a
+    // small flat-color PNG, where our output carries more overhead than the
+    // original did.
+    if (!blob || blob.size >= file.size) return file;
+    return blob;
+  } catch (e) {
+    return file;
+  }
 }
 
 // Multipart uploads can't go through request(): FormData sets its own
@@ -1030,7 +1231,13 @@ async function uploadFile(url, formData) {
     method: 'POST', credentials: 'same-origin',
     headers: { 'X-CSRF-Token': session.csrf }, body: formData,
   });
-  if (r.status === 401) { onAuthLost(); throw new ApiError(401, { error: 'Your session has ended.' }); }
+  // Same rule as request(): only a 401 against a session we thought we had is
+  // a session ending. An upload is always made from a signed-in screen, so
+  // this branch is the usual one — but the two must not disagree.
+  if (r.status === 401 && session.csrf) {
+    onAuthLost();
+    throw new ApiError(401, { error: 'Your session has ended.' });
+  }
   const text = await r.text();
   let payload;
   try { payload = JSON.parse(text); }
@@ -1046,11 +1253,17 @@ async function uploadFile(url, formData) {
   return payload;
 }
 
+// The third argument is forwarded to request(), which is what makes
+// `{ unscoped: true }` mean anything. It used to be dropped here, so a call
+// that asked not to be view-scoped was scoped anyway — a bypass that does not
+// bypass, which is the shape of bug CLAUDE.md records under "a comment cannot
+// opt out of anything". The auth endpoints are the callers that need it: they
+// are about an account, not about a view.
 const api = {
-  get: (url) => request('GET', url),
-  post: (url, data) => request('POST', url, data === undefined ? {} : data),
-  put: (url, data) => request('PUT', url, data === undefined ? {} : data),
-  del: (url) => request('DELETE', url),
+  get: (url, _unused, opts) => request('GET', url, undefined, opts),
+  post: (url, data, opts) => request('POST', url, data === undefined ? {} : data, opts),
+  put: (url, data, opts) => request('PUT', url, data === undefined ? {} : data, opts),
+  del: (url, opts) => request('DELETE', url, undefined, opts),
   // Fire-and-forget for high-frequency writes like node dragging.
   quiet: (method, url, data) => request(method, url, data).catch(() => {}),
 };
@@ -5296,6 +5509,7 @@ function ElementsTable({ elements, onSelect }) {
 
 function ContributorsTable({ contributors, onSelect }) {
   const { sorted, sort, toggle } = useSort(contributors, 'contributor_id');
+  const [bigAvatar, setBigAvatar] = useState(null);
   // The column only appears once there is something to show in it. Only a
   // SuperAdmin is sent deactivated contributors at all, so for everyone else
   // this stays false and the table is unchanged.
@@ -5304,6 +5518,7 @@ function ContributorsTable({ contributors, onSelect }) {
     {contributors.length === 0 && <div className="empty-state">No contributors yet.</div>}
     {contributors.length > 0 && <table className="data-table">
       <thead><tr>
+        <th className="avatar-col"></th>
         <SortHeader label="ID" sortKey="contributor_id" sort={sort} toggle={toggle} />
         <SortHeader label="Name" sortKey="name" sort={sort} toggle={toggle} />
         <SortHeader label="Title" sortKey="title" sort={sort} toggle={toggle} />
@@ -5316,6 +5531,15 @@ function ContributorsTable({ contributors, onSelect }) {
         <tr key={c.contributor_id}
             className={'clickable' + (isDeactivated(c) ? ' row-hidden' : '')}
             onClick={()=>onSelect(c.contributor_id)}>
+          <td className="avatar-col">
+            {/* A contributor's picture is their linked ACCOUNT's picture.
+                Somebody who will never sign in has no account and so no
+                picture, and shows initials \u2014 which is the honest answer
+                rather than a gap. */}
+            <Avatar userId={c.account_user_id} etag={c.avatar_etag} name={c.name}
+                    onEnlarge={() => setBigAvatar({
+                      userId: c.account_user_id, etag: c.avatar_etag, name: c.name })} />
+          </td>
           <td>{c.contributor_id}</td><td><strong>{c.name}</strong></td>
           <td>{c.title||'—'}</td><td>{c.organization_unit||'—'}</td>
           <td>{c.governance_role||'—'}</td><td>{c.contact_email||c.email||'—'}</td>
@@ -5323,6 +5547,7 @@ function ContributorsTable({ contributors, onSelect }) {
             ? <span className="fd-off">deactivated</span> : '—'}</td>}
         </tr>))}</tbody>
     </table>}
+    {bigAvatar && <AvatarModal {...bigAvatar} onClose={() => setBigAvatar(null)} />}
   </div>);
 }
 
@@ -5567,6 +5792,32 @@ function EmailStatus({ notify, reloadKey }) {
         <div className="pref-control">
           {info.transport === 'none' ? '—'
             : info.secret_present ? 'Present' : 'Missing'}
+        </div>
+      </div>
+      {/* The row Ben needed: whether "Forgot your password?" is on the
+          sign-in screen, and when it is not, which of the three conditions is
+          missing. The preference reading On is not the same as the link being
+          there, and nothing used to say so. */}
+      <div className="pref-row">
+        <div className="pref-label">
+          <b>Forgot-password link</b>
+          <span>
+            {info.reset_link_offered
+              ? 'Shown on the sign-in screen.'
+              : !info.reset_preference_on
+                ? 'Hidden. Switch on "Allow self-service password reset" above.'
+                : (info.problems && info.problems.length > 0)
+                  ? 'Hidden until email delivery works — see the reasons below.'
+                  : !info.app_base_url
+                    ? 'Hidden because the public address of this app is not ' +
+                      'set. Reset links are built from that setting and never ' +
+                      'from the address of the request, so there is nothing to ' +
+                      'put in the message.'
+                    : 'Hidden.'}
+          </span>
+        </div>
+        <div className="pref-control">
+          {info.reset_link_offered ? 'Offered' : 'Hidden'}
         </div>
       </div>
       {info.problems && info.problems.length > 0 && (
@@ -7613,11 +7864,300 @@ function UserFormModal({ user, contributors, assignableRoles, onClose, onSave })
   );
 }
 
+// ===== Choosing which part of a picture to use =====
+// Ben: "websites I've used generally let you resize the picture (and move it
+// left/right/up/down) with a circle showing the area that will remain in the
+// display and the rest of the picture behind it a slightly faded version."
+//
+// Before this, the browser shrank the whole image and `object-fit: cover`
+// cropped it to the middle, so a photo that was not already square lost
+// whatever fell outside the center and nobody could say which part to keep.
+//
+// **The stored image is the square, not the circle.** Every place an avatar is
+// drawn rounds it with `border-radius`, so storing a circle would mean
+// inventing a background color for the corners and baking it in. The circle in
+// here is therefore a *preview of what will be visible*, and the square around
+// it is what gets saved.
+//
+// The geometry is deliberately in one place and stated once:
+//
+//   baseScale = STAGE / min(naturalWidth, naturalHeight)
+//
+// At zoom 1 that makes the shorter side exactly fill the stage, which is the
+// most of the picture that can be shown without a gap. Zoom multiplies it, and
+// the offset is clamped so the stage is always covered — pan can never expose
+// a corner, which is the one state that would store a transparent wedge.
+const CROP_STAGE = 300;      // must match .crop-stage in the CSS above
+const CROP_OUTPUT = 512;     // what gets stored, square
+const CROP_MAX_ZOOM = 4;
+
+// ===== Cropper geometry =====
+// Pure arithmetic, module-level and deliberately outside the component, so
+// `tools/tests/t_avatarcrop.js` can drive it in Node. The rule this follows is
+// the one the alignment and task-circle geometry already follow: there is no
+// browser in the assistant's sandbox, so arithmetic that lives inside a
+// component is arithmetic nobody can check until Ben clicks on it — and the
+// failure here is a stored picture with a transparent wedge in one corner,
+// which is exactly the shape of thing that gets noticed late.
+//
+// **No JSX anywhere in this region.** The suite evaluates a slice of the file,
+// and a tag inside it takes the whole suite down with a syntax error. That
+// already happened once, to `TaskMark`.
+
+// At zoom 1 the shorter side exactly fills the stage: the most of the picture
+// that can be shown without a gap.
+function cropBaseScale(natW, natH, stage) {
+  const side = Math.min(natW || 0, natH || 0);
+  return side > 0 ? stage / side : 1;
+}
+
+// Keep the stage covered. The offset is the image's top-left in stage pixels,
+// so it must be <= 0 and no further negative than the overhang.
+function cropClamp(pos, natW, natH, scale, stage) {
+  const minX = stage - natW * scale;
+  const minY = stage - natH * scale;
+  return {
+    x: Math.min(0, Math.max(minX, pos.x)),
+    y: Math.min(0, Math.max(minY, pos.y)),
+  };
+}
+
+// The offset that centers the image in the stage.
+function cropCenter(natW, natH, scale, stage) {
+  return { x: (stage - natW * scale) / 2, y: (stage - natH * scale) / 2 };
+}
+
+// Zoom about the middle of the stage rather than the image's top-left, so the
+// picture does not lurch out from under the circle every time the slider
+// moves. Unclamped on purpose: the caller clamps, because the clamp needs the
+// new zoom and doing it here would hide which step moved the image.
+function cropZoomAbout(off, oldScale, newScale, stage) {
+  const mid = stage / 2;
+  const k = oldScale > 0 ? newScale / oldScale : 1;
+  return { x: mid - (mid - off.x) * k, y: mid - (mid - off.y) * k };
+}
+
+// The visible square, in the SOURCE image's own pixels. This is what gets
+// drawn, so it has to stay inside the image: a rect that runs past the edge
+// draws transparent, and transparency in a corner is the one failure the
+// clamp above exists to prevent.
+function cropSourceRect(off, scale, stage) {
+  return { sx: -off.x / scale, sy: -off.y / scale, side: stage / scale };
+}
+
+function AvatarCropModal({ file, onCancel, onSave, busy }) {
+  const [url, setUrl] = useState(null);
+  const [nat, setNat] = useState(null);          // {w, h} once it has loaded
+  const [zoom, setZoom] = useState(1);
+  const [off, setOff] = useState({ x: 0, y: 0 });  // image top-left, stage px
+  const [failed, setFailed] = useState(false);
+  const drag = useRef(null);
+  const imgRef = useRef(null);
+
+  // One object URL per file, revoked when it goes. Without the revoke the blob
+  // stays alive for the life of the page, which for somebody trying three
+  // photos is three photos still in memory.
+  useEffect(() => {
+    if (!file) return undefined;
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+
+  const baseScale = nat ? cropBaseScale(nat.w, nat.h, CROP_STAGE) : 1;
+  const scale = baseScale * zoom;
+
+  // Clamped so the stage is always covered. Written as a function rather than
+  // inline at each caller because the slider, the drag and the arrow keys all
+  // have to agree about it — three copies of this is how one of them lets a
+  // corner show.
+  const clamp = useCallback((pos, z) => (
+    nat ? cropClamp(pos, nat.w, nat.h, baseScale * z, CROP_STAGE)
+        : { x: 0, y: 0 }
+  ), [nat, baseScale]);
+
+  const onLoaded = () => {
+    const el = imgRef.current;
+    if (!el || !el.naturalWidth) { setFailed(true); return; }
+    const w = el.naturalWidth, h = el.naturalHeight;
+    setNat({ w, h });
+    // Start centered, which is where the old behavior cropped to — so the
+    // first thing somebody sees is what they would have got, and any change
+    // from here is theirs.
+    setOff(cropCenter(w, h, cropBaseScale(w, h, CROP_STAGE), CROP_STAGE));
+  };
+
+  const setZoomKeeping = (z) => {
+    // Zoom about the center of the stage rather than the image's top-left,
+    // or the picture lurches away from under the circle every time the slider
+    // moves and repositioning becomes a fight.
+    if (!nat) { setZoom(z); return; }
+    const next = cropZoomAbout(off, baseScale * zoom, baseScale * z, CROP_STAGE);
+    setZoom(z);
+    setOff(clamp(next, z));
+  };
+
+  const down = (e) => {
+    if (!nat) return;
+    drag.current = { x: e.clientX, y: e.clientY, ox: off.x, oy: off.y };
+    if (e.currentTarget.setPointerCapture) {
+      // Capture, so dragging off the edge of the stage keeps working instead
+      // of stopping the moment the pointer leaves the element.
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  };
+  const move = (e) => {
+    const d = drag.current;
+    if (!d) return;
+    setOff(clamp({ x: d.ox + (e.clientX - d.x), y: d.oy + (e.clientY - d.y) },
+                 zoom));
+  };
+  const up = () => { drag.current = null; };
+
+  const key = (e) => {
+    const step = e.shiftKey ? 20 : 4;
+    const by = { ArrowLeft: [-step, 0], ArrowRight: [step, 0],
+                 ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+    if (!by) return;
+    // Arrow keys as well as dragging: dragging is the only way to reposition
+    // this otherwise, and ACCESSIBILITY.md already lists keyboard gaps as a
+    // known fault rather than an acceptable one.
+    e.preventDefault();
+    setOff(clamp({ x: off.x + by[0], y: off.y + by[1] }, zoom));
+  };
+
+  const save = async () => {
+    if (!nat) return;
+    const { sx, sy, side: srcSide } = cropSourceRect(off, scale, CROP_STAGE);
+    const canvas = document.createElement('canvas');
+    canvas.width = CROP_OUTPUT;
+    canvas.height = CROP_OUTPUT;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { onSave(file); return; }
+    ctx.drawImage(imgRef.current, sx, sy, srcSide, srcSide,
+                  0, 0, CROP_OUTPUT, CROP_OUTPUT);
+    const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    const blob = await new Promise(res => canvas.toBlob(res, type, 0.9));
+    // If the canvas will not produce a blob, send the original and let the
+    // server judge it rather than losing the upload. Same rule as
+    // shrinkImage: every failure path still ends in a working upload.
+    onSave(blob || file);
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" role="dialog" aria-modal="true"
+           aria-labelledby="crop-title" style={{width: 'auto', minWidth: 360}}>
+        <div className="modal-header" id="crop-title">Choose what to show
+          <button className="panel-close" onClick={onCancel} aria-label="Cancel">&times;</button></div>
+        <div className="modal-body">
+          {failed
+            ? <div className="field-error-msg">That image could not be read.
+                Try a different PNG or JPEG.</div>
+            : <>
+                <div className="crop-stage" tabIndex={0} onKeyDown={key}
+                     onPointerDown={down} onPointerMove={move}
+                     onPointerUp={up} onPointerCancel={up}
+                     role="application"
+                     aria-label="Drag to reposition, or use the arrow keys">
+                  {url && <img ref={imgRef} src={url} alt="" onLoad={onLoaded}
+                               onError={() => setFailed(true)}
+                               style={{
+                                 left: 0, top: 0,
+                                 width: nat ? nat.w * scale : 'auto',
+                                 height: nat ? nat.h * scale : 'auto',
+                                 transform: nat
+                                   ? `translate(${off.x}px, ${off.y}px)` : 'none',
+                               }} />}
+                  <div className="crop-hole" />
+                  <div className="crop-ring" />
+                </div>
+                <div className="crop-zoom">
+                  <label htmlFor="crop-zoom-range">Size</label>
+                  <input id="crop-zoom-range" type="range" min="1"
+                         max={String(CROP_MAX_ZOOM)} step="0.01"
+                         value={String(zoom)}
+                         onChange={e => setZoomKeeping(Number(e.target.value))} />
+                </div>
+                <div className="gov-hint" style={{textAlign:'center'}}>
+                  Drag the picture to move it. Only what is inside the circle
+                  will be shown.
+                </div>
+              </>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || failed || !nat}
+                  onClick={save}>{busy ? 'Saving…' : 'Use this picture'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Avatars in a list =====
+// Initials from whatever display name is to hand. The Users screen has first
+// and last name as separate fields; a contributor has one `name` string, so
+// this takes the string and both callers agree about the result.
+function initialsOf(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+
+// One circle. `userId` is the account whose picture to show, which for a
+// contributor is their linked account rather than the contributor itself — a
+// contributor who will never sign in has no picture, and the server sends the
+// id and the digest together or not at all, so there is no case where this
+// asks for an image that is a 404.
+function Avatar({ userId, etag, name, onEnlarge }) {
+  const has = !!(userId && etag);
+  const open = (e) => {
+    // The rows these sit in are clickable, and enlarging a picture is not the
+    // same gesture as opening the record. Without this, clicking the circle
+    // would do both.
+    e.stopPropagation();
+    if (has && onEnlarge) onEnlarge();
+  };
+  return (
+    <span className={`avatar-cell${has ? ' has-photo' : ''}`}
+          onClick={open}
+          title={has ? `${name} — click to enlarge` : name || ''}>
+      {has
+        ? <img src={`/api/users/${userId}/avatar?v=${etag}`} alt={name || ''} />
+        : initialsOf(name)}
+    </span>
+  );
+}
+
+function AvatarModal({ userId, etag, name, onClose }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" role="dialog" aria-modal="true"
+           aria-label={`Profile picture for ${name}`}
+           onClick={e => e.stopPropagation()}>
+        <div className="modal-header">{name}
+          <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
+        <div className="modal-body avatar-big">
+          <img src={`/api/users/${userId}/avatar?v=${etag}`} alt={name || ''} />
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UsersScreen({ currentUser, assignableRoles, notify }) {
   const [users, setUsers] = useState([]);
   const [contributors, setContributors] = useState([]);
   const [editing, setEditing] = useState(null);
   const [adding, setAdding] = useState(false);
+  // Which picture is being shown large, or null. The whole descriptor rather
+  // than an id, so the modal needs nothing looked up again.
+  const [bigAvatar, setBigAvatar] = useState(null);
 
   const load = useCallback(() => {
     api.get('/api/users').then(setUsers).catch(e => notify(e.message, true));
@@ -7634,6 +8174,24 @@ function UsersScreen({ currentUser, assignableRoles, notify }) {
     setEditing(null); load(); notify('User updated.');
   };
 
+  // Clearing somebody's second factor also revokes their sessions and
+  // remembered devices, server-side — if the reason is a lost or stolen
+  // phone, a session that phone still holds is part of the problem. The
+  // confirmation says so, because "reset 2FA" does not sound like "sign them
+  // out everywhere" and that is exactly what it does.
+  const reset2fa = async (u) => {
+    const ok = window.confirm(
+      `Clear two-factor authentication for ${u.email}?\n\n` +
+      `They will set it up again at their next sign-in. This also signs them ` +
+      `out everywhere and forgets every device they had remembered.`);
+    if (!ok) return;
+    try {
+      await api.post(`/api/users/${u.user_id}/2fa-reset`, {});
+      load();
+      notify(`Two-factor authentication cleared for ${u.email}.`);
+    } catch (e) { notify(e.message, true); }
+  };
+
   const { sorted, sort, toggle } = useSort(users, 'email');
 
   return (<div className="screen"><div className="table-view">
@@ -7645,6 +8203,7 @@ function UsersScreen({ currentUser, assignableRoles, notify }) {
     </div>
     <table className="data-table">
       <thead><tr>
+        <th className="avatar-col"></th>
         <SortHeader label="Email" sortKey="email" sort={sort} toggle={toggle} />
         <SortHeader label="Name" sortKey="last_name" sort={sort} toggle={toggle} />
         <SortHeader label="Role" sortKey="role" sort={sort} toggle={toggle} />
@@ -7654,6 +8213,14 @@ function UsersScreen({ currentUser, assignableRoles, notify }) {
         <th></th></tr></thead>
       <tbody>{sorted.map(u => (
         <tr key={u.user_id} className={u.is_active ? '' : 'inactive-row'}>
+          <td className="avatar-col">
+            <Avatar userId={u.user_id} etag={u.avatar_etag}
+                    name={`${u.first_name || ''} ${u.last_name || ''}`}
+                    onEnlarge={() => setBigAvatar({
+                      userId: u.user_id, etag: u.avatar_etag,
+                      name: `${u.first_name || ''} ${u.last_name || ''}`.trim(),
+                    })} />
+          </td>
           <td><strong>{u.email}</strong>{u.must_change_password ?
             <div style={{fontSize:'11px',color:'#b08900'}}>temporary password pending</div> : null}</td>
           <td>{u.first_name} {u.last_name}</td>
@@ -7662,7 +8229,14 @@ function UsersScreen({ currentUser, assignableRoles, notify }) {
           <td style={{fontSize:'12px'}}>{u.last_login_at ? String(u.last_login_at).slice(0,16).replace('T',' ') : 'never'}</td>
           <td>{u.is_active ? <span className="badge badge-active">Active</span>
                             : <span className="badge badge-deprecated">Deactivated</span>}</td>
-          <td><button className="btn btn-edit" onClick={() => setEditing(u)}>Edit</button></td>
+          <td>
+            <button className="btn btn-edit" onClick={() => setEditing(u)}>Edit</button>
+            {/* The other half of recovery: codes cover a lost phone, this
+                covers a lost phone AND lost codes. The server refuses when the
+                target outranks you, so this is offered and may be declined
+                rather than hidden on a guess about roles. */}
+            <button className="btn" onClick={() => reset2fa(u)}>Reset 2FA</button>
+          </td>
         </tr>))}
       </tbody>
     </table>
@@ -7671,6 +8245,7 @@ function UsersScreen({ currentUser, assignableRoles, notify }) {
     {editing && <UserFormModal user={editing} contributors={contributors}
                                assignableRoles={assignableRoles}
                                onClose={() => setEditing(null)} onSave={update} />}
+    {bigAvatar && <AvatarModal {...bigAvatar} onClose={() => setBigAvatar(null)} />}
   </div></div>);
 }
 
@@ -8815,7 +9390,410 @@ function AuditScreen({ notify }) {
 }
 
 // ===== Login Screen =====
-function LoginScreen({ onSignedIn, settings, onForgot }) {
+// ===== Two-factor authentication (0.10.0) =====
+//
+// Three pieces, and they are deliberately separate:
+//
+//   * TwoFactorChallengeScreen finishes a sign-in. It holds a challenge, not
+//     a session, so it cannot use anything that needs one.
+//   * TwoFactorEnrollFlow is the enrollment conversation, used both by the
+//     forced screen and by the profile window — one copy, because two would
+//     stop matching the first time one was changed.
+//   * TwoFactorSection is the panel in the profile window.
+//
+// None of these use EditField or ModalField on purpose. Those are for record
+// fields, and the field catalog is generated from them (see CLAUDE.md); a
+// password box has no column for a definition or for hiding to resolve
+// against, so these are hand-written like the other four deliberate blocks.
+
+function TwoFactorChallengeScreen({ twofa, settings, onSignedIn, onRestart }) {
+  const [code, setCode] = useState('');
+  const [remember, setRemember] = useState(false);
+  const [error, setError] = useState('');
+  const [left, setLeft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [method, setMethod] = useState(twofa.method);
+  const [sent, setSent] = useState('');
+
+  const emailOffered = (twofa.methods || []).indexOf('email') >= 0;
+
+  const submit = async (ev) => {
+    ev.preventDefault();
+    setBusy(true); setError('');
+    try {
+      const result = await api.post('/api/auth/2fa/verify',
+        { challenge: twofa.challenge, code, remember }, { unscoped: true });
+      session.csrf = result.csrf_token;
+      onSignedIn(result);
+    } catch (err) {
+      // `restart` is the server saying the challenge itself is finished —
+      // expired, spent, or out of attempts — rather than this one code being
+      // wrong. Anything else leaves the person where they are so they can try
+      // again, which is why none of this arrives as a 401: a 401 would reset
+      // the whole app and take this screen with it.
+      if (err.payload && err.payload.restart) { onRestart(err.message); return; }
+      setError(err.message || 'Code not recognized.');
+      const n = err.payload ? err.payload.attempts_left : null;
+      setLeft(typeof n === 'number' ? n : null);
+      setCode('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const emailMe = async () => {
+    setError(''); setSent('');
+    try {
+      await api.post('/api/auth/2fa/resend', { challenge: twofa.challenge },
+                     { unscoped: true });
+      setMethod('email');
+      setSent('A code is on its way to your sign-in address.');
+    } catch (err) {
+      if (err.payload && err.payload.restart) { onRestart(err.message); return; }
+      setError(err.message || 'That code could not be sent.');
+    }
+  };
+
+  return (
+    <div className="login-screen">
+      <form className="login-box" onSubmit={submit}>
+        <LoginLogo settings={settings} />
+        <h1>{(settings && settings.app_title) || 'Data Lineage Tracker'}</h1>
+        <p>{method === 'email'
+              ? 'Enter the code sent to your email address'
+              : 'Enter the code from your authenticator app'}</p>
+        {error ? <div className="login-error">{error}</div> : null}
+        {sent ? <div className="login-sub">{sent}</div> : null}
+        <div className="field">
+          <label htmlFor="twofa-code">Code</label>
+          {/* autoComplete="one-time-code" is what lets a phone offer the code
+              from the message rather than making somebody switch apps to read
+              it. inputMode numeric keeps a phone keypad on digits, and a
+              recovery code still types fine because the field is text. */}
+          <input id="twofa-code" type="text" inputMode="numeric"
+                 autoComplete="one-time-code" value={code} autoFocus
+                 onChange={e => { setCode(e.target.value); setError(''); }} />
+        </div>
+        {left !== null && left > 0
+          ? <div className="login-sub">{left} attempt{left === 1 ? '' : 's'} left
+              before you have to sign in again.</div>
+          : null}
+        <label className="check-inline">
+          <input type="checkbox" checked={remember}
+                 onChange={e => setRemember(e.target.checked)} />
+          Remember this device for 30 days
+        </label>
+        <button type="submit" className="login-btn" disabled={busy || !code}>
+          {busy ? 'Checking…' : 'Continue'}
+        </button>
+        <div className="login-sub">
+          {emailOffered && method !== 'email'
+            ? <div><a href="#" onClick={e => { e.preventDefault(); emailMe(); }}>
+                Email me a code instead</a></div>
+            : null}
+          {twofa.recovery_available
+            ? <div>Lost your phone? Type one of your recovery codes above
+                instead.</div>
+            : null}
+          <div><a href="#" onClick={e => { e.preventDefault(); onRestart(''); }}>
+            Back to sign in</a></div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function TwoFactorEnrollFlow({ onEnrolled, notify }) {
+  const [step, setStep] = useState('idle');
+  const [data, setData] = useState(null);
+  const [manual, setManual] = useState(false);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [codes, setCodes] = useState(null);
+  const [kept, setKept] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const start = async () => {
+    setError(''); setBusy(true);
+    try {
+      const d = await api.post('/api/auth/2fa/enroll', {}, { unscoped: true });
+      setData(d);
+      // No QR means segno is not installed. Say so and fall straight through
+      // to the key, rather than showing an empty box.
+      setManual(!d.qr_svg);
+      setStep('show');
+    } catch (err) { setError(err.message || 'Could not start enrollment.'); }
+    finally { setBusy(false); }
+  };
+
+  const confirm = async (ev) => {
+    ev.preventDefault();
+    setError(''); setBusy(true);
+    try {
+      const r = await api.post('/api/auth/2fa/confirm', { code },
+                               { unscoped: true });
+      setCodes(r.recovery_codes || []);
+      setStep('codes');
+    } catch (err) { setError(err.message || 'Code not recognized.'); }
+    finally { setBusy(false); }
+  };
+
+  const copyCodes = () => {
+    try {
+      navigator.clipboard.writeText((codes || []).join('\n'));
+      if (notify) notify('Recovery codes copied.');
+    } catch (e) {
+      if (notify) notify('Could not copy. Select and copy them by hand.');
+    }
+  };
+
+  if (step === 'idle') {
+    return (<div>
+      {error ? <div className="field-error-msg">{error}</div> : null}
+      <button className="btn btn-primary" onClick={start} disabled={busy}>
+        {busy ? 'Starting…' : 'Set up an authenticator app'}
+      </button>
+    </div>);
+  }
+
+  if (step === 'show') {
+    return (<form onSubmit={confirm}>
+      <p className="gov-hint" style={{marginTop:0}}>
+        Add this account to an authenticator app — Google Authenticator, Microsoft
+        Authenticator, 1Password, Authy, or any other — then type the six-digit
+        code it shows.
+      </p>
+      {data.qr_svg && !manual
+        /* The SVG comes from segno on our own server, not from user input.
+           There is no safe way to inline an SVG without this, and serving it
+           from a /qr?secret=... URL instead would write the secret into the
+           access log of every proxy in front of the app. */
+        ? <div className="qr-box" role="img"
+               aria-label="Setup QR code for your authenticator app. If you cannot use it, the key is written out below."
+               dangerouslySetInnerHTML={{__html: data.qr_svg}} />
+        : null}
+      {manual
+        ? <div className="key-box">
+            <div className="gov-hint" style={{marginTop:0}}>
+              Choose "enter a key manually" in your app, then type:
+            </div>
+            <div className="key-groups">{data.secret_groups}</div>
+            <div className="gov-hint">
+              Type: time-based. {data.digits} digits, every {data.period} seconds.
+              On a phone you can <a href={data.uri}>tap here</a> to set it up
+              without typing.
+            </div>
+          </div>
+        : <div className="gov-hint">
+            Can't scan it?{' '}
+            <a href="#" onClick={e => { e.preventDefault(); setManual(true); }}>
+              Enter the key manually
+            </a>
+          </div>}
+      {!data.qr_svg
+        ? <div className="gov-hint">
+            A QR code could not be generated on this server, so the key is shown
+            instead. Everything still works.
+          </div>
+        : null}
+      {error ? <div className="field-error-msg">{error}</div> : null}
+      <div className="form-group">
+        <label htmlFor="enroll-code">Code from the app</label>
+        <input id="enroll-code" type="text" inputMode="numeric"
+               autoComplete="one-time-code" value={code}
+               onChange={e => { setCode(e.target.value); setError(''); }} />
+      </div>
+      <button type="submit" className="btn btn-primary" disabled={busy || !code}>
+        {busy ? 'Checking…' : 'Confirm'}
+      </button>
+    </form>);
+  }
+
+  return (<div>
+    <strong style={{fontSize:'13px'}}>Save your recovery codes</strong>
+    <p className="gov-hint" style={{marginTop:'4px'}}>
+      These are the way back in if you lose your phone. Each one works once.
+      <strong> This is the only time they are shown</strong> — nothing can
+      display them again, only replace them.
+    </p>
+    <div className="rc-list">
+      {(codes || []).map(c => <code key={c}>{c}</code>)}
+    </div>
+    <div className="rc-actions">
+      <button type="button" className="btn" onClick={copyCodes}>Copy</button>
+      <button type="button" className="btn" onClick={() => window.print()}>Print</button>
+    </div>
+    <label className="check-inline">
+      <input type="checkbox" checked={kept}
+             onChange={e => setKept(e.target.checked)} />
+      I have saved these somewhere safe
+    </label>
+    <button className="btn btn-primary" disabled={!kept}
+            onClick={() => onEnrolled()}>Done</button>
+  </div>);
+}
+
+function TwoFactorSetupScreen({ settings, onDone, onSignOut }) {
+  return (
+    <div className="login-screen">
+      <div className="login-box login-box-wide">
+        <LoginLogo settings={settings} />
+        <h1>{(settings && settings.app_title) || 'Data Lineage Tracker'}</h1>
+        <p>This organization requires two-factor authentication</p>
+        <TwoFactorEnrollFlow onEnrolled={onDone} notify={null} />
+        <div className="login-sub">
+          <a href="#" onClick={e => { e.preventDefault(); onSignOut(); }}>
+            Sign out instead
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The status, recovery codes and remembered devices. **The button that starts
+// enrollment is not here** — it sits in the profile window's actions row, with
+// Change password, where Ben asked for it. So this takes the status as a prop
+// rather than fetching it: the button and this section have to be looking at
+// the same answer.
+function TwoFactorSection({ status, reload, notify }) {
+  const [password, setPassword] = useState('');
+  const [mode, setMode] = useState('');
+  const [codes, setCodes] = useState(null);
+  const [error, setError] = useState('');
+
+  const load = reload;
+
+  if (!status) return null;
+  // Nothing to report until there is something set up. The invitation to set
+  // it up is the button above; a paragraph here saying the same thing is what
+  // this window had too much of.
+  if (!status.enrolled && !status.totp_unavailable) return null;
+
+  const act = async (path) => {
+    setError('');
+    try {
+      const r = await api.post(path, { password }, { unscoped: true });
+      setPassword(''); setMode('');
+      if (r.recovery_codes) setCodes(r.recovery_codes);
+      await load();
+      if (notify) notify('Done.');
+    } catch (err) { setError(err.message || 'That did not work.'); }
+  };
+
+  const revoke = async (id) => {
+    try {
+      await api.post('/api/auth/devices', id ? { id } : {}, { unscoped: true });
+      await load();
+      if (notify) notify(id ? 'Device forgotten.' : 'All devices forgotten.');
+    } catch (err) { if (notify) notify(err.message || 'Could not revoke.'); }
+  };
+
+  return (<div className="fd-share">
+    <strong style={{fontSize:'13px'}}>Two-factor authentication</strong>
+
+    {status.totp_unavailable
+      ? <div className="gov-hint">{status.totp_unavailable}</div>
+      : null}
+
+    {status.enrolled
+      ? <div className="field-row"><span className="field-label">Status</span>
+          <span className="field-value">
+            On, using an authenticator app
+            {status.required ? ' (required here)' : ''}
+          </span></div>
+      : null}
+
+    {status.enrolled ? <div>
+      <div className="field-row"><span className="field-label">Recovery codes</span>
+        <span className="field-value">
+          {status.recovery_codes_left} of {status.recovery_code_total} unused
+        </span></div>
+      {status.recovery_codes_left <= 2
+        ? <div className="gov-hint">
+            Few left. Replacing them issues a fresh set and voids the old ones.
+          </div>
+        : null}
+
+      {codes ? <div>
+        <div className="gov-hint">Your new codes. The old ones no longer work.</div>
+        <div className="rc-list">{codes.map(c => <code key={c}>{c}</code>)}</div>
+        <button className="btn" onClick={() => setCodes(null)}>Hide</button>
+      </div> : null}
+
+      {mode ? <div>
+        <div className="form-group">
+          <label htmlFor="tfa-pw">Your password</label>
+          <input id="tfa-pw" type="password" autoComplete="current-password"
+                 value={password} onChange={e => setPassword(e.target.value)} />
+        </div>
+        {error ? <div className="field-error-msg">{error}</div> : null}
+        <button className="btn btn-primary" disabled={!password}
+                onClick={() => act(mode === 'disable'
+                  ? '/api/auth/2fa/disable' : '/api/auth/2fa/recovery-codes')}>
+          {mode === 'disable' ? 'Turn it off' : 'Replace the codes'}
+        </button>
+        <button className="btn" onClick={() => { setMode(''); setPassword(''); setError(''); }}>
+          Cancel
+        </button>
+      </div> : <div className="rc-actions">
+        <button className="btn" onClick={() => setMode('codes')}>
+          Replace recovery codes
+        </button>
+        {status.required
+          ? null
+          : <button className="btn btn-danger" onClick={() => setMode('disable')}>
+              Turn off
+            </button>}
+      </div>}
+    </div> : null}
+
+    {(status.trusted_devices || []).length > 0 ? <div>
+      <div className="field-row"><span className="field-label">Remembered</span>
+        <span className="field-value">
+          {/* Spelled out rather than "device(s)": a parenthesis with no space
+              before it reads as a function call to check_identifiers.py, which
+              is the person(s) trap CLAUDE.md records — that one hid inside a
+              template literal, which the checker blanks. JSX text it does not. */}
+          {status.trusted_devices.length === 1
+            ? '1 device skipping'
+            : `${status.trusted_devices.length} devices skipping`} the code for
+          up to {status.device_days} days
+        </span></div>
+      {status.trusted_devices.map(d => (
+        <div className="fd-row" key={d.id}>
+          <span className="res-title-link" title={d.user_agent || ''}>
+            {shortUserAgent(d.user_agent)} — last used{' '}
+            {d.last_seen_date ? String(d.last_seen_date).slice(0, 10) : 'never'}
+          </span>
+          <button className="btn" onClick={() => revoke(d.id)}>Forget</button>
+        </div>
+      ))}
+      <button className="btn" onClick={() => revoke(null)}>Forget all devices</button>
+    </div> : null}
+  </div>);
+}
+
+// A user agent string is unreadable and the point of the list is recognizing
+// your own laptop, so this reduces it to the browser and platform. Deliberately
+// crude: it never has to be right, only recognizable, and it falls back to the
+// raw string rather than to nothing.
+function shortUserAgent(ua) {
+  if (!ua) return 'Unknown device';
+  const browser = /Edg\//.test(ua) ? 'Edge'
+    : /Chrome\//.test(ua) ? 'Chrome'
+    : /Safari\//.test(ua) && !/Chrome/.test(ua) ? 'Safari'
+    : /Firefox\//.test(ua) ? 'Firefox' : null;
+  const os = /Macintosh/.test(ua) ? 'Mac'
+    : /Windows/.test(ua) ? 'Windows'
+    : /iPhone|iPad/.test(ua) ? 'iOS'
+    : /Android/.test(ua) ? 'Android'
+    : /Linux/.test(ua) ? 'Linux' : null;
+  if (browser && os) return `${browser} on ${os}`;
+  return browser || os || String(ua).slice(0, 40);
+}
+
+function LoginScreen({ onSignedIn, settings, onForgot, onChallenge, restartNote }) {
   const [version, setVersion] = useState(null);
   useEffect(() => { api.get('/api/version').then(v => setVersion(v.version)).catch(() => {}); }, []);
   const [email, setEmail] = useState('');
@@ -8828,6 +9806,10 @@ function LoginScreen({ onSignedIn, settings, onForgot }) {
     setBusy(true); setError('');
     try {
       const result = await api.post('/api/auth/login', { email, password });
+      // A correct password may buy a challenge rather than a session. There
+      // is no csrf_token in that answer and no cookie was set, so nothing
+      // about the session can be touched here.
+      if (result.twofa) { onChallenge(result.twofa); return; }
       session.csrf = result.csrf_token;
       onSignedIn(result);
     } catch (err) {
@@ -8845,6 +9827,7 @@ function LoginScreen({ onSignedIn, settings, onForgot }) {
         <h1>{(settings && settings.app_title) || 'Data Lineage Tracker'}</h1>
         <p>Sign in to continue</p>
         {error && <div className="login-error">{error}</div>}
+        {!error && restartNote ? <div className="login-error">{restartNote}</div> : null}
         <div className="field">
           <label htmlFor="login-email">Email</label>
           <input id="login-email" type="email" autoComplete="username" value={email}
@@ -9090,7 +10073,94 @@ function ChangePasswordScreen({ user, settings, onDone, onSignOut, forced }) {
 // not editable: email is the sign-in identity and the name against every audit
 // entry, and role is an administrator's decision. The server refuses either
 // outright rather than ignoring it, so there is nothing here to tempt.
-function ProfileModal({ user, settings, onClose, onSaved, notify }) {
+// The picture, its two buttons, and the file input behind them.
+//
+// Uploading goes through `uploadFile` rather than `request`, because FormData
+// sets its own Content-Type — the same reason the logo and schema uploads do.
+// It is **not** deferred to Save details, unlike the logo in Preferences: that
+// one is deferred because a logo is one of several settings saved together and
+// a half-applied set of branding looks broken. Here the picture is the only
+// thing the control touches, so applying it immediately is what somebody
+// expects from pressing Choose.
+function AvatarEdit({ user, notify, onChanged }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  // The file waiting to be framed, or null. Held here rather than in the
+  // cropper so cancelling costs nothing and the modal has no state to reset.
+  const [cropping, setCropping] = useState(null);
+  const initials = `${(user.first_name||'?').charAt(0)}${(user.last_name||'').charAt(0)}`;
+
+  // Choosing a file opens the cropper rather than uploading at once: what gets
+  // stored is a square, and which square is the person's decision. The upload
+  // happens when they press Use this picture.
+  const pick = (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    // Clearing the input matters: without it, choosing the same file twice in
+    // a row fires no change event and looks like the control is dead.
+    ev.target.value = '';
+    if (!file) return;
+    setCropping(file);
+  };
+
+  const send = async (blob) => {
+    setBusy(true);
+    try {
+      // `shrinkImage` is still the guard behind this: the cropper hands back a
+      // 512px square, which is already small, but if its canvas failed it
+      // hands back the ORIGINAL file, and that may be a several-megabyte
+      // photo. Shrinking it here is what keeps that fallback inside the
+      // server's caps instead of being refused.
+      const out = await shrinkImage(blob);
+      const fd = new FormData();
+      // A Blob has no name, so one is supplied. The server ignores it — the
+      // type comes from the bytes — but a multipart part with no filename is
+      // not read as a file at all.
+      fd.append('file', out, (cropping && cropping.name) || 'avatar.png');
+      await uploadFile('/api/auth/avatar', fd);
+      notify('Your picture has been updated.');
+      setCropping(null);
+      onChanged();
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.del('/api/auth/avatar');
+      notify('Your picture has been removed.');
+      onChanged();
+    } catch (err) { notify(err.message, true); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="avatar-edit">
+      <div className="avatar-preview">
+        {user.avatar_etag
+          ? <img src={`/api/users/${user.user_id}/avatar?v=${user.avatar_etag}`}
+                 alt="Your profile picture" />
+          : initials}
+      </div>
+      <div className="res-actions">
+        <button className="btn" disabled={busy}
+                onClick={() => fileRef.current && fileRef.current.click()}>
+          {user.avatar_etag ? 'Change picture' : 'Add a picture'}
+        </button>
+        {user.avatar_etag && (
+          <button className="btn" disabled={busy} onClick={remove}>Remove</button>
+        )}
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg"
+               style={{display:'none'}} onChange={pick} />
+      </div>
+      {cropping && <AvatarCropModal file={cropping} busy={busy}
+                                    onCancel={() => setCropping(null)}
+                                    onSave={send} />}
+    </div>
+  );
+}
+
+function ProfileModal({ user, settings, onClose, onSaved, notify, onHelp }) {
   const [form, setForm] = useState({
     first_name: user.first_name || '', last_name: user.last_name || '',
     title: user.title || '',
@@ -9102,6 +10172,20 @@ function ProfileModal({ user, settings, onClose, onSaved, notify }) {
   const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
   const [pwError, setPwError] = useState('');
   const [problems, setProblems] = useState(null);
+
+  // The two-factor status is fetched **here** rather than inside
+  // TwoFactorSection, because the button that starts enrollment now sits in
+  // this window's own actions row while the status it depends on belongs to
+  // that section. One fetch, one owner: two components each asking would be
+  // two answers that can disagree, which is the shape of bug this project
+  // keeps finding.
+  const [tfa, setTfa] = useState(null);
+  const [enrollingTfa, setEnrollingTfa] = useState(false);
+  const loadTfa = useCallback(async () => {
+    try { setTfa(await api.get('/api/auth/2fa', undefined, { unscoped: true })); }
+    catch (e) { setTfa(null); }
+  }, []);
+  useEffect(() => { loadTfa(); }, [loadTfa]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setP = (k, v) => setPw(f => ({ ...f, [k]: v }));
@@ -9141,6 +10225,7 @@ function ProfileModal({ user, settings, onClose, onSaved, notify }) {
       <div className="modal-header" id="profile-title">Your profile
         <button className="panel-close" onClick={onClose} aria-label="Close">&times;</button></div>
       <div className="modal-body">
+        <AvatarEdit user={user} notify={notify} onChanged={onSaved} />
         <div className="form-row">
           <div className="form-group">
             <label htmlFor="pf-first">First name</label>
@@ -9162,22 +10247,45 @@ function ProfileModal({ user, settings, onClose, onSaved, notify }) {
           </div>
         </div>
 
-        <div className="fd-share">
-          <div className="field-row"><span className="field-label">Email</span>
-            <span className="field-value">{user.email}</span></div>
-          <div className="field-row"><span className="field-label">Role</span>
-            <span className="field-value">{user.role}</span></div>
-          <div className="gov-hint">
-            Both are set by an administrator. Your email is how you sign in and
-            how your changes are recorded, so it is not changed from here.
+        {/* Email and Role are drawn as ordinary fields rather than as a
+            label-and-value pair, so the window reads as one form — and gray,
+            because they are not yours to change. `readOnly` rather than
+            `disabled`: the value can still be selected and copied, and a
+            disabled input is skipped by the keyboard entirely. */}
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="pf-email">Email</label>
+            <input id="pf-email" value={user.email} readOnly className="input-fixed" />
+          </div>
+          <div className="form-group">
+            <label htmlFor="pf-role">Role</label>
+            <input id="pf-role" value={user.role} readOnly className="input-fixed" />
           </div>
         </div>
 
-        {!changing && (
-          <button className="btn" onClick={() => setChanging(true)}>
-            Change password
-          </button>
+        {/* One row of actions, both the same blue as Save details, and neither
+            with a paragraph under it. The two-factor button is only drawn when
+            there is something to set up; the status, recovery codes and
+            remembered devices live in the section below it. */}
+        {!changing && !enrollingTfa && (
+          <div className="res-actions">
+            <button className="btn btn-primary" onClick={() => setChanging(true)}>
+              Change password
+            </button>
+            {tfa && !tfa.enrolled && !tfa.totp_unavailable && (
+              <button className="btn btn-primary" onClick={() => setEnrollingTfa(true)}>
+                Set up two-factor authentication
+              </button>
+            )}
+          </div>
         )}
+        {enrollingTfa && (
+          <div className="fd-share">
+            <TwoFactorEnrollFlow notify={notify}
+              onEnrolled={() => { setEnrollingTfa(false); loadTfa(); }} />
+          </div>
+        )}
+        {tfa && <TwoFactorSection status={tfa} reload={loadTfa} notify={notify} />}
         {changing && (
           <div className="fd-share">
             <strong style={{fontSize:'13px'}}>Change password</strong>
@@ -9215,6 +10323,10 @@ function ProfileModal({ user, settings, onClose, onSaved, notify }) {
         )}
       </div>
       <div className="modal-footer">
+        {onHelp
+          ? <a href="#" className="modal-help-link"
+               onClick={e => { e.preventDefault(); onHelp(); }}>Help</a>
+          : null}
         <button className="btn" onClick={onClose}>Close</button>
         <button className="btn btn-primary" disabled={busy} onClick={saveDetails}>
           {busy ? 'Saving…' : 'Save details'}</button>
@@ -9251,7 +10363,16 @@ function UserMenu({ user, onProfile, onSignOut }) {
       <button className="user-menu-btn" onClick={() => setOpen(o => !o)}
               aria-haspopup="menu" aria-expanded={open}
               aria-label={`Account menu for ${user.first_name} ${user.last_name}`}>
-        <span className="avatar">{initials}</span>
+        {/* The picture when there is one, the initials when there is not.
+            `avatar_etag` is in the URL rather than only in the ETag header so
+            that replacing the picture changes the URL — a browser that has
+            cached the old one by address never has to be asked. */}
+        <span className={`avatar${user.avatar_etag ? ' has-photo' : ''}`}>
+          {user.avatar_etag
+            ? <img src={`/api/users/${user.user_id}/avatar?v=${user.avatar_etag}`}
+                   alt="" />
+            : initials}
+        </span>
         <span className="user-menu-who">
           <b>{user.first_name} {user.last_name}</b>
           <span>{user.title || user.role}</span>
@@ -9353,6 +10474,14 @@ function AppWrapper() {
   const [state, setState] = useState({ status: 'loading', user: null, settings: {} });
   // Whether the sign-in screen is showing the forgot-password form.
   const [forgot, setForgot] = useState(false);
+  // A half-finished sign-in: the password was right and the second factor
+  // is outstanding. Held here rather than inside LoginScreen because the
+  // challenge screen replaces that screen entirely.
+  const [challenge, setChallenge] = useState(null);
+  // Why we are back at the sign-in screen, when we arrived by a challenge
+  // expiring or running out of attempts. Without it the person is bounced
+  // to a blank sign-in form with no idea what happened.
+  const [restartNote, setRestartNote] = useState('');
   // The token out of an emailed link. Read ONCE on mount rather than on every
   // render, and cleared from the address bar immediately: a reset token in a
   // URL ends up in browser history, and `history.replaceState` is what keeps
@@ -9376,11 +10505,22 @@ function AppWrapper() {
     } catch (e) { return null; }
   });
 
+  // NOTE: this must NOT reset the view scope, and that is a correction rather
+  // than an omission. `loadSession` is also what Preferences and the profile
+  // window call after a save (`onSettingsChanged`), so a reset here dropped
+  // somebody out of the scenario they were working in the moment they saved
+  // their own name — the same two-places-hold-one-fact bug as the one this was
+  // written to fix, pointing the other way. The reset belongs at the session
+  // boundary: first load, sign-out, and a session lost underneath us.
   const loadSession = useCallback(async () => {
     try {
       const me = await api.get('/api/auth/me');
       session.csrf = me.csrf_token;
-      setState({ status: me.user.must_change_password ? 'must-change' : 'ready',
+      // The password gate comes first, matching the server's prepare(): it
+      // runs its forced-change check before the enrollment one, so somebody
+      // with both pending changes their password and then enrolls.
+      setState({ status: me.user.must_change_password ? 'must-change'
+                         : me.user.must_enroll_2fa ? 'must-enroll' : 'ready',
                  user: me.user, settings: me.settings || {} });
     } catch (err) {
       // No session. The sign-in screen still needs the title and logo, so ask
@@ -9393,7 +10533,15 @@ function AppWrapper() {
   }, []);
 
   useEffect(() => {
-    onAuthLost = () => { session.csrf = null; setState(s => ({ ...s, status: 'signed-out', user: null })); };
+    onAuthLost = () => {
+      session.csrf = null;
+      resetViewScope();
+      setState(s => ({ ...s, status: 'signed-out', user: null }));
+    };
+    // Whoever is about to be on screen starts on Current Architecture: this
+    // runs once, on the first load, which is the only moment at which the
+    // module-level scope could still be holding the previous user's scenario.
+    resetViewScope();
     loadSession();
     return () => { onAuthLost = () => {}; };
   }, [loadSession]);
@@ -9401,6 +10549,7 @@ function AppWrapper() {
   const signOut = useCallback(async () => {
     try { await api.post('/api/auth/logout'); } catch (e) { /* already gone */ }
     session.csrf = null;
+    resetViewScope();
     // Keep the branding after signing out, for the same reason as above.
     let pub = {};
     try { pub = await api.get('/api/branding/public'); } catch (e) { /* defaults */ }
@@ -9425,16 +10574,33 @@ function AppWrapper() {
     return <ForgotPasswordScreen settings={state.settings}
                                  onBack={() => setForgot(false)} />;
   }
+  if (state.status === 'signed-out' && challenge) {
+    return <TwoFactorChallengeScreen twofa={challenge} settings={state.settings}
+             onRestart={(message) => { setChallenge(null); setRestartNote(message || ''); }}
+             onSignedIn={(result) => {
+      setChallenge(null);
+      setState({ status: result.user.must_change_password ? 'must-change'
+                         : result.user.must_enroll_2fa ? 'must-enroll' : 'ready',
+                 user: result.user, settings: result.settings || {} });
+    }} />;
+  }
   if (state.status === 'signed-out') {
     return <LoginScreen settings={state.settings}
                         onForgot={() => setForgot(true)}
+                        onChallenge={(twofa) => setChallenge(twofa)}
+                        restartNote={restartNote}
                         onSignedIn={(result) => {
-      setState({ status: result.user.must_change_password ? 'must-change' : 'ready',
+      setState({ status: result.user.must_change_password ? 'must-change'
+                         : result.user.must_enroll_2fa ? 'must-enroll' : 'ready',
                  user: result.user, settings: result.settings || {} });
     }} />;
   }
   if (state.status === 'must-change') {
     return <ChangePasswordScreen forced user={state.user} settings={state.settings}
+                                 onDone={loadSession} onSignOut={signOut} />;
+  }
+  if (state.status === 'must-enroll') {
+    return <TwoFactorSetupScreen settings={state.settings}
                                  onDone={loadSession} onSignOut={signOut} />;
   }
   return <App user={state.user} settings={state.settings}
@@ -10028,6 +11194,11 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
   const [showAddScenario, setShowAddScenario] = useState(false);
   const [showScenarioSettings, setShowScenarioSettings] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  // Normally the help panel is about the view you are standing in. The profile
+  // window is not a view — it is a modal over one — so it names its own screen
+  // here. Cleared when the panel closes, or it would keep answering about the
+  // profile window long after it was shut.
+  const [helpScreen, setHelpScreen] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
   const scenario = scenarios.find(s => s.scenario_id === scenarioId) || null;
   const inScenario = scenarioId !== null;
@@ -10704,8 +11875,9 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
         onLater={() => setAlerts([])} onAcknowledge={acknowledgeAlerts} />}
       <HelpButton open={helpOpen} onToggle={() => setHelpOpen(o => !o)} />
       {helpOpen && (
-        <HelpPanel screen={inScenario ? 'scenario' : view}
-                   onClose={() => setHelpOpen(false)} notify={notify} />
+        <HelpPanel screen={helpScreen || (inScenario ? 'scenario' : view)}
+                   onClose={() => { setHelpOpen(false); setHelpScreen(null); }}
+                   notify={notify} />
       )}
       {showExport && (
         <ExportModal
@@ -10722,7 +11894,17 @@ function App({ user, settings, onSignOut, onSettingsChanged }) {
       {showProfile && (
         <ProfileModal user={user} settings={settings} notify={notify}
                       onClose={() => setShowProfile(false)}
-                      onSaved={onSettingsChanged} />
+                      onSaved={onSettingsChanged}
+                      onHelp={() => {
+                        // The window closes, because the help sheet sits at
+                        // z-index 70 and a modal overlay at 100 — so opening
+                        // help over this window would put it behind the gray.
+                        // Raising the sheet instead would put help on top of
+                        // every Add window too, which is worse.
+                        setShowProfile(false);
+                        setHelpScreen('profile');
+                        setHelpOpen(true);
+                      }} />
       )}
       <VersionBadge version={version} onClick={() => setView('releases')} />
     </div>

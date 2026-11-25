@@ -22,6 +22,8 @@ import hmac
 import os
 import re
 import secrets
+import struct
+import time
 import unicodedata
 
 # ---------------------------------------------------------------------------
@@ -313,3 +315,266 @@ def login_delay_seconds(recent_failures):
         return 0.0
     over = recent_failures - PROGRESSIVE_DELAY_AFTER + 1
     return min(PROGRESSIVE_DELAY_MAX, 0.5 * (2 ** (over - 1)))
+
+
+# ---------------------------------------------------------------------------
+# Two-factor authentication
+# ---------------------------------------------------------------------------
+#
+# Two methods, and the second one is optional per deployment:
+#
+#   * **An authenticator app** (TOTP, RFC 6238). Works offline, needs no
+#     vendor and no outbound connection, and is what a security reviewer
+#     expects to see.
+#   * **A code emailed to the account's address**, allowed only when the
+#     `allow_email_2fa` preference is on AND mail actually works. Some
+#     organizations will refuse this and they are right to think about it: an
+#     attacker who controls the mailbox gets the code *and* the password reset
+#     link, so email is a second factor against password reuse and credential
+#     stuffing, not against a compromised inbox. The preference exists so that
+#     judgment belongs to the deployment rather than to us.
+#
+# **Nothing here touches the database.** Callers own persistence, like the rest
+# of this module.
+
+TOTP_DIGITS = 6
+TOTP_PERIOD = 30
+# SHA-1 on purpose, not by oversight: it is what every authenticator app
+# assumes when an otpauth:// URI omits the algorithm, and HMAC-SHA1 is
+# untouched by the collision attacks that ended SHA-1 for signatures. The
+# functions take the algorithm as an argument, so this is one line to change if
+# that ever stops being true.
+TOTP_ALGO = "sha1"
+# One step either side, so a phone whose clock is up to thirty seconds out in
+# either direction still works. Wider would start to matter: each extra step
+# is another code an attacker gets to guess against.
+TOTP_WINDOW = 1
+
+TOTP_SECRET_BYTES = 20          # 160 bits, per RFC 4226's recommendation
+TOTP_SALT_BYTES = 16
+
+TWOFA_KEY_ENV = "TWOFA_SECRET_KEY"
+
+RECOVERY_CODE_COUNT = 10
+RECOVERY_CODE_BYTES = 5         # 8 base32 characters, shown in two groups
+
+EMAIL_CODE_DIGITS = 6
+EMAIL_CODE_MINUTES = 10
+# A six-digit emailed code is only 10^6 wide, so unlike a TOTP code — which an
+# attacker gets a bounded number of guesses at per 30-second step — this one
+# sits still until it expires. The attempt cap is what makes it safe, and it is
+# the challenge that is spent, not merely the code: five wrong answers and the
+# whole challenge is dead and a fresh sign-in is needed.
+CHALLENGE_MAX_ATTEMPTS = 5
+CHALLENGE_MINUTES = 10
+
+TRUSTED_DEVICE_DAYS = 30
+TRUSTED_DEVICE_COOKIE = "dlt_device"
+
+
+def twofa_key():
+    """The server key that every TOTP secret is derived from, or None.
+
+    Returns the raw bytes, or None when the environment variable is unset or
+    too short to be worth using.
+    """
+    raw = (os.environ.get(TWOFA_KEY_ENV) or "").strip()
+    if len(raw) < 32:
+        return None
+    return raw.encode("utf-8")
+
+
+def twofa_key_problem():
+    """A sentence naming what is wrong with the key, or None when it is fine.
+
+    Read by Preferences so an administrator is told why enrollment is refused,
+    rather than finding a control that does not work.
+    """
+    raw = (os.environ.get(TWOFA_KEY_ENV) or "").strip()
+    if not raw:
+        return (f"{TWOFA_KEY_ENV} is not set, so authenticator-app enrollment "
+                f"is unavailable. Generate one with "
+                f"`python3 -c \"import secrets; print(secrets.token_urlsafe(48))\"` "
+                f"and set it in the environment.")
+    if len(raw) < 32:
+        return (f"{TWOFA_KEY_ENV} is set but is shorter than 32 characters. "
+                f"Replace it with at least 32 characters of random text.")
+    return None
+
+
+def derive_totp_secret(user_id, salt_b64, key=None):
+    """Derive a user's TOTP secret. Nothing secret is ever stored.
+
+    The database holds only ``salt`` — random, per enrollment, and **not**
+    secret. The secret itself is recomputed on demand from the server key:
+
+        secret = HMAC-SHA256(server_key, b"totp" || user_id || salt)[:20]
+
+    **Why derive rather than encrypt.** A TOTP secret is symmetric, so unlike a
+    password it cannot be hashed — the server needs the same value the phone
+    has. The obvious answer is to encrypt the column, and that was the first
+    plan. But Python's standard library has no symmetric cipher, so encrypting
+    means either adding a large compiled dependency or composing a cipher out
+    of HMAC by hand, which is bespoke cryptography in a project whose security
+    document is read by people whose job is to distrust exactly that.
+
+    Deriving needs only `hmac`, which this module already imports, and gives a
+    stronger property than encryption: **a stolen database or backup contains
+    no secret at all**, not even a ciphertext. There is nothing to decrypt.
+
+    The costs are the ones encryption would also have had. The key must exist
+    wherever the app runs; losing it means every enrollment is void and
+    everybody re-enrolls; rotating it means the same. The salt is what lets one
+    user re-enroll and get a genuinely new secret without touching anybody
+    else's — and it is stored in the clear because it is not a secret, exactly
+    like a password salt.
+
+    The domain-separation prefix (``b"totp"``) means this key can be reused for
+    another purpose later without the two deriving the same bytes.
+    """
+    key = key or twofa_key()
+    if not key:
+        raise ValueError(f"{TWOFA_KEY_ENV} is not set or is too short")
+    material = b"totp" + str(user_id).encode("ascii") + b"|" + salt_b64.encode("ascii")
+    return hmac.new(key, material, hashlib.sha256).digest()[:TOTP_SECRET_BYTES]
+
+
+def new_totp_salt():
+    """A fresh, non-secret salt. Changing it re-enrolls that one user."""
+    return _b64e(secrets.token_bytes(TOTP_SALT_BYTES))
+
+
+def totp_secret_b32(secret: bytes) -> str:
+    """Base32, which is what authenticator apps and otpauth:// URIs speak."""
+    return base64.b32encode(secret).decode("ascii").rstrip("=")
+
+
+def totp_secret_groups(secret: bytes) -> str:
+    """The secret in groups of four, for somebody typing it off a screen."""
+    text = totp_secret_b32(secret)
+    return " ".join(text[i:i + 4] for i in range(0, len(text), 4))
+
+
+def hotp(secret: bytes, counter: int, digits=TOTP_DIGITS, algo=TOTP_ALGO) -> str:
+    """RFC 4226 HOTP. The dynamic truncation is the fiddly part of the spec."""
+    mac = hmac.new(secret, struct.pack(">Q", counter), algo).digest()
+    offset = mac[-1] & 0x0F
+    code = struct.unpack(">I", mac[offset:offset + 4])[0] & 0x7FFFFFFF
+    return str(code % (10 ** digits)).zfill(digits)
+
+
+def totp_code(secret: bytes, at=None, period=TOTP_PERIOD, digits=TOTP_DIGITS,
+              algo=TOTP_ALGO) -> str:
+    """RFC 6238 TOTP: HOTP with the counter being the current time step."""
+    moment = int(at if at is not None else time.time())
+    return hotp(secret, moment // period, digits=digits, algo=algo)
+
+
+def verify_totp(secret: bytes, code, at=None, window=TOTP_WINDOW,
+                period=TOTP_PERIOD, digits=TOTP_DIGITS, algo=TOTP_ALGO) -> bool:
+    """Check a code against a small window of time steps.
+
+    **Every candidate in the window is compared, with no early return**, so the
+    time this takes does not reveal which step matched — and each comparison is
+    `hmac.compare_digest`, so it does not reveal how much of the code was
+    right either.
+
+    Codes are normalized first because people paste them with the space the
+    authenticator app displays.
+    """
+    code = re.sub(r"\s+", "", str(code or ""))
+    if not code.isdigit() or len(code) != digits:
+        return False
+    moment = int(at if at is not None else time.time())
+    step = moment // period
+    ok = False
+    for drift in range(-window, window + 1):
+        ok |= hmac.compare_digest(hotp(secret, step + drift, digits, algo), code)
+    return bool(ok)
+
+
+def totp_uri(secret: bytes, email, issuer):
+    """The otpauth:// URI an authenticator app understands.
+
+    Worth knowing: on a phone this is also a **tappable link** that opens the
+    authenticator and configures it, which is why enrollment offers it beside
+    the QR code. The QR is only strictly needed when the page is on a desktop
+    and the app is on a separate phone — which is, admittedly, most people.
+
+    The issuer appears twice by convention: once as a prefix on the label and
+    once as a parameter. Apps that only read one still show something sensible.
+    """
+    from urllib.parse import quote
+    label = quote(f"{issuer}:{email}", safe="")
+    params = (f"secret={totp_secret_b32(secret)}"
+              f"&issuer={quote(issuer, safe='')}"
+              f"&algorithm={TOTP_ALGO.upper()}"
+              f"&digits={TOTP_DIGITS}&period={TOTP_PERIOD}")
+    return f"otpauth://totp/{label}?{params}"
+
+
+# --- Recovery codes --------------------------------------------------------
+
+def new_recovery_codes(count=RECOVERY_CODE_COUNT):
+    """Fresh single-use codes, returned in the clear for one-time display.
+
+    Crockford-ish base32 without padding: no lowercase to mistype, and the
+    alphabet avoids nothing in particular — but the codes are shown in two
+    groups of four, which is what makes them transcribable at all.
+    """
+    out = []
+    for _ in range(count):
+        raw = base64.b32encode(secrets.token_bytes(RECOVERY_CODE_BYTES))
+        text = raw.decode("ascii").rstrip("=")
+        out.append(f"{text[:4]}-{text[4:]}")
+    return out
+
+
+def normalize_recovery_code(code):
+    """Upper-cased, stripped of spaces and dashes, so typing style never matters."""
+    return re.sub(r"[^A-Z0-9]", "", str(code or "").upper())
+
+
+def hash_recovery_code(code):
+    """SHA-256, like a session token and for the same reason.
+
+    These are 40 bits of random output, not a password, so there is nothing for
+    a slow hash to protect against — and one of these is checked on a path
+    where somebody is already locked out and anxious.
+    """
+    return hashlib.sha256(normalize_recovery_code(code).encode("ascii")).hexdigest()
+
+
+# --- Emailed codes, challenges and trusted devices -------------------------
+
+def new_email_code(digits=EMAIL_CODE_DIGITS):
+    """A numeric code for an emailed challenge.
+
+    `randbelow` rather than `randint`: this needs to be unguessable, and the
+    zero padding matters so every code is the same length on screen.
+    """
+    return str(secrets.randbelow(10 ** digits)).zfill(digits)
+
+
+def hash_code(code):
+    """Hash an emailed code before storing the challenge.
+
+    The challenge row would otherwise hold a live credential, and the whole
+    point of hashing the reset token was that rows like this end up in
+    backups.
+    """
+    return hashlib.sha256(re.sub(r"\s+", "", str(code or "")).encode("utf-8")).hexdigest()
+
+
+def new_challenge_token():
+    """Identifies a half-finished sign-in. Not a session: it grants nothing."""
+    return secrets.token_urlsafe(32)
+
+
+def new_device_token():
+    return secrets.token_urlsafe(32)
+
+
+def hash_token(token):
+    """Shared hashing for challenge and device tokens, as for sessions."""
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()

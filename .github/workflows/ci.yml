@@ -309,6 +309,13 @@ jobs:
       EMAIL_SINK_PATH: ${{ github.workspace }}/.mail-test.jsonl
       EMAIL_SINK_CONFIRM: discard-all-mail
       SMTP_PASSWORD: ci-sink-intercepts-before-any-socket-is-opened
+      # Two-factor enrollment derives each secret from this key rather than
+      # storing one, so without it enrollment refuses and t_2fa.py stops on
+      # its precondition - which fails this job, since the feature suites are
+      # globbed and it is one of them. A fixed literal is correct here and
+      # nowhere else: the database is created and destroyed inside this job,
+      # so there is no enrollment for a later run to have to reproduce.
+      TWOFA_SECRET_KEY: ci-only-key-not-used-by-any-real-deployment-0123456789
 
     steps:
       - uses: actions/checkout@v4

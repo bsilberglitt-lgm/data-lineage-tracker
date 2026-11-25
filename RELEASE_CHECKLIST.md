@@ -244,6 +244,8 @@ into the wrong group is how one ended up running after step 2.
   quietly undo an earlier one:
 
   ```bash
+  python3 tools/tests/t_2fa.py --email <your email>        # 0.10.0 — two-factor
+  python3 tools/tests/t_avatar.py --email <your email>     # 0.10.0 — profile pictures
   EMAIL_SINK_PATH=.mail-test.jsonl EMAIL_SINK_CONFIRM=discard-all-mail \
     python3 tools/tests/t_email.py --email <your email>    # 0.9.0 — email, reset
   python3 tools/tests/t_tasks.py --email <your email>      # 0.7.0 — tasks
@@ -309,6 +311,28 @@ into the wrong group is how one ended up running after step 2.
 
   Each prompts for your password, like `selftest.py`. Add a port only if the
   app is not on 8765: `t_tasks.py 8765 --email …`.
+
+  **Each will also ask for a two-factor code**, if the account you sign in as
+  has one set up — which from 0.10.0 it probably does. Type the code from your
+  authenticator app, or one of your recovery codes; a recovery code is spent
+  when used, so prefer the app. This is not optional politeness on the suites'
+  part: a correct password returns a *challenge* rather than a session for an
+  enrolled account, and before this was handled every suite reported "Could
+  not sign in. Check the email and password", which is a message about the one
+  thing that was right.
+
+  Two sections of `t_2fa.py` announce that they were **skipped**, and that is
+  the expected output rather than a problem:
+
+  - the emailed-code section, unless the sink variables are exported for it
+    the way `t_email.py` needs them;
+  - the forced-enrollment section, unless `TWOFA_GATE=yes` is set **and** the
+    account you signed in as is already enrolled. It turns `require_2fa` on
+    for the whole deployment for about ten requests, so every signed-in person
+    would be asked to enroll in that window. It is opt-in for that reason, and
+    it refuses outright against an un-enrolled borrowed account, because the
+    restore at the end would then be refused too and the requirement would
+    stay switched on.
 
   Expect **0 failed** from each. They create records as they go — contributors,
   scenarios, tasks, test user accounts — and clean up very little, so run them
@@ -624,12 +648,61 @@ Then, in a **private/incognito window**, sign in as a **Viewer** test account:
 - [ ] No Administration section in the sidebar
 - [ ] Dragging a diagram node does nothing
 
+**Two-factor authentication** — the QR code is the one thing in this project
+no check can judge, because the only instrument for it is a phone. It has
+already rendered perfectly and failed to scan twice, both times from how it
+was *sized*:
+
+- [ ] Your profile → **Set up two-factor authentication**. **Scan the code
+      with a real phone.** A code that looks right and will not scan is the
+      expected failure here, not a far-fetched one
+- [ ] Confirm with the code from the app, and save the ten recovery codes
+- [ ] Sign out and in: the code is asked for, and a wrong one says **Code not
+      recognized** without throwing you back to the sign-in screen
+- [ ] Sign out and in again with **Remember this device for 30 days** checked,
+      then once more — no code is asked for
+- [ ] Forget the device from your profile, and confirm the code is asked for
+      again
+- [ ] Sign in with a **recovery code** once, and confirm it is refused the
+      second time
+
+**Profile pictures** — the upload path runs entirely in the browser before it
+reaches the server, so nothing in the suites can see it:
+
+- [ ] Your profile → add a PNG or JPEG. It replaces your initials in the
+      corner at once
+- [ ] **Use a photo straight off a phone**, several megabytes and several
+      thousand pixels. It should be accepted, not refused: the browser
+      downscales before uploading. A refusal here means the canvas path failed
+      and the original was sent, which is the fallback working rather than the
+      feature working
+- [ ] **A portrait photo taken on a phone must not appear on its side.** Canvas
+      ignores the EXIF orientation tag that an `<img>` honors, so this is the
+      one check that catches it
+- [ ] **Frame it:** drag the picture, move the size slider, and confirm what
+      lands in the corner is what was inside the circle. The arithmetic is
+      covered by `t_avatarcrop.js`; whether the dimmed ring is legible over a
+      pale photo, and whether dragging feels right, are only visible here
+- [ ] Use a **portrait** and a **landscape** photo. At the smallest size the
+      picture should exactly fill the circle with no gap at any edge — a gap
+      would be stored as a transparent corner
+- [ ] Try a file that is not an image but is named `.png`. It is refused, and
+      the picture you already had is still there
+- [ ] Users and Contributors show the circle beside each name, and clicking a
+      real picture opens it larger. A contributor with no account shows
+      initials, which is correct — the picture belongs to the account
+- [ ] Remove it, and confirm the initials come back
+
 **Password reset, if email is configured on this environment** — the only place
 a person exercises the emailed link, which no suite can do:
 
 - [ ] Sign out. **Forgot your password?** appears on the sign-in screen if
   email is working, and is absent if it is not. Both are correct answers;
-  which one you should see depends on the environment
+  which one you should see depends on the environment. If it is absent and you
+  expected it, **Preferences → Email status** has a *Forgot-password link* row
+  that names which of the three conditions is missing — the setting, a working
+  transport, or the public address of the application — rather than leaving
+  you to guess between them
 - [ ] Request a reset for a test account. **No email will arrive, and that is
   correct** — while the sink is active the message is written to a file and
   nothing is sent. Waiting for an inbox here is waiting for something that
@@ -1060,6 +1133,22 @@ set up.
 ## Appendix A — One-time setup on a new machine
 
 Only needed once per computer.
+
+- [ ] **`TWOFA_SECRET_KEY` in `.env`** — required before anybody can enroll an
+  authenticator app, and this is a one-time item with a sting in it:
+
+  ```bash
+  python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+  ```
+
+  Every user's TOTP secret is *derived* from this key rather than stored, so
+  **losing or changing it voids every enrollment** and everybody re-enrolls.
+  Back it up wherever you keep things whose loss costs a day. It does not need
+  rotating: it is not a credential anybody authenticates with, and it is
+  useless without the database.
+
+  Environment changes need `docker compose up -d`, not `restart` — a restart
+  keeps the environment the container was created with.
 
 - [ ] **Git identity** — without this, `git commit` fails with
   *"Author identity unknown"*:
