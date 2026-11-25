@@ -325,7 +325,10 @@ into the wrong group is how one ended up running after step 2.
   the expected output rather than a problem:
 
   - the emailed-code section, unless the sink variables are exported for it
-    the way `t_email.py` needs them;
+    the way `t_email.py` needs them. It configures the mail settings itself
+    when the deployment has none and puts them back afterwards, so the one
+    thing it cannot arrange is the credential — with no `SMTP_PASSWORD` in the
+    environment it skips and prints why;
   - the forced-enrollment section, unless `TWOFA_GATE=yes` is set **and** the
     account you signed in as is already enrolled. It turns `require_2fa` on
     for the whole deployment for about ten requests, so every signed-in person

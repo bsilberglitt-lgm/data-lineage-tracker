@@ -92,7 +92,14 @@ a suite. Three rules follow from it:
   starting state it does not control — not "nothing is hidden", not "nothing is
   defined". Assert the *relationship* the check is reaching for, and restore
   anything you change, in a `finally` so a crash cannot skip it.
-  "You do not control it" includes the suite that ran before yours.
+  "You do not control it" includes the suite that ran before yours — **and a
+  setting a person configured months ago.** `t_2fa.py`'s emailed-code section
+  assumed a working mail transport, which was true of every machine it was
+  written on because mail had been set up there by hand, and false in CI, which
+  builds from nothing. It arranges the transport itself now, restores it, and
+  skips with the reason printed when it cannot (the credential comes from the
+  environment, so no suite can supply one). **If your suite needs a setting,
+  set it — do not inherit it.**
 - **A suite's own accounts go through `_client.ensure_account`**, which creates
   or resets them so a second run behaves like the first. Use
   `_client.unique_email` where resetting is not enough — a check about an

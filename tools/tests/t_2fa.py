@@ -239,8 +239,14 @@ def main():
 
     st, prefs = rq(boss, "GET", "/api/preferences")
     before = {p["key"]: p["value"] for p in prefs}
+    # The mail settings are in here as well as the two-factor ones, because the
+    # emailed-code section configures a transport when the deployment has none
+    # — see `mail_ready` below. Listed whether or not that happens, so the
+    # restore is the same shape either way.
     restore = {k: (before.get(k) or "")
-               for k in ("require_2fa", "allow_email_2fa")}
+               for k in ("require_2fa", "allow_email_2fa",
+                         "email_transport", "email_from_address",
+                         "smtp_host", "smtp_port", "smtp_username")}
     ck("the two-factor preferences both exist",
        "require_2fa" in before and "allow_email_2fa" in before,
        ", ".join(sorted(set(restore) - set(before))))
@@ -514,72 +520,115 @@ def body(boss, boss_id, boss_role, boss_enrolled, sink, gate):
               "   needs the server's mail sink. Nothing else is affected.")
     else:
         print("\n-- an emailed code is an alternative, not a replacement --")
-        secret, codes = enroll(s11)
-        ck("enrolled again for this section", bool(secret))
-        st, b = rq(boss, "PUT", "/api/preferences",
-                   {"values": {"allow_email_2fa": "true"}})
-        ck("allow_email_2fa saved", st == 200, f"{st} {b}")
 
-        def tail():
-            try:
-                lines = [json.loads(l) for l in open(sink, encoding="utf-8")
-                         if l.strip()]
-            except FileNotFoundError:
-                return None
-            return lines[-1] if lines else None
+        # `allow_email_2fa` is one of TWO conditions: `email_2fa_allowed` also
+        # requires a transport that could actually send, for the same reason
+        # the forgot-password link does — nobody should be stranded mid-sign-in
+        # waiting for a message that was never sent. So the switch alone is not
+        # enough, and this section has to make the deployment able to send.
+        #
+        # This is the borrows-the-database rule arriving from a new direction.
+        # The earlier version just flipped the switch, which worked everywhere
+        # mail was already set up — a local database, the harness as it was
+        # configured by hand — and failed in CI, where it is not. **A suite may
+        # not assume a starting state it did not arrange.** Six checks failed
+        # on the release commit, every one of them in here.
+        def mail_ready():
+            st, info = rq(boss, "GET", "/api/email/test")
+            if st != 200 or not isinstance(info, dict):
+                return False, [f"GET /api/email/test answered {st}"]
+            return bool(info.get("configured")), (info.get("problems") or [])
 
-        was = tail()
-        s12, b12 = fresh_login(addr, PW)
-        tw = b12.get("twofa") or {}
-        ck("an enrolled account is still offered the app first",
-           tw.get("method") == "totp", str(tw))
-        ck("with email listed as an alternative",
-           "email" in (tw.get("methods") or []), str(tw.get("methods")))
-        st, rb = rq(s12, "POST", "/api/auth/2fa/resend",
-                    {"challenge": tw.get("challenge")})
-        ck("asking for one reports success", st == 200, f"{st} {rb}")
-        msg = tail()
-        ck("a message really was written", msg is not None and msg != was,
-           str(msg)[:80])
-        m = re.search(r"\b(\d{6})\b", (msg or {}).get("body", ""))
-        ck("it carries a six-digit code", bool(m),
-           (msg or {}).get("body", "")[:90])
-        if m:
-            ck("the code is not in the response that triggered it",
-               m.group(1) not in json.dumps(rb))
-            st, vb = rq(s12, "POST", "/api/auth/2fa/verify",
-                        {"challenge": tw.get("challenge"), "code": m.group(1)})
-            ck("and it signs in", st == 200 and vb.get("csrf_token"),
-               f"{st} {vb}")
-            ck("the code is not echoed back either",
-               m.group(1) not in json.dumps(vb))
-            st, vb = rq(s12, "POST", "/api/auth/2fa/verify",
-                        {"challenge": tw.get("challenge"), "code": m.group(1)})
-            ck("the same emailed code cannot be reused", st == 400, f"{st}")
+        ready, why = mail_ready()
+        if not ready:
+            # Values, not a relay: the sink intercepts every send before a
+            # socket is opened, so the host is never dialed. The credential is
+            # the one thing preferences cannot supply — it comes from the
+            # environment by design — so if it is missing this stays unready
+            # and the section skips rather than failing.
+            rq(boss, "PUT", "/api/preferences", {"values": {
+                "email_transport": "smtp",
+                "email_from_address": "tracker@example.gov",
+                "smtp_host": "localhost.invalid",
+                "smtp_port": "587",
+                "smtp_username": "suite",
+            }})
+            ready, why = mail_ready()
 
-        # The behavior this section exists to pin down, and it is not obvious
-        # from either switch on its own: with emailed codes allowed, somebody
-        # with NO authenticator is challenged by email rather than told to
-        # enroll — because whether email works is a fact about the deployment,
-        # not about the person (migration 0023). Ten assertions later in this
-        # suite were written on the opposite assumption and failed, which is
-        # how it got checked here.
-        st, b = rq(boss, "POST", f"/api/users/{uid}/2fa-reset", {})
-        ck("the account's authenticator is cleared", st == 200, f"{st} {b}")
-        s12b, b12b = fresh_login(addr, PW)
-        twb = b12b.get("twofa") or {}
-        ck("an account with no app is still challenged, by email",
-           twb.get("method") == "email", str(twb))
-        ck("and email is the only method offered",
-           (twb.get("methods") or []) == ["email"], str(twb.get("methods")))
+        if not ready:
+            print("-- emailed codes: SKIPPED, this deployment cannot send --")
+            for line in why:
+                print("   " + line)
+            print("   The credential comes from the environment, not from\n"
+                  "   preferences, so this suite cannot arrange it. Set\n"
+                  "   SMTP_PASSWORD and restart to run this section.")
+        else:
+            secret, codes = enroll(s11)
+            ck("enrolled again for this section", bool(secret))
+            st, b = rq(boss, "PUT", "/api/preferences",
+                       {"values": {"allow_email_2fa": "true"}})
+            ck("allow_email_2fa saved", st == 200, f"{st} {b}")
 
-        # Put it back before the next section, which asserts that an account
-        # with no factor signs in on the password alone — true only when
-        # emailed codes are off. A section that leaves a deployment-wide
-        # switch flipped makes the next one test something else.
-        st, b = rq(boss, "PUT", "/api/preferences",
-                   {"values": {"allow_email_2fa": "false"}})
-        ck("emailed codes can be turned off again", st == 200, f"{st} {b}")
+            def tail():
+                try:
+                    lines = [json.loads(l) for l in open(sink, encoding="utf-8")
+                             if l.strip()]
+                except FileNotFoundError:
+                    return None
+                return lines[-1] if lines else None
+
+            was = tail()
+            s12, b12 = fresh_login(addr, PW)
+            tw = b12.get("twofa") or {}
+            ck("an enrolled account is still offered the app first",
+               tw.get("method") == "totp", str(tw))
+            ck("with email listed as an alternative",
+               "email" in (tw.get("methods") or []), str(tw.get("methods")))
+            st, rb = rq(s12, "POST", "/api/auth/2fa/resend",
+                        {"challenge": tw.get("challenge")})
+            ck("asking for one reports success", st == 200, f"{st} {rb}")
+            msg = tail()
+            ck("a message really was written", msg is not None and msg != was,
+               str(msg)[:80])
+            m = re.search(r"\b(\d{6})\b", (msg or {}).get("body", ""))
+            ck("it carries a six-digit code", bool(m),
+               (msg or {}).get("body", "")[:90])
+            if m:
+                ck("the code is not in the response that triggered it",
+                   m.group(1) not in json.dumps(rb))
+                st, vb = rq(s12, "POST", "/api/auth/2fa/verify",
+                            {"challenge": tw.get("challenge"), "code": m.group(1)})
+                ck("and it signs in", st == 200 and vb.get("csrf_token"),
+                   f"{st} {vb}")
+                ck("the code is not echoed back either",
+                   m.group(1) not in json.dumps(vb))
+                st, vb = rq(s12, "POST", "/api/auth/2fa/verify",
+                            {"challenge": tw.get("challenge"), "code": m.group(1)})
+                ck("the same emailed code cannot be reused", st == 400, f"{st}")
+
+            # The behavior this section exists to pin down, and it is not obvious
+            # from either switch on its own: with emailed codes allowed, somebody
+            # with NO authenticator is challenged by email rather than told to
+            # enroll — because whether email works is a fact about the deployment,
+            # not about the person (migration 0023). Ten assertions later in this
+            # suite were written on the opposite assumption and failed, which is
+            # how it got checked here.
+            st, b = rq(boss, "POST", f"/api/users/{uid}/2fa-reset", {})
+            ck("the account's authenticator is cleared", st == 200, f"{st} {b}")
+            s12b, b12b = fresh_login(addr, PW)
+            twb = b12b.get("twofa") or {}
+            ck("an account with no app is still challenged, by email",
+               twb.get("method") == "email", str(twb))
+            ck("and email is the only method offered",
+               (twb.get("methods") or []) == ["email"], str(twb.get("methods")))
+
+            # Put it back before the next section, which asserts that an account
+            # with no factor signs in on the password alone — true only when
+            # emailed codes are off. A section that leaves a deployment-wide
+            # switch flipped makes the next one test something else.
+            st, b = rq(boss, "PUT", "/api/preferences",
+                       {"values": {"allow_email_2fa": "false"}})
+            ck("emailed codes can be turned off again", st == 200, f"{st} {b}")
 
     # -------------------------------------------- forced enrollment (gated)
     if not gate:

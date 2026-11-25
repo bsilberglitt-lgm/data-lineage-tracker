@@ -2702,13 +2702,50 @@ a bug in the suite:
   a suite must never do: change how a real person signs in to their own app.
   Hence `TWOFA_GATE=yes` **and** an enrolled borrowed account, or the section
   skips and says which.
-- **`mailer.problems()` refuses a password with no username**, which is why the
-  emailed-code section needs `smtp_username` set as well as `SMTP_PASSWORD`.
+- **`mailer.problems()` refuses a password with no username**, which is one of
+  several reasons the emailed-code section needs a transport that could really
+  send — see the next section, which is how CI found it.
 - **The restore in the `finally` crashed inside the thing written to stop a
   crash.** It read the preferences GET as a list of rows and died with
   `TypeError: string indices must be integers` when that GET answered with an
   error object instead — so no summary printed at all. It is shape-checked
   now, and a restore it cannot *verify* says so rather than reporting success.
+
+#### And CI went red on the release commit, for a configured-by-hand assumption
+
+`t_2fa.py`'s emailed-code section flipped `allow_email_2fa` and expected a
+message in the sink. **`email_2fa_allowed` requires two things**, not one: the
+preference *and* a transport that could actually send — the same both-switches
+rule as the forgot-password link, and for a sharper reason, since somebody
+waiting for a code that was never sent is stranded *mid-sign-in* having already
+given a correct password. So with no mail configured the server answers
+`Codes by email are not enabled here.` and lists no email method.
+
+It passed everywhere it was developed, because mail **had** been configured by
+hand in both places — Ben's local app and the harness, set up while testing
+0.9.0's email work. CI builds a database from nothing, so the preferences are
+at their defaults, and six checks failed on the release commit and again on the
+one after it. Precisely the borrows-the-database rule arriving from a direction
+nobody had listed: **the state a suite depends on can be something a person
+configured months ago and forgot was not a default.**
+
+The suite now **arranges what it needs**: it asks `/api/email/test` whether the
+transport is ready, writes the mail preferences if not, asks again, and skips
+the section with the reason printed if it still cannot send — which is the case
+when `SMTP_PASSWORD` is absent, since a credential comes from the environment
+by design and no suite can supply it. The mail keys joined the `restore` dict
+in the `finally`, listed whether or not they were touched so the restore is one
+shape.
+
+Two things worth keeping in mind here:
+
+- **The host is never dialed**, so `localhost.invalid` is the honest value:
+  `mailer.send` checks the sink before opening a socket. A real-looking host
+  would suggest the suite talks to something.
+- **CI is where this had to be found**, and that is the second time the same
+  property has paid off: the un-pinned Babel preset was the first. A check that
+  runs on a machine nobody has configured is the only thing that can see an
+  assumption about a configured machine.
 
 #### A QR code can render perfectly and not scan
 
